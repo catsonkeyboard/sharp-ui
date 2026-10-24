@@ -1,7 +1,10 @@
 namespace SharpUI;
 
-/// <summary>绘制上下文。M1 最小形态:仅网格;Task 10 增 Atlas,Task 11 增 Input。</summary>
-public readonly record struct PaintContext(MeshBuilder Mesh);
+/// <summary>绘制上下文(Task 11 将再加 InputState)。</summary>
+public readonly record struct PaintContext(MeshBuilder Mesh, TextAtlas Atlas)
+{
+    public RectF WhiteUv => Atlas.WhiteUv;
+}
 
 public abstract class Element
 {
@@ -21,12 +24,7 @@ public abstract class Element
     /// <summary>叶子自测尺寸;容器尺寸由 LayoutEngine 依据子元素推导。</summary>
     protected internal virtual SizeF MeasureSelf(SizeF available) => SizeF.Zero;
 
-    public virtual void Draw(in PaintContext pc)
-    {
-        if (Children is null) return;
-        foreach (Element child in Children)
-            child.Draw(in pc);
-    }
+    public virtual void Draw(in PaintContext pc) { }
 
     public Element? HitTest(PointF p)
     {
@@ -37,6 +35,8 @@ public abstract class Element
                     return hit;
         return IsHitTarget ? this : null;
     }
+
+    public static implicit operator Element(string text) => new TextElement(text);
 }
 
 public sealed class Spacer : Element
