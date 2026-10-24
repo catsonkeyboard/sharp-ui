@@ -61,7 +61,7 @@ public sealed class GraphicsContext : IDisposable
         AtlasTexture = factory.CreateTexture(TextureDescription.Texture2D(
             AtlasSize, AtlasSize, 1, 1, PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.Sampled));
         AtlasView = factory.CreateTextureView(AtlasTexture);
-        AtlasSampler = factory.CreateSampler(SamplerDescription.Linear);
+        AtlasSampler = factory.CreateSampler(SamplerDescription.Point);
         AtlasSet = factory.CreateResourceSet(new ResourceSetDescription(layout, ScreenSizeBuffer, AtlasView, AtlasSampler));
     }
 
