@@ -29,19 +29,23 @@ public readonly record struct InputState(
     public static readonly InputState Empty = new(new PointF(-1f, -1f), false, false, false, null);
 }
 
+/// <summary>每窗输入会话(T6 多窗):按下目标/点击账本/键盘激活队列按窗口隔离,取代 Interaction 静态字段。</summary>
+public sealed class InputSession
+{
+    internal string? PressedOn;   // 按下瞬间的命中元素稳定 id;点击 = 按下与松开同 id(规格书 D10)
+    internal readonly List<string> Clicks = new();
+    internal readonly List<string> Queued = new();   // 键盘激活排队:下一帧 Update 开头并入账本(裁定#18)
+}
+
 public static class Interaction
 {
-    static readonly List<string> _clicks = new();
-    static readonly List<string> _queued = new();   // 键盘激活排队:下一帧 Update 开头并入账本(裁定#18)
-    static string? _pressedOn;   // 按下瞬间的命中元素稳定 id;点击 = 按下与松开同 id(规格书 D10)
-
-    /// <summary>取消进行中的按压(窗口失焦时由 App 调用;规格书 M2b-i)。</summary>
-    public static void CancelPress() => _pressedOn = null;
+    /// <summary>取消进行中的按压(窗口失焦时由 App 按窗调用;规格书 M2b-i)。</summary>
+    public static void CancelPress(InputSession session) => session.PressedOn = null;
 
     /// <summary>键盘激活入队:HandleKeys 当帧回调已触发,账本在下一帧 Update 开头可见(裁定#18)。</summary>
-    public static void QueueClick(string id) => _queued.Add(id);
+    public static void QueueClick(InputSession session, string id) => session.Queued.Add(id);
 
-    public static InputState Update(Element root, in RawInput raw, FocusManager? focus = null)
+    public static InputState Update(InputSession session, Element root, in RawInput raw, FocusManager? focus = null)
     {
         // 防御(偏离任务书代码清单的一行):未经 Assign 的树直连 Update 时补算稳定 id,
         // 否则 ResolvedId 全 null,`_pressedOn is not null` 门会把所有点击吞掉。
@@ -49,18 +53,18 @@ public static class Interaction
         if (root.ResolvedId is null) IdResolver.Assign(root);
         bool pressed = false, released = false;
         Element? hovered = root.HitTest(raw.Mouse);
-        _clicks.Clear();
-        if (_queued.Count > 0)   // 键盘激活(裁定#18):先清当帧再并入上一帧队列
+        session.Clicks.Clear();
+        if (session.Queued.Count > 0)   // 键盘激活(裁定#18):先清当帧再并入上一帧队列
         {
-            _clicks.AddRange(_queued);
-            _queued.Clear();
+            session.Clicks.AddRange(session.Queued);
+            session.Queued.Clear();
         }
         foreach (bool down in raw.LeftEvents)
         {
             if (down)
             {
                 pressed = true;
-                _pressedOn = hovered?.ResolvedId;
+                session.PressedOn = hovered?.ResolvedId;
                 if (hovered is { Focusable: true })
                     focus?.SetFocus(hovered);
                 if (hovered is null)
@@ -69,20 +73,20 @@ public static class Interaction
             else
             {
                 released = true;
-                if (_pressedOn is not null && hovered?.ResolvedId == _pressedOn
+                if (session.PressedOn is not null && hovered?.ResolvedId == session.PressedOn
                     && hovered is ButtonElement button)
                 {
                     button.InvokeClick();
-                    if (hovered.ResolvedId is string id) _clicks.Add(id);
+                    if (hovered.ResolvedId is string id) session.Clicks.Add(id);
                 }
-                _pressedOn = null;
+                session.PressedOn = null;
             }
         }
         bool leftDown = (raw.LeftHeld && !released) || pressed;
         return new InputState(
             raw.Mouse, leftDown, pressed, released, hovered,
             HoveredId: hovered?.ResolvedId,
-            ClickedIds: _clicks.Count > 0 ? _clicks : null,
+            ClickedIds: session.Clicks.Count > 0 ? session.Clicks : null,
             WheelDelta: raw.WheelDelta);
     }
 }

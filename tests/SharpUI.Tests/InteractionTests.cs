@@ -16,11 +16,12 @@ public class InteractionTests
     public void Hover_DetectsHitTarget()
     {
         (Element root, _) = ButtonAt(new RectF(0, 0, 100, 40));
-        InputState s = Interaction.Update(root, new RawInput(new PointF(50, 20), Array.Empty<bool>()));
-        Assert.NotNull(s.Hovered);
-        Assert.False(s.LeftDown);
-        Assert.False(s.LeftPressed);
-        Assert.False(s.LeftReleased);
+        var s = new InputSession();
+        InputState state = Interaction.Update(s, root, new RawInput(new PointF(50, 20), Array.Empty<bool>()));
+        Assert.NotNull(state.Hovered);
+        Assert.False(state.LeftDown);
+        Assert.False(state.LeftPressed);
+        Assert.False(state.LeftReleased);
     }
 
     [Fact]
@@ -29,9 +30,10 @@ public class InteractionTests
         var clicks = 0;
         var button = new ButtonElement("OK", () => clicks++);
         LayoutEngine.Arrange(button, new RectF(0, 0, 100, 40));
+        var s = new InputSession();
 
-        Interaction.Update(button, new RawInput(new PointF(50, 20), new[] { true }));
-        InputState released = Interaction.Update(button, new RawInput(new PointF(50, 20), new[] { false }));
+        Interaction.Update(s, button, new RawInput(new PointF(50, 20), new[] { true }));
+        InputState released = Interaction.Update(s, button, new RawInput(new PointF(50, 20), new[] { false }));
 
         Assert.Equal(1, clicks);
         Assert.True(released.LeftReleased);
@@ -42,8 +44,9 @@ public class InteractionTests
     public void Miss_DoesNotHit()
     {
         (Element root, _) = ButtonAt(new RectF(0, 0, 100, 40));
-        InputState s = Interaction.Update(root, new RawInput(new PointF(150, 20), Array.Empty<bool>()));
-        Assert.Null(s.Hovered);
+        var s = new InputSession();
+        InputState state = Interaction.Update(s, root, new RawInput(new PointF(150, 20), Array.Empty<bool>()));
+        Assert.Null(state.Hovered);
     }
 
     [Fact]
@@ -52,8 +55,9 @@ public class InteractionTests
         var clicks = 0;
         var button = new ButtonElement("OK", () => clicks++);
         LayoutEngine.Arrange(button, new RectF(0, 0, 100, 40));
-        Interaction.Update(button, new RawInput(new PointF(500, 500), new[] { true }));    // 外面按下
-        Interaction.Update(button, new RawInput(new PointF(50, 20), new[] { false }));    // 移进来松开
+        var s = new InputSession();
+        Interaction.Update(s, button, new RawInput(new PointF(500, 500), new[] { true }));    // 外面按下
+        Interaction.Update(s, button, new RawInput(new PointF(50, 20), new[] { false }));    // 移进来松开
         Assert.Equal(0, clicks);
     }
 
@@ -65,9 +69,10 @@ public class InteractionTests
         var inner = new ButtonElement("x", () => { });
         panel.Add(inner);
         LayoutEngine.Arrange(panel, new RectF(0, 0, 200, 100));
-        InputState s = Interaction.Update(panel, new RawInput(
+        var s = new InputSession();
+        InputState state = Interaction.Update(s, panel, new RawInput(
             new PointF(inner.Frame.X + 1, inner.Frame.Y + 1), Array.Empty<bool>()));
-        Assert.Same(inner, s.Hovered);
+        Assert.Same(inner, state.Hovered);
     }
 
     [Fact]
@@ -84,8 +89,9 @@ public class InteractionTests
 
         Element pressFrame = Build();
         Element releaseFrame = Build();   // 结构/几何相同的不同实例(模拟 App 每帧重建)
-        Interaction.Update(pressFrame, new RawInput(new PointF(10, 10), new[] { true }));
-        Interaction.Update(releaseFrame, new RawInput(new PointF(10, 10), new[] { false }));
+        var s = new InputSession();
+        Interaction.Update(s, pressFrame, new RawInput(new PointF(10, 10), new[] { true }));
+        Interaction.Update(s, releaseFrame, new RawInput(new PointF(10, 10), new[] { false }));
         Assert.Equal(1, clicks);
     }
 
@@ -111,9 +117,10 @@ public class InteractionTests
         IdResolver.Assign(t1);
         IdResolver.Assign(t2);
         float h = t1.Children![0].Frame.Height;
+        var s = new InputSession();
 
-        Interaction.Update(t1, new RawInput(new PointF(50, 5), new[] { true }));
-        Interaction.Update(t2, new RawInput(new PointF(50, h + 5), new[] { false }));
+        Interaction.Update(s, t1, new RawInput(new PointF(50, 5), new[] { true }));
+        Interaction.Update(s, t2, new RawInput(new PointF(50, h + 5), new[] { false }));
 
         Assert.Equal(1, incClicks);       // 键 "inc" 在两帧中位于不同位置仍被正确命中
     }
@@ -139,11 +146,32 @@ public class InteractionTests
         IdResolver.Assign(t1);
         IdResolver.Assign(t2);
         float h = t1.Children![0].Frame.Height;
+        var s = new InputSession();
 
-        Interaction.Update(t1, new RawInput(new PointF(50, 5), new[] { true }));
-        Interaction.Update(t2, new RawInput(new PointF(50, h + 5), new[] { false }));
+        Interaction.Update(s, t1, new RawInput(new PointF(50, 5), new[] { true }));
+        Interaction.Update(s, t2, new RawInput(new PointF(50, h + 5), new[] { false }));
 
         Assert.Equal(0, firstClicks);     // 无键回退到索引身份:换位后语义不同,不触发(文档化语义)
+    }
+
+    [Fact]
+    public void TwoSessions_PressStateIsIsolated()
+    {
+        var clicks = 0;
+        var button = new ButtonElement("OK", () => clicks++);
+        LayoutEngine.Arrange(button, new RectF(0, 0, 100, 40));
+        var a = new InputSession();
+        var b = new InputSession();
+
+        Interaction.Update(a, button, new RawInput(new PointF(50, 20), new[] { true }));          // 窗 A 按下
+        InputState releasedB = Interaction.Update(b, button, new RawInput(new PointF(50, 20), new[] { false }));   // 窗 B 松开:无按压可完成
+        Assert.Equal(0, clicks);
+        Assert.True(releasedB.LeftReleased);
+        Assert.Null(releasedB.ClickedIds);
+
+        InputState releasedA = Interaction.Update(a, button, new RawInput(new PointF(50, 20), new[] { false }));   // 窗 A 按下-松开成立
+        Assert.Equal(1, clicks);
+        Assert.NotNull(releasedA.ClickedIds);
     }
 
     [Fact]
@@ -156,10 +184,11 @@ public class InteractionTests
         LayoutEngine.Arrange(root, new RectF(0, 0, 100, 40));
         IdResolver.Assign(root);
         string id = b.ResolvedId!;
+        var s = new InputSession();
 
-        InputState press = Interaction.Update(root, new RawInput(new PointF(50, 5), new[] { true }, LeftHeld: true));
+        InputState press = Interaction.Update(s, root, new RawInput(new PointF(50, 5), new[] { true }, LeftHeld: true));
         Assert.True(press.LeftDown);
-        InputState release = Interaction.Update(root, new RawInput(new PointF(50, 5), new[] { false }, LeftHeld: false));
+        InputState release = Interaction.Update(s, root, new RawInput(new PointF(50, 5), new[] { false }, LeftHeld: false));
         Assert.False(release.LeftDown);
         Assert.NotNull(release.ClickedIds);
         Assert.Contains(id, release.ClickedIds!);
@@ -174,11 +203,12 @@ public class InteractionTests
         root.Add(b);
         LayoutEngine.Arrange(root, new RectF(0, 0, 100, 40));
         IdResolver.Assign(root);
+        var s = new InputSession();
 
-        Interaction.Update(root, new RawInput(new PointF(50, 5), new[] { true }, LeftHeld: true));
-        InputState held = Interaction.Update(root, new RawInput(new PointF(50, 5), Array.Empty<bool>(), LeftHeld: true));   // 持续按住、无事件帧
+        Interaction.Update(s, root, new RawInput(new PointF(50, 5), new[] { true }, LeftHeld: true));
+        InputState held = Interaction.Update(s, root, new RawInput(new PointF(50, 5), Array.Empty<bool>(), LeftHeld: true));   // 持续按住、无事件帧
         Assert.True(held.LeftDown);
-        InputState up = Interaction.Update(root, new RawInput(new PointF(50, 5), new[] { false }, LeftHeld: false));
+        InputState up = Interaction.Update(s, root, new RawInput(new PointF(50, 5), new[] { false }, LeftHeld: false));
         Assert.NotNull(up.ClickedIds);   // 跨帧按压-松开成立
     }
 }

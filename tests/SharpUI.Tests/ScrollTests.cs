@@ -20,8 +20,8 @@ public class ScrollTests
         PanelElement root = Panel();
         LayoutEngine.Arrange(root, new RectF(0, 0, 10, 10));
         IdResolver.Assign(root);
-        InputState s = Interaction.Update(root, new RawInput(new PointF(5, 5), Array.Empty<bool>(), WheelDelta: 1.5f));
-        Assert.Equal(1.5f, s.WheelDelta);
+        InputState state = Interaction.Update(new InputSession(), root, new RawInput(new PointF(5, 5), Array.Empty<bool>(), WheelDelta: 1.5f));
+        Assert.Equal(1.5f, state.WheelDelta);
     }
 
     [Fact]

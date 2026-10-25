@@ -84,10 +84,11 @@ public class UiScopeTests
         var focus = new FocusManager();
         focus.BeginFrame();
         TreeWalk.Register(root, focus);
+        var s = new InputSession();
         focus.HandleKeys(new[] { new KeyEventData(Veldrid.Key.Tab, true, false) });
-        focus.HandleKeys(new[] { new KeyEventData(Veldrid.Key.Enter, true, false) });
+        focus.HandleKeys(new[] { new KeyEventData(Veldrid.Key.Enter, true, false) }, s);
         Assert.NotNull(activated);                                   // 当帧回调已触发
-        UiContext.CurrentInput = Interaction.Update(root, new RawInput(new PointF(0, 0), Array.Empty<bool>()));
+        UiContext.CurrentInput = Interaction.Update(s, root, new RawInput(new PointF(0, 0), Array.Empty<bool>()));
         Assert.Contains(b.ResolvedId, UiContext.CurrentInput.ClickedIds!);   // 下一帧账本可见
         UiContext.CurrentInput = default;
     }
@@ -125,9 +126,10 @@ public class UiScopeTests
         Element t1 = BuildTree();
         LayoutEngine.Arrange(t1, new RectF(0, 0, 100, 200));
         IdResolver.Assign(t1);
+        var s = new InputSession();
 
-        Interaction.Update(t1, new RawInput(new PointF(10, 5), new[] { true }));
-        UiContext.CurrentInput = Interaction.Update(t1, new RawInput(new PointF(10, 5), new[] { false }));
+        Interaction.Update(s, t1, new RawInput(new PointF(10, 5), new[] { true }));
+        UiContext.CurrentInput = Interaction.Update(s, t1, new RawInput(new PointF(10, 5), new[] { false }));
 
         BuildTree();                       // 新帧构建:poll 在闭包内读账本
         Assert.True(resetClicked);

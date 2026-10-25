@@ -33,7 +33,8 @@ public sealed class FocusManager
     public bool IsFocused(Element e) =>
         e.ResolvedId is not null && e.ResolvedId == _focusedId;
 
-    public void HandleKeys(ReadOnlySpan<KeyEventData> keys)
+    /// <summary>键路由(Tab/Escape/激活)。session 为 null 时激活仍触发 InvokeClick,但跳过 QueueClick(纯焦点单测免会话)。</summary>
+    public void HandleKeys(ReadOnlySpan<KeyEventData> keys, InputSession? session = null)
     {
         foreach (KeyEventData ke in keys)
         {
@@ -54,7 +55,8 @@ public sealed class FocusManager
                         && e is ButtonElement button)
                     {
                         button.InvokeClick();
-                        if (button.ResolvedId is string kbId) Interaction.QueueClick(kbId);   // 裁定#18:下一帧账本可见
+                        if (session is not null && button.ResolvedId is string kbId)
+                            Interaction.QueueClick(session, kbId);   // 裁定#18:下一帧账本可见
                     }
                     break;
             }

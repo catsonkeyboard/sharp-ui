@@ -29,7 +29,7 @@ public class FocusTests
     {
         (PanelElement root, ButtonElement a, _) = TwoButtons();
         FocusManager focus = Frame(root);
-        Interaction.Update(root, new RawInput(new PointF(50, 5), new[] { true }), focus);
+        Interaction.Update(new InputSession(), root, new RawInput(new PointF(50, 5), new[] { true }), focus);
         Assert.True(focus.IsFocused(a));
     }
 
@@ -141,7 +141,7 @@ public class FocusTests
         focus.HandleKeys(new[] { new KeyEventData(Veldrid.Key.Tab, true, false) });
         Assert.True(focus.IsFocused(a));
 
-        Interaction.Update(root, new RawInput(new PointF(50, 190), new[] { true }), focus);  // 空白处按压(按钮高约 100)
+        Interaction.Update(new InputSession(), root, new RawInput(new PointF(50, 190), new[] { true }), focus);  // 空白处按压(按钮高约 100)
         Assert.Null(focus.FocusedId);
 
         int clicks = 0;
@@ -150,9 +150,10 @@ public class FocusTests
         root2.Style.CrossAlign = CrossAxisAlignment.Stretch;
         LayoutEngine.Arrange(root2, new RectF(0, 0, 100, 200));
         IdResolver.Assign(root2);
-        Interaction.Update(root2, new RawInput(new PointF(50, 5), new[] { true }));          // 按下
-        Interaction.CancelPress();                                                            // 窗口失焦
-        Interaction.Update(root2, new RawInput(new PointF(50, 5), new[] { false }));          // 迟到的释放
+        var s = new InputSession();
+        Interaction.Update(s, root2, new RawInput(new PointF(50, 5), new[] { true }));          // 按下
+        Interaction.CancelPress(s);                                                            // 窗口失焦
+        Interaction.Update(s, root2, new RawInput(new PointF(50, 5), new[] { false }));          // 迟到的释放
         Assert.Equal(0, clicks);
     }
 }
