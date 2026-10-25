@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Veldrid;
 using Veldrid.Sdl2;
 using Veldrid.StartupUtilities;
@@ -12,10 +13,14 @@ public sealed class App
     /// <summary>跨帧状态存储(M1 服务定位模式,同 Atlas;M2b 度量上下文重构时收编)。</summary>
     public static StateStore? State { get; internal set; }
 
+    /// <summary>墙钟秒,Run 循环每帧首行更新;Anim 默认时间源(D23)。</summary>
+    public static float Time { get; private set; }
+
     readonly Sdl2Window _window;
     readonly GraphicsContext _ctx;
     readonly Renderer _renderer;
     readonly Func<Element>? _render;
+    readonly Stopwatch _stopwatch = new();
 
     /// <summary>DPI 缩放比(0.5–4 夹紧);鼠标/文本/剪裁统一换算基准(D18)。</summary>
     public float ScaleFactor { get; }
@@ -54,6 +59,8 @@ public sealed class App
         int frames = 0;
         while (_window.Exists)
         {
+            if (!_stopwatch.IsRunning) _stopwatch.Start();   // Run 首次进入启动墙钟(D23)
+            Time = (float)_stopwatch.Elapsed.TotalSeconds;
             RawInput raw = InputMapper.Map(_window.PumpEvents(), ScaleFactor);
             InputState input = lastTree is not null
                 ? Interaction.Update(lastTree, in raw, focus)
