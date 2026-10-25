@@ -23,19 +23,58 @@ public struct UiVertex
 
 public sealed class MeshBuilder
 {
+    public readonly struct ClipRun
+    {
+        public readonly RectF Clip;
+        public readonly int Start, Count;
+        public ClipRun(RectF clip, int start, int count) { Clip = clip; Start = start; Count = count; }
+    }
+
+    public static readonly RectF FullClip = new(0, 0, float.MaxValue, float.MaxValue);
+
     UiVertex[] _vertices = new UiVertex[1024];
     ushort[] _indices = new ushort[2048];
     int _vertexCount, _indexCount;
+    RectF _clip = FullClip;
+    int _runStart;
+    readonly List<ClipRun> _clipRuns = new();
 
     public int VertexCount => _vertexCount;
     public int IndexCount => _indexCount;
     public ReadOnlySpan<UiVertex> Vertices => _vertices.AsSpan(0, _vertexCount);
     public ReadOnlySpan<ushort> Indices => _indices.AsSpan(0, _indexCount);
+    public RectF CurrentClip => _clip;
+
+    /// <summary>读取时物化尾段(最后一次 SetClip 之后的开放区段),否则丢失末端几何。</summary>
+    public ReadOnlySpan<ClipRun> ClipRuns
+    {
+        get
+        {
+            if (_indexCount > _runStart)
+            {
+                _clipRuns.Add(new ClipRun(_clip, _runStart, _indexCount - _runStart));
+                _runStart = _indexCount;
+            }
+            return System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_clipRuns);
+        }
+    }
+
+    public void SetClip(RectF clip)
+    {
+        if (clip == _clip) return;
+        if (_indexCount > _runStart)
+            _clipRuns.Add(new ClipRun(_clip, _runStart, _indexCount - _runStart));
+        _clip = clip;
+        _runStart = _indexCount;
+    }
 
     public void Clear()
     {
         _vertexCount = 0;
         _indexCount = 0;
+        _clipRuns.Clear();
+        _clip = FullClip;
+        _runStart = 0;
     }
 
     void Ensure(int extraVerts, int extraIndices)

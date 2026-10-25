@@ -50,7 +50,7 @@ public sealed class GraphicsContext : IDisposable
                 depthTestEnabled: false, depthWriteEnabled: false, comparisonKind: ComparisonKind.Always),
             RasterizerState = new RasterizerStateDescription(
                 cullMode: FaceCullMode.None, fillMode: PolygonFillMode.Solid,
-                frontFace: FrontFace.Clockwise, depthClipEnabled: false, scissorTestEnabled: false),
+                frontFace: FrontFace.Clockwise, depthClipEnabled: false, scissorTestEnabled: true),
             PrimitiveTopology = PrimitiveTopology.TriangleList,
             ResourceLayouts = new[] { layout },
             ShaderSet = new ShaderSetDescription(new[] { vertexLayout }, shaders),

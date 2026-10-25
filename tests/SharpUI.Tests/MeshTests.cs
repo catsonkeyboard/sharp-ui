@@ -68,4 +68,31 @@ public class MeshTests
         Assert.Throws<InvalidOperationException>(() =>
             mesh.AddQuad(new RectF(0, 0, 1, 1), new RectF(0, 0, 1, 1), Color32.White));
     }
+
+    [Fact]
+    public void SetClip_SplitsRunsAndClearResets()
+    {
+        var mesh = new MeshBuilder();
+        RectF uv = new(0, 0, 1, 1);
+        mesh.AddQuad(new RectF(0, 0, 8, 8), uv, Color32.White);
+        mesh.SetClip(new RectF(0, 0, 4, 4));
+        mesh.AddQuad(new RectF(0, 0, 8, 8), uv, Color32.White);
+        mesh.SetClip(new RectF(0, 0, 4, 4));       // 同值 no-op
+        mesh.AddQuad(new RectF(0, 0, 8, 8), uv, Color32.White);
+        Assert.Equal(2, mesh.ClipRuns.Length);
+        Assert.Equal(6, mesh.ClipRuns[0].Count);   // 第一个 quad(全屏剪裁)
+        Assert.Equal(12, mesh.ClipRuns[1].Count);  // 后两个 quad(4,4 剪裁)
+        mesh.Clear();
+        Assert.Equal(0, mesh.ClipRuns.Length);
+        Assert.Equal(new RectF(0, 0, float.MaxValue, float.MaxValue), mesh.CurrentClip);
+    }
+
+    [Fact]
+    public void Intersect_ReturnsClampedEmpty()
+    {
+        Assert.Equal(new RectF(5, 5, 5, 5), new RectF(0, 0, 10, 10).Intersect(new RectF(5, 5, 10, 10)));
+        RectF none = new RectF(0, 0, 10, 10).Intersect(new RectF(20, 20, 5, 5));
+        Assert.True(none.IsEmpty);
+        Assert.Equal(0f, none.Width);
+    }
 }

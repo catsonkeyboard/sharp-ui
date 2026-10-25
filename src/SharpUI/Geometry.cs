@@ -28,6 +28,12 @@ public readonly record struct RectF(float X, float Y, float Width, float Height)
     public bool Intersects(RectF o) =>
         !IsEmpty && !o.IsEmpty && X < o.Right && o.X < Right && Y < o.Bottom && o.Y < Bottom;
 
+    public RectF Intersect(RectF o)
+    {
+        float x = MathF.Max(X, o.X), y = MathF.Max(Y, o.Y);
+        return new RectF(x, y, MathF.Max(0f, MathF.Min(Right, o.Right) - x), MathF.Max(0f, MathF.Min(Bottom, o.Bottom) - y));
+    }
+
     public RectF Inflate(Thickness t) =>
         new(X - t.Left, Y - t.Top, Width + t.Horizontal, Height + t.Vertical);
 

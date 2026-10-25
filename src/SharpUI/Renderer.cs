@@ -39,15 +39,15 @@ public sealed class Renderer : IDisposable
         }
     }
 
-    public void Submit(MeshBuilder mesh, SizeF screenSize, Framebuffer framebuffer)
+    public void Submit(MeshBuilder mesh, SizeF logicalScreen, Framebuffer framebuffer, float scale = 1f)
     {
         bool hasGeometry = mesh.IndexCount > 0;
         if (hasGeometry)
             EnsureCapacity(mesh);
 
         Span<byte> uniform = stackalloc byte[8];
-        BinaryPrimitives.WriteSingleLittleEndian(uniform, screenSize.Width);
-        BinaryPrimitives.WriteSingleLittleEndian(uniform.Slice(4), screenSize.Height);
+        BinaryPrimitives.WriteSingleLittleEndian(uniform, logicalScreen.Width);
+        BinaryPrimitives.WriteSingleLittleEndian(uniform.Slice(4), logicalScreen.Height);
 
         CommandList cl = _ctx.Commands;
         cl.Begin();
@@ -63,8 +63,41 @@ public sealed class Renderer : IDisposable
         cl.SetVertexBuffer(0, _vertexBuffer);
         cl.SetIndexBuffer(_indexBuffer, IndexFormat.UInt16);
         cl.SetGraphicsResourceSet(0, _ctx.AtlasSet);
-        if (hasGeometry)
-            cl.DrawIndexed((uint)mesh.IndexCount);
+        if (mesh.IndexCount == 0)
+        {
+            // 无几何:仅清屏,不设 scissor、不绘制
+        }
+        else
+        {
+            uint fbW = framebuffer.Width, fbH = framebuffer.Height;
+            ReadOnlySpan<MeshBuilder.ClipRun> runs = mesh.ClipRuns;
+            if (runs.Length == 0)
+            {
+                cl.SetScissorRect(0, 0, 0, fbW, fbH);
+                cl.DrawIndexed((uint)mesh.IndexCount, 1u, 0u, 0, 0u);
+            }
+            else
+            {
+                foreach (ref readonly MeshBuilder.ClipRun run in runs)
+                {
+                    if (run.Count == 0) continue;
+                    if (run.Clip == MeshBuilder.FullClip)
+                    {
+                        cl.SetScissorRect(0, 0, 0, fbW, fbH);
+                    }
+                    else
+                    {
+                        uint x = (uint)MathF.Max(0f, run.Clip.X * scale);
+                        uint y = (uint)MathF.Max(0f, run.Clip.Y * scale);
+                        uint w = (uint)MathF.Min(fbW - MathF.Min(x, fbW), MathF.Ceiling(run.Clip.Width * scale));
+                        uint h = (uint)MathF.Min(fbH - MathF.Min(y, fbH), MathF.Ceiling(run.Clip.Height * scale));
+                        if (w == 0 || h == 0) continue;
+                        cl.SetScissorRect(0, x, y, w, h);
+                    }
+                    cl.DrawIndexed((uint)run.Count, 1u, (uint)run.Start, 0, 0u);
+                }
+            }
+        }
         cl.End();
         _ctx.Device.SubmitCommands(cl);
     }
