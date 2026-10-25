@@ -172,9 +172,24 @@ sharp-ui/
 4. 性能基线测试(Release):Counter 场景(约 30 元素)稳态每帧托管分配 ≤64KB、单帧 CPU 耗时 <8ms(预期 <2ms)。
 5. 全程无 `unsafe` 代码、`IsAotCompatible` 分析器零警告。
 
-### M2 应用(目标 +3~4 个月)
+### M2 应用(目标 +3~4 个月;2026-10-25 起分五阶段执行)
 
 完整 flexbox(wrap/basis/grow/shrink)、keyed diff 与状态(Entity/`State<T>`)、焦点与键盘、滚动容器与虚拟化列表、即时模式逃生舱、HarfBuzz shaping + 中文/emoji 承诺、DPI 缩放、macOS/Linux CI 三平台 AOT 发布、热重载工作流文档、文本 SDF 评估。
+
+**阶段划分(依赖排序,每阶段独立可测):**
+
+| 阶段 | 内容 | 前置 |
+|---|---|---|
+| M2a 内核 | ushort 守卫、Ui.Button、稳定 id + State\<T\>、点击身份 id 化、焦点与键盘(Tab/Enter/Space)、性能再基线 | M1 |
+| M2b 交互与布局 | 即时模式逃生舱(管线重排:上帧几何交互 + 点击账本)、全量 flexbox、剪裁(scissor)、DPI 缩放 | M2a |
+| M2c 滚动列表 | 滚轮事件、滚动容器(id 状态)、虚拟化列表 | M2b |
+| M2d 文本升级 | HarfBuzzSharp shaping、字体回退链、中文/emoji 承诺测试、SDF 评估(文档) | M2a(可与 M2b/c 并行) |
+| M2e 交付管道 | 三平台 CI AOT、trimmer 抑制、热重载工作流文档 | 需 GitHub remote |
+
+**M2 架构裁定(2026-10-25):**
+- D10 "keyed diff"在每帧重建架构下实现为**键解析 + 状态对账**:每帧树走查计算元素稳定 id(Key 优先、`类型名+兄弟索引` 回退),状态按键存取、帧末清扫失联键。不引入结构 diff——状态正确性不依赖实例复用(egui 同款模型,实测预算内)。
+- D11(C# 语言约束,M2b 生效):`ref struct` 不能作泛型参数,规格 §5.2 逃生舱的闭包式 API `ui.Row(ui => {...})` 无法用 ref struct 实现;逃生舱用 sealed class + 闭包,接受小量每帧分配(预算余量 40 倍)。零分配目标由池化兜底,不阻塞 API 形态。
+- D12 `Veldrid.Key` 出现在公开 API(KeyEventData)为接受的技术债;M3 自研后端/输入层时一并抽象。
 
 ### M3 生产(目标 +6~12 个月)
 
