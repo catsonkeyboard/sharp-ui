@@ -3,7 +3,7 @@ using SkiaSharp.HarfBuzz;
 
 namespace SharpUI;
 
-/// <summary>文本图集 v2(D21):回退链分 run + HarfBuzz shaping 定位;字形位图 per-char 缓存(键含槽位)。</summary>
+/// <summary>文本图集 v2(D21):回退链分 run + HarfBuzz shaping 定位;shaping 结果快照缓存(T4,Measure/DrawRun 共用);字形位图 per-char 缓存(键含槽位)。</summary>
 public sealed class TextAtlas : IDisposable
 {
     readonly GraphicsContext _ctx;
@@ -14,6 +14,8 @@ public sealed class TextAtlas : IDisposable
     readonly SKFont[] _probeFonts;                       // ContainsGlyph 探针(槽级,字号无关)
     readonly Dictionary<int, SKFont> _fonts = new();     // ((slot<<12)|size)<<1|bold,size<4096
     readonly Dictionary<(string Unit, int Size, bool Bold, int Slot), Glyph> _glyphs = new();   // Unit=单 BMP 字符或代理对(emoji)
+    readonly Dictionary<(string Text, int Size, bool Bold), ShapedLayout> _shapedCache = new();   // shaping 快照 LRU(D22 粗粒度逐出)
+    const int ShapedCacheCapacity = 512;
     readonly Dictionary<int, (float Ascent, float Descent)> _lineMetrics = new();
     readonly ShelfPacker _packer;
     readonly SKBitmap _bitmap;
@@ -148,14 +150,8 @@ public sealed class TextAtlas : IDisposable
         if (text.Length == 0) return SizeF.Zero;
         int size = SizeKey(fontSize, _scale);
         (float ascent, float descent) = GetLineMetrics(size, bold);
-        float width = 0f;
-        foreach ((int slot, int start, int len) in SplitRuns(text))
-        {
-            string run = text.Substring(start, len);
-            SKShaper.Result r = _shapers[slot].Shape(run, 0f, 0f, GetFont(slot, size, bold));
-            width += r.Width;
-        }
-        return new SizeF(width / _scale, (ascent + descent) / _scale);
+        ShapedLayout layout = GetShaped(text, size, bold);
+        return new SizeF(layout.TotalWidth, (ascent + descent) / _scale);
     }
 
     public void DrawRun(MeshBuilder mesh, string text, PointF topLeft, float fontSize, bool bold, Color32 color)
@@ -164,25 +160,56 @@ public sealed class TextAtlas : IDisposable
         (float ascent, _) = GetLineMetrics(size, bold);
         float xLogical = topLeft.X;
         float baselineY = topLeft.Y + ascent / _scale;
-        foreach ((int slot, int start, int len) in SplitRuns(text))
+        ShapedLayout layout = GetShaped(text, size, bold);   // 命中缓存即不再调 shaper
+        foreach (ShapedRun r in layout.Runs)
         {
-            string run = text.Substring(start, len);
-            SKFont font = GetFont(slot, size, bold);
-            SKShaper.Result r = _shapers[slot].Shape(run, 0f, 0f, font);   // 逻辑→物理:x*scale
+            string run = r.Text;
             for (int gi = 0; gi < r.Codepoints.Length; gi++)
             {
                 int ci = ClusterToCharIndex(run, r.Clusters[gi]);   // cluster=run 内 UTF-8 字节偏移,非字符下标(ASCII 时两者重合)
                 int ul = UnitLen(run, ci);
                 if (run[ci] != ' ')
                 {
-                    Glyph g = GetGlyph(run.Substring(ci, ul), size, bold, slot);
-                    float gx = xLogical + r.Points[gi].X / _scale;
+                    Glyph g = GetGlyph(run.Substring(ci, ul), size, bold, r.Slot);
+                    float gx = xLogical + r.Points[gi].X;   // 快照已存逻辑坐标(物理/_scale)
                     float top = baselineY - g.BearingY / _scale;
                     mesh.AddQuad(new RectF(gx, top, g.Width / _scale, g.Height / _scale), g.Uv, color);
                 }
             }
-            xLogical += r.Width / _scale;
+            xLogical += r.Width;
         }
+    }
+
+    /// <summary>shaping 结果缓存(T4):Measure/DrawRun 共用;未命中才 SplitRuns+Shape+快照。</summary>
+    ShapedLayout GetShaped(string text, int size, bool bold)
+    {
+        var key = (text, size, bold);
+        if (!_shapedCache.TryGetValue(key, out ShapedLayout? layout))
+        {
+            layout = ShapeLayout(text, size, bold);
+            _shapedCache[key] = layout;
+            if (_shapedCache.Count > ShapedCacheCapacity)
+                _shapedCache.Clear();   // D22 粗粒度逐出:超容量全清(条目为纯托管快照,全清代价低于 LRU 链表维护;下次访问自然重建)
+        }
+        return layout;
+    }
+
+    ShapedLayout ShapeLayout(string text, int size, bool bold)
+    {
+        var runs = new List<ShapedRun>();
+        float total = 0f;
+        foreach ((int slot, int start, int len) in SplitRuns(text))
+        {
+            string run = text.Substring(start, len);
+            SKShaper.Result r = _shapers[slot].Shape(run, 0f, 0f, GetFont(slot, size, bold));   // 逻辑→物理:x*scale
+            var points = new SKPoint[r.Codepoints.Length];   // Points 快照转逻辑坐标(物理/_scale),DrawRun 直接消费
+            for (int i = 0; i < points.Length; i++)
+                points[i] = new SKPoint(r.Points[i].X / _scale, r.Points[i].Y / _scale);
+            float width = r.Width / _scale;
+            total += width;
+            runs.Add(new ShapedRun(run, slot, (uint[])r.Codepoints.Clone(), points, (uint[])r.Clusters.Clone(), width));
+        }
+        return new ShapedLayout(runs.ToArray(), total);
     }
 
     static int SizeKey(float fontSize, float scale = 1f) => Math.Max(4, (int)MathF.Ceiling(fontSize * scale));
@@ -241,4 +268,32 @@ public sealed class TextAtlas : IDisposable
     }
 
     readonly record struct Glyph(RectF Uv, float Width, float Height, float BearingY, float Advance);
+
+    /// <summary>单 run 的 shaping 快照(T4):坐标已转逻辑(物理/_scale);含 glyph 循环所需全部数据,DrawRun 命中缓存后不再调 shaper。</summary>
+    sealed class ShapedRun
+    {
+        public readonly string Text;            // run 原文(ClusterToCharIndex/UnitLen/GetGlyph 键)
+        public readonly int Slot;
+        public readonly uint[] Codepoints;
+        public readonly SKPoint[] Points;       // 逻辑坐标(快照时已除 _scale)
+        public readonly uint[] Clusters;        // run 内 UTF-8 字节偏移
+        public readonly float Width;            // 逻辑宽
+
+        public ShapedRun(string text, int slot, uint[] codepoints, SKPoint[] points, uint[] clusters, float width)
+        {
+            Text = text; Slot = slot; Codepoints = codepoints; Points = points; Clusters = clusters; Width = width;
+        }
+    }
+
+    /// <summary>整行 shaping 快照(T4):逻辑总宽 + 各 run;条目不可变,缓存命中直接复用。</summary>
+    sealed class ShapedLayout
+    {
+        public readonly ShapedRun[] Runs;
+        public readonly float TotalWidth;       // 逻辑
+
+        public ShapedLayout(ShapedRun[] runs, float totalWidth)
+        {
+            Runs = runs; TotalWidth = totalWidth;
+        }
+    }
 }

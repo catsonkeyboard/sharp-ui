@@ -3,6 +3,7 @@ using static SharpUI.Ui;
 
 namespace SharpUI.Tests;
 
+[Collection("interaction")]   // 触碰 App.State/App.Atlas 静态,与其余静态用户串行(沿用 UiScopeTests 惯例)
 public class TextFieldTests
 {
     static (TextFieldElement tf, PanelElement root) Field(string text = "", string key = "f")

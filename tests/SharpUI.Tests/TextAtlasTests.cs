@@ -112,4 +112,29 @@ public class TextAtlasTests
         atlas.DrawRun(mesh, "a你b😀c", new PointF(0, 0), 16f, false, Color32.White);
         Assert.Equal(5, mesh.VertexCount / 4);      // 5 个可见字形,各归各槽
     }
+
+    [Fact]
+    [Trait("Category", "Gpu")]
+    public void ShapedCache_ReuseYieldsIdenticalLayout()
+    {
+        using var ctx = GraphicsContext.CreateHeadless(64, 64);
+        using var atlas = new TextAtlas(ctx);
+        var m1 = new MeshBuilder();
+        atlas.DrawRun(m1, "cache me 你", new PointF(0, 0), 16f, false, Color32.White);
+        var m2 = new MeshBuilder();
+        atlas.DrawRun(m2, "cache me 你", new PointF(0, 0), 16f, false, Color32.White);
+        Assert.Equal(m1.VertexCount, m2.VertexCount);
+        Assert.Equal(atlas.Measure("cache me 你", 16f).Width, atlas.Measure("cache me 你", 16f).Width);
+    }
+
+    [Fact]
+    [Trait("Category", "Gpu")]
+    public void ShapedCache_EvictsPastCap()
+    {
+        using var ctx = GraphicsContext.CreateHeadless(64, 64);
+        using var atlas = new TextAtlas(ctx);
+        for (int i = 0; i < 600; i++)
+            atlas.Measure($"unique-{i}", 12f);      // 超容量全清,不抛不漏
+        Assert.True(atlas.Measure("unique-0", 12f).Width > 0f);
+    }
 }

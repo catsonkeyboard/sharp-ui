@@ -3,6 +3,7 @@ using static SharpUI.Ui;
 
 namespace SharpUI.Tests;
 
+[Collection("interaction")]   // 触碰 App.State 静态,与其余静态用户串行(沿用 UiScopeTests 惯例)
 public class ScrollTests
 {
     static ScrollElement Tall(int rows, float rowH = 30f)

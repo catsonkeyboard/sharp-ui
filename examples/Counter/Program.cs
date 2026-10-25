@@ -25,6 +25,7 @@ internal static class Program
                 Ui.VirtualList("ticks", 1000, 22f, static (i, row) =>
                     row.Add(Ui.Text($"tick {i:0000}").Size(13).Color(0x7AA2F7))).Basis(110f).Fill(0x101014).Radius(8f),
                 Ui.Text("你好 SharpUI 😀").Size(15).Color(0x9AA2B3),
+                Ui.TextField("type here…").Key("edit"),
                 Ui.Immediate("debug", ui =>
                 {
                     ui.Text($"count = {state.Count}", 14, 0x9AA2B3);
