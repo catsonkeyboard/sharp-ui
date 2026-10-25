@@ -72,4 +72,31 @@ public class TextEditingTests
         var s = new TextState("ab", 9);
         Assert.Equal(s with { Cursor = 2 }, TextEditing.Apply(s, null, null));
     }
+
+    [Fact] public void Paste_EmptyString_NoSelection_NoOp()   // Feed 层已挡空剪贴板,纯函数边界:原样返回
+    {
+        var s = new TextState("ab", 1);
+        Assert.Equal(s, TextEditing.Paste(s, ""));
+    }
+
+    [Fact] public void Paste_NoSelection_InsertsAtCursor_AnchorCollapsed()
+    {
+        Assert.Equal(new TextState("aXYb", 3), TextEditing.Paste(new TextState("ab", 1), "XY"));
+    }
+
+    [Fact] public void Paste_ReplacesSelection_CursorAtPastedEnd()
+    {
+        Assert.Equal(new TextState("aZd", 2), TextEditing.Paste(new TextState("abcd", 1, 3), "Z"));
+    }
+
+    [Fact] public void CutCopy_SelectionDeletesAndReturns_NoSelectionOriginalAndNull()
+    {
+        var (after, copied) = TextEditing.CutCopy(new TextState("abcd", 3, 1));   // 选区 [1,3)
+        Assert.Equal(new TextState("ad", 1), after);
+        Assert.Equal("bc", copied);
+        var plain = new TextState("ab", 1);
+        (TextState same, string? none) = TextEditing.CutCopy(plain);
+        Assert.Equal(plain, same);
+        Assert.Null(none);
+    }
 }

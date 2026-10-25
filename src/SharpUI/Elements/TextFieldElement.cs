@@ -42,8 +42,52 @@ public sealed class TextFieldElement : PanelElement, ITextFeedable
     public void Feed(KeyEventData[]? keys, char[]? chars)
     {
         if (App.State is not { } st) return;
-        st.Set(StateKey, TextEditing.Apply(State, keys, chars));
+        TextState s = State;
+        KeyEventData[]? remaining = keys;
+        bool clipboardKey = false;
+        if (keys is not null)
+        {
+            foreach (KeyEventData k in keys)
+            {
+                if (!k.Down || !k.Ctrl) continue;
+                if (k.Key == Veldrid.Key.C)   // 仅复制:有选区才写剪贴板,状态不动
+                {
+                    string? copied = TextEditing.CutCopy(s).Copied;
+                    if (copied is not null) Clipboard.SetText(copied);
+                    clipboardKey = true;
+                }
+                else if (k.Key == Veldrid.Key.X)   // 剪切:写剪贴板 + 采纳删除后状态(无选区 CutCopy 返回原态)
+                {
+                    (TextState after, string? copied) = TextEditing.CutCopy(s);
+                    if (copied is not null) { Clipboard.SetText(copied); s = after; }
+                    clipboardKey = true;
+                }
+                else if (k.Key == Veldrid.Key.V)   // 粘贴:空剪贴板为 no-op
+                {
+                    string text = Clipboard.GetText();
+                    if (text.Length > 0) s = TextEditing.Paste(s, text);
+                    clipboardKey = true;
+                }
+            }
+            if (clipboardKey) remaining = WithoutClipboardKeys(keys);   // 消费掉剪贴板组合键,Apply 不再见
+        }
+        st.Set(StateKey, TextEditing.Apply(s, remaining, chars));
     }
+
+    static KeyEventData[] WithoutClipboardKeys(KeyEventData[] keys)
+    {
+        int n = 0;
+        foreach (KeyEventData k in keys) if (IsClipboardKey(k)) n++;
+        if (n == 0) return keys;
+        var filtered = new KeyEventData[keys.Length - n];
+        int i = 0;
+        foreach (KeyEventData k in keys)
+            if (!IsClipboardKey(k)) filtered[i++] = k;
+        return filtered;
+    }
+
+    static bool IsClipboardKey(KeyEventData k) =>
+        k.Ctrl && (k.Key == Veldrid.Key.C || k.Key == Veldrid.Key.X || k.Key == Veldrid.Key.V);
 
     protected internal override SizeF MeasureSelf(SizeF available)
     {

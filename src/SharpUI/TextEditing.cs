@@ -16,6 +16,28 @@ public static class TextEditing
         return (a, b - a);
     }
 
+    /// <summary>粘贴(M3c):替换选区(无选区即在光标处插入),光标落粘贴串末,锚塌陷为无选区。</summary>
+    public static TextState Paste(TextState s, string text)
+    {
+        text ??= "";
+        int cursor = Math.Clamp(s.Cursor, 0, s.Text.Length);
+        int anchor = s.Anchor < 0 ? cursor : Math.Clamp(s.Anchor, 0, s.Text.Length);
+        (int start, int len) = Selection(new TextState(s.Text, cursor, anchor));
+        string result = s.Text.Remove(start, len).Insert(start, text);
+        return new TextState(result, start + text.Length);
+    }
+
+    /// <summary>复制/剪切(M3c):有选区 → After=删除选区+塌陷至选区头,Copied=选区文本;
+    /// 无选区 → (原态, null)(调用方据此免写剪贴板)。</summary>
+    public static (TextState After, string? Copied) CutCopy(TextState s)
+    {
+        int cursor = Math.Clamp(s.Cursor, 0, s.Text.Length);
+        int anchor = s.Anchor < 0 ? cursor : Math.Clamp(s.Anchor, 0, s.Text.Length);
+        (int start, int len) = Selection(new TextState(s.Text, cursor, anchor));
+        if (len == 0) return (s, null);
+        return (new TextState(s.Text.Remove(start, len), start), s.Text.Substring(start, len));
+    }
+
     public static TextState Apply(TextState s, KeyEventData[]? keys, char[]? chars)
     {
         int cursor = Math.Clamp(s.Cursor, 0, s.Text.Length);
