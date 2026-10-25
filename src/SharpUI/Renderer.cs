@@ -87,10 +87,13 @@ public sealed class Renderer : IDisposable
                     }
                     else
                     {
-                        uint x = (uint)MathF.Max(0f, run.Clip.X * scale);
-                        uint y = (uint)MathF.Max(0f, run.Clip.Y * scale);
-                        uint w = (uint)MathF.Min(fbW - MathF.Min(x, fbW), MathF.Ceiling(run.Clip.Width * scale));
-                        uint h = (uint)MathF.Min(fbH - MathF.Min(y, fbH), MathF.Ceiling(run.Clip.Height * scale));
+                        // 精确包含矩形:floor(左上)、ceil(右下),避免缩放下 1px 小数欠覆盖(T5 续订)
+                        float left = run.Clip.X * scale, top = run.Clip.Y * scale;
+                        float right = run.Clip.Right * scale, bottom = run.Clip.Bottom * scale;
+                        uint x = (uint)Math.Clamp(MathF.Floor(left), 0f, fbW);
+                        uint y = (uint)Math.Clamp(MathF.Floor(top), 0f, fbH);
+                        uint w = (uint)Math.Clamp(MathF.Ceiling(right) - x, 0f, fbW - x);
+                        uint h = (uint)Math.Clamp(MathF.Ceiling(bottom) - y, 0f, fbH - y);
                         if (w == 0 || h == 0) continue;
                         cl.SetScissorRect(0, x, y, w, h);
                     }

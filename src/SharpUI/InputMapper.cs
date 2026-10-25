@@ -6,8 +6,8 @@ namespace SharpUI;
 /// <summary>SDL InputSnapshot → RawInput 纯映射(可单测)。LeftHeld 来自 IsMouseDown 持久按键态(D13/D15)。</summary>
 public static class InputMapper
 {
-    public static RawInput Map(InputSnapshot snapshot) => new(
-        new PointF(snapshot.MousePosition.X, snapshot.MousePosition.Y),
+    public static RawInput Map(InputSnapshot snapshot, float scale = 1f) => new(
+        new PointF(snapshot.MousePosition.X / scale, snapshot.MousePosition.Y / scale),
         LeftEvents(snapshot.MouseEvents),
         MapKeys(snapshot.KeyEvents),
         snapshot.IsMouseDown(MouseButton.Left));

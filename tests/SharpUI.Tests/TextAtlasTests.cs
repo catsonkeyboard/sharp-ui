@@ -51,4 +51,18 @@ public class TextAtlasTests
         // 重复调用不抛错、两次四边形数一致(缓存命中)
         Assert.Equal(4, mesh.VertexCount / 4);
     }
+
+    [Fact]
+    [Trait("Category", "Gpu")]
+    public void Measure_LogicalSizeInvariantAcrossScales()
+    {
+        using var ctx1 = GraphicsContext.CreateHeadless(64, 64);
+        using var atlas1 = new TextAtlas(ctx1, 1f);
+        using var ctx2 = GraphicsContext.CreateHeadless(64, 64);
+        using var atlas2 = new TextAtlas(ctx2, 2f);
+        SizeF m1 = atlas1.Measure("Hello", 16f);
+        SizeF m2 = atlas2.Measure("Hello", 16f);
+        Assert.InRange(m2.Width, m1.Width - 1.5f, m1.Width + 1.5f);   // 字体度量比例回除,±1.5 容差
+        Assert.InRange(m2.Height, m1.Height - 1.5f, m1.Height + 1.5f);
+    }
 }

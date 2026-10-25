@@ -17,12 +17,16 @@ public sealed class App
     readonly Renderer _renderer;
     readonly Func<Element>? _render;
 
-    App(Sdl2Window window, GraphicsDevice device, Func<Element>? render)
+    /// <summary>DPI 缩放比(0.5–4 夹紧);鼠标/文本/剪裁统一换算基准(D18)。</summary>
+    public float ScaleFactor { get; }
+
+    App(Sdl2Window window, GraphicsDevice device, Func<Element>? render, float scale)
     {
         _window = window;
         _ctx = GraphicsContext.CreateForWindow(window, device);
         _renderer = new Renderer(_ctx);
         _render = render;
+        ScaleFactor = scale;
     }
 
     public static App Create(string title, int width, int height, Func<Element>? render = null)
@@ -36,12 +40,13 @@ public sealed class App
         device.MainSwapchain.SyncToVerticalBlank = true;   // 60fps VSync(spec §7)
         window.Resized += () => device.ResizeMainWindow((uint)window.Width, (uint)window.Height);
         window.FocusLost += Interaction.CancelPress;   // D15:Sdl2Window.FocusLost 存在
-        return new App(window, device, render);
+        float scale = Math.Clamp(window.ScaleFactor.X, 0.5f, 4f);
+        return new App(window, device, render, scale);
     }
 
     public int Run(int maxFrames = 0)
     {
-        Atlas = new TextAtlas(_ctx);
+        Atlas = new TextAtlas(_ctx, ScaleFactor);
         State = new StateStore();
         var mesh = new MeshBuilder();
         var focus = new FocusManager();
@@ -49,7 +54,7 @@ public sealed class App
         int frames = 0;
         while (_window.Exists)
         {
-            RawInput raw = InputMapper.Map(_window.PumpEvents());
+            RawInput raw = InputMapper.Map(_window.PumpEvents(), ScaleFactor);
             InputState input = lastTree is not null
                 ? Interaction.Update(lastTree, in raw, focus)
                 : InputState.Empty;
@@ -62,11 +67,11 @@ public sealed class App
             focus.HandleKeys(raw.KeyEvents ?? Array.Empty<KeyEventData>());
             input = input with { Focused = focus.FocusedThisFrame, FocusedId = focus.FocusedId };
 
-            SizeF screen = new(_window.Width, _window.Height);
+            SizeF screen = new(_window.Width / ScaleFactor, _window.Height / ScaleFactor);
             LayoutEngine.Arrange(root, new RectF(0, 0, screen.Width, screen.Height));
             mesh.Clear();
             root.Draw(new PaintContext(mesh, Atlas, input));
-            _renderer.Submit(mesh, screen, _ctx.Device.MainSwapchain.Framebuffer);
+            _renderer.Submit(mesh, screen, _ctx.Device.MainSwapchain.Framebuffer, ScaleFactor);
             _ctx.Device.SwapBuffers();
             State.Sweep();
             lastTree = root;

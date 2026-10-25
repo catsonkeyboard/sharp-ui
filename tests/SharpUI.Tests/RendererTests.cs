@@ -55,5 +55,25 @@ public class RendererTests
         Assert.Equal(new byte[] { 20, 18, 18, 255 }, Pixel(px, 40, 32));      // 右区被剪→清屏色(RGB 18,18,20→BGR 存储 [B,G,R,A])
     }
 
-    static byte[] Pixel(byte[] rgba, int x, int y) => rgba.AsSpan((y * 64 + x) * 4, 4).ToArray();
+    [Fact]
+    [Trait("Category", "Gpu")]
+    public void ScaleTwoX_LogicalQuadCoversSameFraction()
+    {
+        using var ctx = GraphicsContext.CreateHeadless(128, 128);
+        ctx.UpdateAtlasRegion(new byte[] { 255, 255, 255, 255 }, 0, 0, 1, 1);
+        var mesh = new MeshBuilder();
+        float inv = 1f / GraphicsContext.AtlasSize;
+        mesh.AddQuad(new RectF(16, 16, 32, 32), new RectF(0, 0, inv, inv), Color32.White);
+        using var renderer = new Renderer(ctx);
+        renderer.Submit(mesh, new SizeF(64, 64), ctx.MainFramebuffer, scale: 2f);
+        byte[] px = ctx.ReadBackMainFramebuffer();
+        Assert.Equal(new byte[] { 255, 255, 255, 255 }, Pixel(px, 64, 64));   // 物理中心=逻辑中心
+        Assert.Equal(new byte[] { 20, 18, 18, 255 }, Pixel(px, 4, 4));
+    }
+
+    static byte[] Pixel(byte[] rgba, int x, int y)
+    {
+        int width = (int)MathF.Sqrt(rgba.Length / 4);   // 方形帧缓冲:64 或 128
+        return rgba.AsSpan((y * width + x) * 4, 4).ToArray();
+    }
 }

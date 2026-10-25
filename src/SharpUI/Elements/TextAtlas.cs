@@ -14,12 +14,14 @@ public sealed class TextAtlas : IDisposable
     readonly ShelfPacker _packer;
     readonly SKBitmap _bitmap;
     readonly SKCanvas _canvas;
+    readonly float _scale;                                             // D18:物理/逻辑比,字形按物理尺寸光栅
 
     public RectF WhiteUv { get; private set; }
 
-    public TextAtlas(GraphicsContext ctx)
+    public TextAtlas(GraphicsContext ctx, float scale = 1f)
     {
         _ctx = ctx;
+        _scale = scale;
         _regular = SKTypeface.FromFamilyName("Segoe UI") ?? SKTypeface.Default;
         _bold = SKTypeface.FromFamilyName("Segoe UI", SKFontStyle.Bold) ?? _regular;
         _packer = new ShelfPacker(GraphicsContext.AtlasSize, GraphicsContext.AtlasSize);
@@ -70,27 +72,27 @@ public sealed class TextAtlas : IDisposable
     public SizeF Measure(string text, float fontSize, bool bold = false)
     {
         if (text.Length == 0) return SizeF.Zero;
-        int size = SizeKey(fontSize);
+        int size = SizeKey(fontSize, _scale);
         (float ascent, float descent) = GetLineMetrics(size, bold);
-        return new SizeF(GetFont(size, bold).MeasureText(text, out _, _paint), ascent + descent);
+        return new SizeF(GetFont(size, bold).MeasureText(text, out _, _paint) / _scale, (ascent + descent) / _scale);
     }
 
     public void DrawRun(MeshBuilder mesh, string text, PointF topLeft, float fontSize, bool bold, Color32 color)
     {
-        int size = SizeKey(fontSize);
+        int size = SizeKey(fontSize, _scale);
         (float ascent, _) = GetLineMetrics(size, bold);
-        float baselineY = topLeft.Y + ascent;
+        float baselineY = topLeft.Y + ascent / _scale;
         float x = topLeft.X;
         foreach (char c in text)
         {
             Glyph g = GetGlyph(c, size, bold);
             if (c != ' ')
-                mesh.AddQuad(new RectF(x, baselineY - g.BearingY, g.Width, g.Height), g.Uv, color);
-            x += g.Advance;
+                mesh.AddQuad(new RectF(x, baselineY - g.BearingY / _scale, g.Width / _scale, g.Height / _scale), g.Uv, color);
+            x += g.Advance / _scale;
         }
     }
 
-    static int SizeKey(float fontSize) => Math.Max(4, (int)MathF.Ceiling(fontSize));
+    static int SizeKey(float fontSize, float scale) => Math.Max(4, (int)MathF.Ceiling(fontSize * scale));
 
     Glyph GetGlyph(char c, int size, bool bold)
     {
