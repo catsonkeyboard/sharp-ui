@@ -199,11 +199,20 @@ sharp-ui/
 - D18(M2b-ii DPI):`App.ScaleFactor`(读 `Sdl2Window.ScaleFactor.X`,钳制 0.5~4);几何**零着色器改动**(uniform 携带逻辑尺寸时 NDC 分数与物理/逻辑无关);scissor 物理像素 = 剪裁×scale;鼠标 ÷scale 入 RawInput;TextAtlas 以物理字号(⌈字号×scale⌉)光栅、四边形按逻辑尺寸回除(scale≥1 整数倍 Point 采样精确;小数倍轻微锯齿由 M2d SDF/Linear 重估解决);`Renderer.Submit(mesh, 逻辑尺寸, fb, scale=1)`/`InputMapper.Map(snapshot, scale=1)` 默认参保既有测试零改动。
 - D19(M2c 滚动):滚轮通道 `RawInput.WheelDelta`/`InputState.WheelDelta`(InputSnapshot.WheelDelta 已验证存在);**滚轮分发在构建前、上帧保留树上**(App.Run 内 Interaction.Update 之后):深度优先递归找最深包含鼠标的 ScrollElement(子先父后,最深者赢,天然支持嵌套);偏移存 `StateStore["scroll:"+ResolvedId]`,钳 [0, content−viewport];步长 WheelDelta×40 逻辑像素;滚动条可视化与按压捕获为 M3。ScrollElement 测量按内容(Column 同款),父容器须给定高度(Basis/Stretch)。
 - D20(M2c 虚拟化):`VirtualListElement(key, count, itemHeight, render)`:固定行高,可见窗 ±1 过扫;行元素 Key=索引字符串(跨窗移稳定);Arrange 时按窗重建子项并对其子树重跑 IdResolver.Assign;ContentMain=count×itemHeight 供滚轮分发;继承 ScrollElement。
-- D21(M2d 文本):SkiaSharp 4 画布已无 glyph 级绘制(探针证实,DrawGlyphs/DrawTextBlob 均移除;首次探针"编译通过"系 tail 截断误读,已纠正)。设计:字形位图仍走既有 per-char 图集缓存;**位置来自 shaping**——按字体回退链(默认 ["Microsoft YaHei","Segoe UI Emoji"],ContainsGlyph 判定,已验证)分 run,每 run `SKShaper.Shape(text,x,y,font)`(四参重载已验证)得 Points/Width,kerning/合成位置即正确;Measure=Σrun.Width;光栅化用非废弃重载 `DrawText(string,float,float,SKTextAlign.Left,font,paint)`(M1 的 CS0618 债就此清偿)。彩色 emoji 由 Skia 位图化自然支持。SDF 仅评估出文档。附注(#24 更正):HarfBuzz Clusters 为 UTF-8 字节偏移而非字符索引,DrawRun 需 ClusterToCharIndex 换算(ASCII 巧合掩盖,中文路径暴露);SKFont.ContainsGlyph 形参为 int。
+- D21(M2d 文本):SkiaSharp 4 画布已无 glyph 级绘制(探针证实,DrawGlyphs/DrawTextBlob 均移除;首次探针"编译通过"系 tail 截断误读,已纠正)。设计:字形位图仍走既有 per-char 图集缓存;**位置来自 shaping**——按字体回退链(默认 ["Microsoft YaHei","Segoe UI Emoji"],ContainsGlyph 判定,已验证)分 run,每 run `SKShaper.Shape(text,x,y,font)`(四参重载已验证)得 Points/Width,kerning/合成位置即正确;Measure=Σrun.Width;光栅化用非废弃重载 `DrawText(string,float,float,SKTextAlign.Left,font,paint)`(M1 的 CS0618 债就此清偿)。彩色 emoji 由 Skia 位图化自然支持。SDF 仅评估出文档。
+- D22(M3a 文本输入):字符通道 `RawInput.Chars`(char[]? 默认 null,源自 KeyCharPresses);`KeyEventData` 增尾参 `bool Ctrl = false`(ModifierKeys.Control 已验证)。**键路由**:App 在构建前用上帧保留树按 `focus.FocusedId` 定位聚焦元素(`TreeWalk.Find(root,id)` 新 helper),若为 TextFieldElement 则 `Feed(keys, chars)`——编辑语义实现为**纯函数静态类 `TextEditing`**(TextState{Text,Cursor,Anchor} → 新 TextState,完全可测),TextField 只是状态绑定壳(状态键 "tf:"+id)。语义:字符追加/替换选区、Backspace/Delete、Left/Right/Home/End(±Shift 选区)、Ctrl+A 全选;复制/粘贴/剪切为 M3c(剪贴板依赖);组合窗口定位 M3c 评估。视觉:光标 1px 竖线、选区半透明蓝、聚焦描边 0x60A5FA;闪烁属 M3b 动画。shaping LRU:`(text,size,bold)→(逻辑宽,分 run 位置快照)` 缓存,Measure/DrawRun 共用,超 512 条全清(粗逐出,注释在案)。附注(#24 更正):HarfBuzz Clusters 为 UTF-8 字节偏移而非字符索引,DrawRun 需 ClusterToCharIndex 换算(ASCII 巧合掩盖,中文路径暴露);SKFont.ContainsGlyph 形参为 int。
 
-### M3 生产(目标 +6~12 个月)
+### M3 生产(目标 +6~12 个月;2026-10-25 起分五阶段)
 
-IME 深水区(必要时替换窗口层)、无障碍(UIA/AX/AT-SPI)、动画、多窗口、系统对话框/托盘/菜单、自研薄后端逐平台替换 Veldrid、性能收紧(每帧分配 ≤8KB)。
+| 阶段 | 内容 | 前置 |
+|---|---|---|
+| M3a 文本输入 | 字符通道、TextField(光标/选区/编辑语义)、shaping LRU 缓存 | M2 ✅ |
+| M3b 动画与性能 | 动画系统、池化与 LRU 收紧至 ≤8KB/帧(规格 §9 M2 目标) | M3a |
+| M3c 多窗口与集成 | 多窗口、剪贴板(原生 P/Invoke,已探明 Sdl2Window 无封装)、对话框/托盘/菜单 | M3a |
+| M3d 自研薄后端 | D3D11 → Metal → OpenGL 逐平台替换 Veldrid(渲染器窄接口既备) | M2 ✅ 可并行 |
+| M3e 无障碍 | UIA/AX/AT-SPI 逐步接入 | M3b |
+
+IME 定位:SDL2 `KeyCharPresses`(已验证 `IReadOnlyList<char>`)承载 IME 提交文本,Windows 下中文输入可过;组合窗口定位属"深水区"(需原生平台层),M3c 评估。
 
 ## 8. 测试策略
 
