@@ -5,13 +5,14 @@ namespace SharpUI;
 
 public sealed class Renderer : IDisposable
 {
-    readonly GraphicsContext _ctx;
+    readonly IRenderContext _ctx;
     DeviceBuffer _vertexBuffer;
     DeviceBuffer _indexBuffer;
     uint _vertexCapacityBytes = 256 * 1024;
     uint _indexCapacityBytes = 512 * 1024;
 
-    public Renderer(GraphicsContext ctx)
+    /// <summary>D27:仅依赖 IRenderContext(GraphicsContext 为现实现);Submit 的 Framebuffer 参数保留——窗口路径需每帧现取交换链目标。</summary>
+    public Renderer(IRenderContext ctx)
     {
         _ctx = ctx;
         ResourceFactory f = ctx.Device.ResourceFactory;

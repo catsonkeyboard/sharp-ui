@@ -6,7 +6,7 @@ namespace SharpUI;
 public sealed class AppWindow
 {
     internal Sdl2Window Window = null!;
-    internal GraphicsContext Ctx = null!;
+    internal GraphicsContext Ctx = null!;   // 具体:TextAtlas/App.Run(Device/SwapBuffers/Dispose)所需;Renderer 侧经 IRenderContext 消费(D27)
     internal Renderer Renderer = null!;
     internal TextAtlas Atlas = null!;
     internal FocusManager Focus = new();

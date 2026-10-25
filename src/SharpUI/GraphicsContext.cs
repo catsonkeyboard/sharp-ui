@@ -5,7 +5,8 @@ using Veldrid.SPIRV;
 
 namespace SharpUI;
 
-public sealed class GraphicsContext : IDisposable
+/// <summary>Veldrid 设备上下文;实现 IRenderContext(Renderer 窄接口,D27/M3d-i)。</summary>
+public sealed class GraphicsContext : IDisposable, IRenderContext
 {
     public const int AtlasSize = 1024;
 
