@@ -192,7 +192,7 @@ sharp-ui/
 - D11(C# 语言约束,M2b 生效):`ref struct` 不能作泛型参数,规格 §5.2 逃生舱的闭包式 API `ui.Row(ui => {...})` 无法用 ref struct 实现;逃生舱用 sealed class + 闭包,接受小量每帧分配(预算余量 40 倍)。零分配目标由池化兜底,不阻塞 API 形态。
 - D12 `Veldrid.Key` 出现在公开 API(KeyEventData)为接受的技术债;M3 自研后端/输入层时一并抽象。
 - D13(M2b-i)交互移至上帧保留树("点击账本"):每帧先对上帧已排列树做命中/点击/焦点按压,再构建本帧树;`InputState` 携带 id(HoveredId/FocusedId/ClickedIds),元素视觉门按 ResolvedId 比较。新出现元素的交互有一帧延迟(egui 同款,16ms 不可感知);换来即时模式在构建期即可回答 `.Clicked()`。Interaction 的 `_leftHeld` 静态退役,改用 `InputSnapshot.IsMouseDown(MouseButton)`(M1 时误记为无此 API,2026-10-25 反射复核存在)。
-- D14(M2b-i)逃生舱 `Ui.Immediate(rootKey, build)`:rootKey 即元素 Key,用户须保证唯一(同 Key 纪律);UiScope 为其创建的每个元素烤入与 IdResolver 回退公式一致的段 Key,使局部路径与全局 ResolvedId 天然对应;`.Clicked()/.Hovered()` 按 `/rootKey/局部路径` 后缀匹配账本;`ui.State<T>(key)` 走 `StateStore`,键名空间 `imm:rootKey:key`。UiScope 为 sealed class + 闭包(D11)。
+- D14(M2b-i)逃生舱 `Ui.Immediate(rootKey, build)`:rootKey 即元素 Key,用户须保证唯一(同 Key 纪律);UiScope 为其创建的每个元素烤入与 IdResolver 回退公式一致的段 Key,使局部路径与全局 ResolvedId 天然对应;`.Clicked()/.Hovered()` 按 `/rootKey/局部路径` 后缀匹配账本;`ui.State<T>(key)` 读 / `ui.SetState(key, value)` 写(裁定#19:C# 不允许仅返回类型差异的重载)走 `StateStore`,键名空间 `imm:rootKey:key`。UiScope 为 sealed class + 闭包(D11)。
 - D15(M2b-i 附录 A 增补,均已反射验证):`Sdl2Window` 有 `FocusLost/FocusGained` 事件、`ScaleFactor : Vector2` 属性(M2b-ii DPI 直用,无需原生调用)、`Focused`;`InputSnapshot` 有 `IsMouseDown(MouseButton)`、`KeyCharPresses`(M3 文本输入);`new MouseEvent(MouseButton, bool)`、`new KeyEvent(Key, bool, ModifierKeys)` 位置构造可用(可测);`InputSnapshot` 无公共构造。
 
 ### M3 生产(目标 +6~12 个月)
