@@ -54,6 +54,7 @@ public sealed class FocusManager
                         && e is ButtonElement button)
                     {
                         button.InvokeClick();
+                        if (button.ResolvedId is string kbId) Interaction.QueueClick(kbId);   // 裁定#18:下一帧账本可见
                     }
                     break;
             }

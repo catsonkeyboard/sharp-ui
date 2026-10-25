@@ -155,7 +155,7 @@ public class InteractionTests
         root.Add(b);
         LayoutEngine.Arrange(root, new RectF(0, 0, 100, 40));
         IdResolver.Assign(root);
-        string id = b.ResolvedId;
+        string id = b.ResolvedId!;
 
         InputState press = Interaction.Update(root, new RawInput(new PointF(50, 5), new[] { true }, LeftHeld: true));
         Assert.True(press.LeftDown);

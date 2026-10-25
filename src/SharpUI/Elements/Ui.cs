@@ -5,6 +5,14 @@ public static class Ui
     public static PanelElement Column(params Element?[] children) => Container(Axis.Vertical, children);
     public static PanelElement Row(params Element?[] children) => Container(Axis.Horizontal, children);
     public static TextElement Text(string text) => new(text);
+
+    /// <summary>即时模式逃生舱(D14):rootKey 须全树唯一(同 Key 纪律)。</summary>
+    public static PanelElement Immediate(string rootKey, Action<UiScope> build)
+    {
+        var root = new PanelElement { Key = rootKey };
+        build(new UiScope(root, rootKey));
+        return root;
+    }
     public static Spacer Spacer(SizeF size) => new(size);
     public static PanelElement Panel() => new();
     public static ButtonElement Button(string label, Action onClick) => new(label, onClick);
