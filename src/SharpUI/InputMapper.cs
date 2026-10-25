@@ -11,7 +11,8 @@ public static class InputMapper
         LeftEvents(snapshot.MouseEvents),
         MapKeys(snapshot.KeyEvents),
         snapshot.IsMouseDown(MouseButton.Left),
-        snapshot.WheelDelta);
+        snapshot.WheelDelta,
+        snapshot.KeyCharPresses.Count == 0 ? null : snapshot.KeyCharPresses.ToArray());
 
     public static bool[] LeftEvents(IReadOnlyList<MouseEvent> mouseEvents)
     {
@@ -34,7 +35,8 @@ public static class InputMapper
         for (int i = 0; i < keyEvents.Count; i++)
         {
             KeyEvent ke = keyEvents[i];
-            keys[i] = new KeyEventData(ke.Key, ke.Down, ke.Modifiers.HasFlag(ModifierKeys.Shift));
+            keys[i] = new KeyEventData(ke.Key, ke.Down,
+                ke.Modifiers.HasFlag(ModifierKeys.Shift), ke.Modifiers.HasFlag(ModifierKeys.Control));
         }
         return keys;
     }

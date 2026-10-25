@@ -84,4 +84,16 @@ public static class TreeWalk
         foreach (Element child in root.Children)
             Register(child, focus);
     }
+
+    /// <summary>按稳定 id 深度优先查找元素(先子后己,内层优先);id 为 null 或未命中返回 null(D22 键路由)。</summary>
+    public static Element? Find(Element root, string? id)
+    {
+        if (id is null) return null;
+        if (root.Children is { Count: > 0 })
+            foreach (Element child in root.Children)
+            {
+                if (Find(child, id) is { } found) return found;
+            }
+        return root.ResolvedId == id ? root : null;
+    }
 }

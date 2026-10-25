@@ -123,6 +123,17 @@ public class FocusTests
     }
 
     [Fact]
+    public void TreeWalkFind_LocatesById()
+    {
+        (PanelElement root, ButtonElement a, ButtonElement b) = TwoButtons();
+        a.Key = "alpha"; b.Key = "beta";
+        IdResolver.Assign(root);
+        Assert.Same(a, TreeWalk.Find(root, a.ResolvedId));
+        Assert.Same(b, TreeWalk.Find(root, "/beta"));
+        Assert.Null(TreeWalk.Find(root, "/missing"));
+    }
+
+    [Fact]
     public void PressOnEmpty_ClearsFocus_AndCancelPressKillsPendingClick()
     {
         (PanelElement root, ButtonElement a, _) = TwoButtons();

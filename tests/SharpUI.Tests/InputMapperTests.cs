@@ -41,4 +41,35 @@ public class InputMapperTests
     {
         Assert.Same(Array.Empty<KeyEventData>(), InputMapper.MapKeys(Array.Empty<KeyEvent>()));
     }
+
+    [Fact]
+    public void MapKeys_ExtractsCtrl()
+    {
+        KeyEventData[] keys = InputMapper.MapKeys(new[]
+        {
+            new KeyEvent(Key.A, true, ModifierKeys.Control),
+            new KeyEvent(Key.B, true, ModifierKeys.Control | ModifierKeys.Shift),
+        });
+        Assert.True(keys[0].Ctrl);
+        Assert.True(keys[1].Shift && keys[1].Ctrl);
+    }
+
+    [Fact]
+    public void Map_CharsFromKeyCharPresses_EmptyIsNull()
+    {
+        RawInput raw = InputMapper.Map(new FakeSnapshot(new[] { 'h', 'i' }));
+        Assert.Equal(new[] { 'h', 'i' }, raw.Chars);
+        Assert.Null(InputMapper.Map(new FakeSnapshot(Array.Empty<char>())).Chars);
+    }
+
+    sealed class FakeSnapshot(IReadOnlyList<char> chars) : InputSnapshot
+    {
+        public System.Numerics.Vector2 MousePosition => default;
+        public IReadOnlyList<MouseEvent> MouseEvents => Array.Empty<MouseEvent>();
+        public IReadOnlyList<KeyEvent> KeyEvents => Array.Empty<KeyEvent>();
+        public IReadOnlyList<char> KeyCharPresses => chars;
+        public bool IsMouseDown(MouseButton button) => false;
+        public bool IsAnyMouseDown { get; }
+        public float WheelDelta => 0f;
+    }
 }

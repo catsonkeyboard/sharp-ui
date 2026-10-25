@@ -59,6 +59,7 @@ public sealed class App
                 ? Interaction.Update(lastTree, in raw, focus)
                 : InputState.Empty;
             if (input.WheelDelta != 0f && lastTree is not null) Scroll.Dispatch(lastTree, in input);
+            FeedFocused(lastTree, focus, in raw);
             UiContext.CurrentInput = input;
 
             Element root = _render is null ? new Spacer(SizeF.Zero) : _render();
@@ -80,5 +81,13 @@ public sealed class App
                 _window.Close();
         }
         return 0;
+    }
+
+    /// <summary>D22 键路由:构建前对上帧保留树按 FocusedId 定位聚焦元素,实现 ITextFeedable(T3 TextFieldElement)则喂入当帧键与字符。</summary>
+    static void FeedFocused(Element? lastTree, FocusManager focus, in RawInput raw)
+    {
+        if (lastTree is null || focus.FocusedId is not string id) return;
+        if (TreeWalk.Find(lastTree, id) is ITextFeedable feedable)
+            feedable.Feed(raw.KeyEvents, raw.Chars);
     }
 }

@@ -2,13 +2,20 @@ using Veldrid;
 
 namespace SharpUI;
 
-/// <summary>键盘事件(按时间序)。Key 为 Veldrid.Key(公开面技术债,规格书 D12)。</summary>
-public readonly record struct KeyEventData(Key Key, bool Down, bool Shift);
+/// <summary>键盘事件(按时间序)。Key 为 Veldrid.Key(公开面技术债,规格书 D12);Ctrl 位供 TextEditing 编辑语义(D22)。</summary>
+public readonly record struct KeyEventData(Key Key, bool Down, bool Shift, bool Ctrl = false);
 
-/// <summary>App 从 SDL InputSnapshot 经 InputMapper 映射;LeftHeld 为持久按键态(D15);WheelDelta 为滚轮增量(D19)。</summary>
+/// <summary>App 从 SDL InputSnapshot 经 InputMapper 映射;LeftHeld 为持久按键态(D15);WheelDelta 为滚轮增量(D19)。
+/// Chars 为字符通道(D22):源自 KeyCharPresses 的当帧文本输入,空则 null。</summary>
 public readonly record struct RawInput(
     PointF Mouse, bool[] LeftEvents, KeyEventData[]? KeyEvents = null, bool LeftHeld = false,
-    float WheelDelta = 0f);
+    float WheelDelta = 0f, char[]? Chars = null);
+
+/// <summary>D22 键路由前瞻:聚焦元素接收当帧键与字符的通道。T3 的 TextFieldElement 实现之,App.FeedFocused 判接口分发。</summary>
+internal interface ITextFeedable
+{
+    void Feed(KeyEventData[]? keys, char[]? chars);
+}
 
 public readonly record struct InputState(
     PointF Mouse, bool LeftDown, bool LeftPressed, bool LeftReleased,
