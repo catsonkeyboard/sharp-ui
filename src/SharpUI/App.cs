@@ -7,35 +7,39 @@ namespace SharpUI;
 
 public sealed class App
 {
-    /// <summary>TextElement 度量用(M1 服务定位,M2 换度量上下文)。</summary>
+    /// <summary>TextElement 度量用(M1 服务定位,M2 换度量上下文)。多窗:Run 每窗构建前置为该窗图集。</summary>
     public static TextAtlas? Atlas { get; internal set; }
 
-    /// <summary>跨帧状态存储(M1 服务定位模式,同 Atlas;M2b 度量上下文重构时收编)。</summary>
+    /// <summary>跨帧状态存储(M1 服务定位模式,同 Atlas;全局单份,所有窗口共享,Sweep 每帧一次)。</summary>
     public static StateStore? State { get; internal set; }
 
     /// <summary>墙钟秒,Run 循环每帧首行更新;Anim 默认时间源(D23)。</summary>
     public static float Time { get; private set; }
 
-    readonly Sdl2Window _window;
-    readonly GraphicsContext _ctx;
-    readonly Renderer _renderer;
-    readonly Func<Element>? _render;
-    readonly InputSession _session = new();   // T5:输入会话(静态账本→按窗隔离;T6 并入 AppWindow)
+    /// <summary>窗口表(主窗恒为 [0]);internal 供簿记检查(OpenWindow 入队即可查 Count,无需启动 Run)。</summary>
+    internal readonly List<AppWindow> Windows = new();
+
     readonly Stopwatch _stopwatch = new();
 
-    /// <summary>DPI 缩放比(0.5–4 夹紧);鼠标/文本/剪裁统一换算基准(D18)。</summary>
-    public float ScaleFactor { get; }
+    AppWindow Main => Windows[0];
 
-    App(Sdl2Window window, GraphicsDevice device, Func<Element>? render, float scale)
+    /// <summary>主窗 DPI 缩放比(0.5–4 夹紧);鼠标/文本/剪裁统一换算基准(D18)。单窗 API 保持。</summary>
+    public float ScaleFactor => Main.Scale;
+
+    App(AppWindow main) => Windows.Add(main);
+
+    public static App Create(string title, int width, int height, Func<Element>? render = null) =>
+        new(CreateWindow(title, width, height, render));
+
+    /// <summary>开新窗并入队(帧中调用则下一帧纳入 Run 循环);每窗独立设备/上下文/图集/焦点/输入会话。</summary>
+    public AppWindow OpenWindow(string title, int w, int h, Func<Element> render)
     {
-        _window = window;
-        _ctx = GraphicsContext.CreateForWindow(window, device);
-        _renderer = new Renderer(_ctx);
-        _render = render;
-        ScaleFactor = scale;
+        AppWindow window = CreateWindow(title, w, h, render);
+        Windows.Add(window);
+        return window;
     }
 
-    public static App Create(string title, int width, int height, Func<Element>? render = null)
+    static AppWindow CreateWindow(string title, int width, int height, Func<Element>? render)
     {
         VeldridStartup.CreateWindowAndGraphicsDevice(
             new WindowCreateInfo { WindowTitle = title, WindowWidth = width, WindowHeight = height },
@@ -43,50 +47,71 @@ public sealed class App
             VeldridStartup.GetPlatformDefaultBackend(),
             out Sdl2Window window,
             out GraphicsDevice device);
-        device.MainSwapchain.SyncToVerticalBlank = true;   // 60fps VSync(spec §7)
+        device.MainSwapchain.SyncToVerticalBlank = true;   // 60fps VSync(spec §7,每窗)
         window.Resized += () => device.ResizeMainWindow((uint)window.Width, (uint)window.Height);
-        App app = new(window, device, render, Math.Clamp(window.ScaleFactor.X, 0.5f, 4f));
-        window.FocusLost += () => Interaction.CancelPress(app._session);   // D15:Sdl2Window.FocusLost 存在
-        return app;
+        GraphicsContext ctx = GraphicsContext.CreateForWindow(window, device);
+        float scale = Math.Clamp(window.ScaleFactor.X, 0.5f, 4f);
+        AppWindow w = new()
+        {
+            Window = window,
+            Ctx = ctx,
+            Renderer = new Renderer(ctx),
+            Atlas = new TextAtlas(ctx, scale),
+            Scale = scale,
+            Render = render ?? (static () => new Spacer(SizeF.Zero)),   // null render:Spacer 兜底(单窗语义保持)
+        };
+        window.FocusLost += () => Interaction.CancelPress(w.Session);   // D15:失焦取消该窗按压
+        return w;
     }
 
     public int Run(int maxFrames = 0)
     {
-        Atlas = new TextAtlas(_ctx, ScaleFactor);
         State = new StateStore();
         var mesh = new MeshBuilder();
-        var focus = new FocusManager();
-        Element? lastTree = null;
+        AppWindow main = Main;
         int frames = 0;
-        while (_window.Exists)
+        while (main.Window.Exists)
         {
             if (!_stopwatch.IsRunning) _stopwatch.Start();   // Run 首次进入启动墙钟(D23)
             Time = (float)_stopwatch.Elapsed.TotalSeconds;
-            RawInput raw = InputMapper.Map(_window.PumpEvents(), ScaleFactor);
-            InputState input = lastTree is not null
-                ? Interaction.Update(_session, lastTree, in raw, focus)
-                : InputState.Empty;
-            if (input.WheelDelta != 0f && lastTree is not null) Scroll.Dispatch(lastTree, in input);
-            FeedFocused(lastTree, focus, in raw);
-            UiContext.CurrentInput = input;
+            int liveCount = Windows.Count;   // 帧首快照:帧中 OpenWindow 的新窗下一帧纳入
+            for (int i = 0; i < liveCount; i++)
+            {
+                AppWindow w = Windows[i];
+                RawInput raw = InputMapper.Map(w.Window.PumpEvents(), w.Scale);
+                InputState input = w.LastTree is not null
+                    ? Interaction.Update(w.Session, w.LastTree, in raw, w.Focus)
+                    : InputState.Empty;
+                if (input.WheelDelta != 0f && w.LastTree is not null) Scroll.Dispatch(w.LastTree, in input);
+                FeedFocused(w.LastTree, w.Focus, in raw);
+                Atlas = w.Atlas;   // 每窗切换服务定位:TextElement 度量读当前窗图集
+                UiContext.CurrentInput = input;
 
-            Element root = _render is null ? new Spacer(SizeF.Zero) : _render();
-            IdResolver.Assign(root);
-            focus.BeginFrame();
-            TreeWalk.Register(root, focus);
-            focus.HandleKeys(raw.KeyEvents ?? Array.Empty<KeyEventData>(), _session);
-            input = input with { Focused = focus.FocusedThisFrame, FocusedId = focus.FocusedId };
+                Element root = w.Render();
+                IdResolver.Assign(root);
+                w.Focus.BeginFrame();
+                TreeWalk.Register(root, w.Focus);
+                w.Focus.HandleKeys(raw.KeyEvents ?? Array.Empty<KeyEventData>(), w.Session);
+                input = input with { Focused = w.Focus.FocusedThisFrame, FocusedId = w.Focus.FocusedId };
 
-            SizeF screen = new(_window.Width / ScaleFactor, _window.Height / ScaleFactor);
-            LayoutEngine.Arrange(root, new RectF(0, 0, screen.Width, screen.Height));
-            mesh.Clear();
-            root.Draw(new PaintContext(mesh, Atlas, input));
-            _renderer.Submit(mesh, screen, _ctx.Device.MainSwapchain.Framebuffer, ScaleFactor);
-            _ctx.Device.SwapBuffers();
-            State.Sweep();
-            lastTree = root;
+                SizeF screen = new(w.Window.Width / w.Scale, w.Window.Height / w.Scale);
+                LayoutEngine.Arrange(root, new RectF(0, 0, screen.Width, screen.Height));
+                mesh.Clear();
+                root.Draw(new PaintContext(mesh, w.Atlas, input));
+                w.Renderer.Submit(mesh, screen, w.Ctx.Device.MainSwapchain.Framebuffer, w.Scale);
+                w.Ctx.Device.SwapBuffers();
+                w.LastTree = root;
+            }
+            State.Sweep();   // 全局一次/帧:所有窗口本帧触碰后才扫描失联键
+            for (int i = Windows.Count - 1; i >= 1; i--)   // 主窗恒留 [0](关闭即退出循环,不参与移除)
+                if (!Windows[i].Window.Exists)
+                {
+                    Windows[i].Renderer.Dispose();
+                    Windows[i].Ctx.Dispose();
+                    Windows.RemoveAt(i);
+                }
             if (maxFrames > 0 && ++frames >= maxFrames)
-                _window.Close();
+                main.Window.Close();
         }
         return 0;
     }
