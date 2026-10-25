@@ -55,7 +55,7 @@ public class PerfTests
 
         double bytesPerFrame = (GC.GetAllocatedBytesForCurrentThread() - bytesBefore) / (double)Frames;
         double msPerFrame = sw.Elapsed.TotalMilliseconds / Frames;
-        Assert.True(bytesPerFrame <= 64 * 1024, $"每帧分配 {bytesPerFrame:F0}B 超预算 65536B");
+        Assert.True(bytesPerFrame <= 8192, $"每帧分配 {bytesPerFrame:F0}B 超预算 8192B");   // M3b 性能波:深度池后 64KB→8KB
         Assert.True(msPerFrame < 8.0, $"每帧 CPU {msPerFrame:F2}ms 超预算 8ms");
 
         // testhost 工作目录在 tests/SharpUI.Tests/bin/{cfg}/net10.0,上溯 5 级到仓库根
@@ -64,7 +64,7 @@ public class PerfTests
         string baselinePath = Path.GetFullPath("../../../../../docs/notes/perf-baselines.md");
         Directory.CreateDirectory(Path.GetDirectoryName(baselinePath)!);
         File.WriteAllText(baselinePath,
-            $"# 性能基线(自动生成)\n\n- 每帧分配:{bytesPerFrame:F0} B(预算 65536)\n- 每帧 CPU:{msPerFrame:F2} ms(预算 8)\n- 场景:Counter,480×320,Release 测得(含 id+焦点+即时面板管线)\n");
+            $"# 性能基线(自动生成)\n\n- 每帧分配:{bytesPerFrame:F0} B(预算 8192;M3b 深度池后)\n- 每帧 CPU:{msPerFrame:F2} ms(预算 8)\n- 场景:Counter,480×320,Release 测得(含 id+焦点+即时面板管线)\n");
 #endif
         App.Atlas = null;
     }

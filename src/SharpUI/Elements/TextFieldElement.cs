@@ -6,6 +6,22 @@ public sealed class TextFieldElement : PanelElement, ITextFeedable
     readonly string _placeholder;
     public const float PadX = 8f;
 
+    /// <summary>State 缺省值(M3b):Get(key, initial) 未命中即存入并共享;record 不可变,共享安全。</summary>
+    internal static readonly TextState EmptyState = new();
+
+    string _keyFor = "";    // _stateKey 对应的 ResolvedId;id 每帧稳定,值比较相等即复用(M3b 免拼接)
+    string _stateKey = "";
+
+    string StateKey
+    {
+        get
+        {
+            string id = ResolvedId ?? "";
+            if (id != _keyFor) { _keyFor = id; _stateKey = "tf:" + id; }
+            return _stateKey;
+        }
+    }
+
     public TextFieldElement(string placeholder = "")
     {
         _placeholder = placeholder;
@@ -17,16 +33,16 @@ public sealed class TextFieldElement : PanelElement, ITextFeedable
     }
 
     internal TextState State => App.State is { } st
-        ? st.Get("tf:" + ResolvedId, new TextState())   // Get<T>() 带 new() 约束,record 全默认参主构造不满足
-        : new TextState();
+        ? st.Get(StateKey, EmptyState)   // Get<T>() 带 new() 约束,record 全默认参主构造不满足
+        : EmptyState;
 
-    internal void SetStateForTest(TextState s) => App.State!.Set("tf:" + ResolvedId, s);
+    internal void SetStateForTest(TextState s) => App.State!.Set(StateKey, s);
     internal string CurrentText => State.Text;
 
     public void Feed(KeyEventData[]? keys, char[]? chars)
     {
         if (App.State is not { } st) return;
-        st.Set("tf:" + ResolvedId, TextEditing.Apply(State, keys, chars));
+        st.Set(StateKey, TextEditing.Apply(State, keys, chars));
     }
 
     protected internal override SizeF MeasureSelf(SizeF available)

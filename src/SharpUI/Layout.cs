@@ -18,6 +18,42 @@ public sealed class Style
     public float? FlexBasis;        // null=auto(内容主尺寸)
 }
 
+/// <summary>布局临时数组的按调用深度池(M3b 性能波):ComputeLines 会经 Measure(child) 递归重入,
+/// 各入口(Measure/ArrangeLines/ScrollElement.ArrangeChildren)在递增深度后租用本层组,
+/// 深层只能拿到更深下标 → 同栈互不覆盖即安全;容量按需倍增,预热后零分配。</summary>
+internal static class FlexArrays
+{
+    internal sealed class Set
+    {
+        public float[] ChildMain = Array.Empty<float>(), ChildCross = Array.Empty<float>(),
+            LineMain = Array.Empty<float>(), LineCross = Array.Empty<float>();
+        public int[] LineOf = Array.Empty<int>();
+    }
+
+    /// <summary>当前布局调用深度;入口 ++ / finally --(try/finally 保异常路径平衡)。</summary>
+    [ThreadStatic] internal static int Depth;
+
+    [ThreadStatic] static List<Set>? _byDepth;
+
+    /// <summary>取 <see cref="Depth"/> 层的数组组并保证容量 ≥ minCount。</summary>
+    internal static Set Rent(int minCount)
+    {
+        List<Set> byDepth = _byDepth ??= new();
+        while (byDepth.Count <= Depth) byDepth.Add(new Set());
+        Set s = byDepth[Depth];
+        if (s.ChildMain.Length < minCount)
+        {
+            int cap = Math.Max(Math.Max(4, minCount), s.ChildMain.Length * 2);
+            s.ChildMain = new float[cap];
+            s.ChildCross = new float[cap];
+            s.LineOf = new int[cap];
+            s.LineMain = new float[cap];
+            s.LineCross = new float[cap];
+        }
+        return s;
+    }
+}
+
 public static class LayoutEngine
 {
     public static SizeF Measure(Element e, SizeF available)
@@ -32,22 +68,23 @@ public static class LayoutEngine
         float availCross = MathF.Max(0f, (vertical ? available.Width : available.Height)
             - (vertical ? pad.Horizontal : pad.Vertical));
 
-        var childMain = new float[e.Children.Count];
-        var childCross = new float[e.Children.Count];
-        var lineOf = new int[e.Children.Count];
-        var lineMain = new float[e.Children.Count];
-        var lineCross = new float[e.Children.Count];
-        int lines = ComputeLines(e, availMain, availCross, childMain, childCross, lineOf, lineMain, lineCross);
-
-        float maxLineMain = 0f, totalCross = 0f;
-        for (int l = 0; l < lines; l++)
+        FlexArrays.Depth++;   // 入口租用而非 ComputeLines 内:递归 Measure(child) 在更深层重租,本层数组安全
+        try
         {
-            maxLineMain = MathF.Max(maxLineMain, lineMain[l]);
-            totalCross += lineCross[l];
+            FlexArrays.Set a = FlexArrays.Rent(e.Children.Count);
+            int lines = ComputeLines(e, availMain, availCross, a.ChildMain, a.ChildCross, a.LineOf, a.LineMain, a.LineCross);
+
+            float maxLineMain = 0f, totalCross = 0f;
+            for (int l = 0; l < lines; l++)
+            {
+                maxLineMain = MathF.Max(maxLineMain, a.LineMain[l]);
+                totalCross += a.LineCross[l];
+            }
+            totalCross += MathF.Max(0, lines - 1) * e.Style.Gap;
+            SizeF content = vertical ? new SizeF(totalCross, maxLineMain) : new SizeF(maxLineMain, totalCross);
+            return new SizeF(content.Width + pad.Horizontal, content.Height + pad.Vertical);
         }
-        totalCross += MathF.Max(0, lines - 1) * e.Style.Gap;
-        SizeF content = vertical ? new SizeF(totalCross, maxLineMain) : new SizeF(maxLineMain, totalCross);
-        return new SizeF(content.Width + pad.Horizontal, content.Height + pad.Vertical);
+        finally { FlexArrays.Depth--; }
     }
 
     public static void Arrange(Element e, RectF frame)
@@ -65,59 +102,60 @@ public static class LayoutEngine
         float availMain = MathF.Max(0f, vertical ? inner.Height : inner.Width);
         float availCross = MathF.Max(0f, vertical ? inner.Width : inner.Height);
 
-        var childMain = new float[e.Children!.Count];
-        var childCross = new float[e.Children!.Count];
-        var lineOf = new int[e.Children!.Count];
-        var lineMain = new float[e.Children!.Count];
-        var lineCross = new float[e.Children!.Count];
-        int lines = ComputeLines(e, availMain, availCross, childMain, childCross, lineOf, lineMain, lineCross);
-
-        float crossPos = vertical ? inner.X : inner.Y;
-        for (int l = 0; l < lines; l++)
+        FlexArrays.Depth++;   // 行内 Arrange(child) 递归更深层次租用,本层 childMain/lineOf 等在循环中保持有效
+        try
         {
-            float mainSize = vertical ? inner.Height : inner.Width;
-            float pos = e.Style.MainAlign switch
+            FlexArrays.Set a = FlexArrays.Rent(e.Children!.Count);
+            int lines = ComputeLines(e, availMain, availCross, a.ChildMain, a.ChildCross, a.LineOf, a.LineMain, a.LineCross);
+
+            float crossPos = vertical ? inner.X : inner.Y;
+            for (int l = 0; l < lines; l++)
             {
-                MainAxisAlignment.Center => (vertical ? inner.Top : inner.Left) + MathF.Max(0f, (mainSize - lineMain[l]) / 2f),
-                MainAxisAlignment.End => (vertical ? inner.Bottom : inner.Right) - lineMain[l],
-                _ => vertical ? inner.Top : inner.Left,
-            };
-            float extent = lines == 1 ? availCross : lineCross[l];   // 单行对齐基准=容器内交叉宽(M1)
-            bool firstInLine = true;
-            for (int i = 0; i < e.Children!.Count; i++)
-            {
-                if (lineOf[i] != l) continue;
-                Element child = e.Children[i];
-                float m = childMain[i];
-                float c = childCross[i];
-                if (!firstInLine) pos += e.Style.Gap;
-                firstInLine = false;
-                if (vertical)
+                float mainSize = vertical ? inner.Height : inner.Width;
+                float pos = e.Style.MainAlign switch
                 {
-                    float w = e.Style.CrossAlign == CrossAxisAlignment.Stretch ? extent : c;
-                    float x = e.Style.CrossAlign switch
-                    {
-                        CrossAxisAlignment.Center => crossPos + (extent - c) / 2f,
-                        CrossAxisAlignment.End => crossPos + extent - c,
-                        _ => crossPos,
-                    };
-                    Arrange(child, new RectF(x, pos, w, m));
-                }
-                else
+                    MainAxisAlignment.Center => (vertical ? inner.Top : inner.Left) + MathF.Max(0f, (mainSize - a.LineMain[l]) / 2f),
+                    MainAxisAlignment.End => (vertical ? inner.Bottom : inner.Right) - a.LineMain[l],
+                    _ => vertical ? inner.Top : inner.Left,
+                };
+                float extent = lines == 1 ? availCross : a.LineCross[l];   // 单行对齐基准=容器内交叉宽(M1)
+                bool firstInLine = true;
+                for (int i = 0; i < e.Children!.Count; i++)
                 {
-                    float h = e.Style.CrossAlign == CrossAxisAlignment.Stretch ? extent : c;
-                    float y = e.Style.CrossAlign switch
+                    if (a.LineOf[i] != l) continue;
+                    Element child = e.Children[i];
+                    float m = a.ChildMain[i];
+                    float c = a.ChildCross[i];
+                    if (!firstInLine) pos += e.Style.Gap;
+                    firstInLine = false;
+                    if (vertical)
                     {
-                        CrossAxisAlignment.Center => crossPos + (extent - c) / 2f,
-                        CrossAxisAlignment.End => crossPos + extent - c,
-                        _ => crossPos,
-                    };
-                    Arrange(child, new RectF(pos, y, m, h));
+                        float w = e.Style.CrossAlign == CrossAxisAlignment.Stretch ? extent : c;
+                        float x = e.Style.CrossAlign switch
+                        {
+                            CrossAxisAlignment.Center => crossPos + (extent - c) / 2f,
+                            CrossAxisAlignment.End => crossPos + extent - c,
+                            _ => crossPos,
+                        };
+                        Arrange(child, new RectF(x, pos, w, m));
+                    }
+                    else
+                    {
+                        float h = e.Style.CrossAlign == CrossAxisAlignment.Stretch ? extent : c;
+                        float y = e.Style.CrossAlign switch
+                        {
+                            CrossAxisAlignment.Center => crossPos + (extent - c) / 2f,
+                            CrossAxisAlignment.End => crossPos + extent - c,
+                            _ => crossPos,
+                        };
+                        Arrange(child, new RectF(pos, y, m, h));
+                    }
+                    pos += m;
                 }
-                pos += m;
+                crossPos += extent + e.Style.Gap;
             }
-            crossPos += extent + e.Style.Gap;
         }
+        finally { FlexArrays.Depth--; }
     }
 
     /// <summary>行打包 + 行内分配(D16)。输出数组由调用方分配;返回行数。</summary>

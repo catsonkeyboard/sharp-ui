@@ -17,24 +17,24 @@ public class ScrollElement : PanelElement
     protected internal override void ArrangeChildren(RectF inner)
     {
         if (Children is not { Count: > 0 }) { ContentMain = ViewportMain = 0f; return; }
-        int n = Children.Count;
-        var childMain = new float[n];
-        var childCross = new float[n];
-        var lineOf = new int[n];
-        var lineMain = new float[n];
-        var lineCross = new float[n];
-        int lines = LayoutEngine.ComputeLines(this, float.MaxValue, inner.Width,
-            childMain, childCross, lineOf, lineMain, lineCross);   // 主轴无限 → 单行内容度量
-        float content = lineMain[0];
-        ContentMain = content;
-        ViewportMain = inner.Height;
-        float offset = Math.Clamp(StateOffset(), 0f, MathF.Max(0f, content - inner.Height));
-        float y = inner.Top - offset;
-        for (int i = 0; i < n; i++)
+        FlexArrays.Depth++;   // 入口租用(M3b):ComputeLines 内 Measure(child) 在更深层取数组
+        try
         {
-            LayoutEngine.Arrange(Children[i], new RectF(inner.X, y, inner.Width, childMain[i]));
-            y += childMain[i] + Style.Gap;
+            FlexArrays.Set a = FlexArrays.Rent(Children.Count);
+            int lines = LayoutEngine.ComputeLines(this, float.MaxValue, inner.Width,
+                a.ChildMain, a.ChildCross, a.LineOf, a.LineMain, a.LineCross);   // 主轴无限 → 单行内容度量
+            float content = a.LineMain[0];
+            ContentMain = content;
+            ViewportMain = inner.Height;
+            float offset = Math.Clamp(StateOffset(), 0f, MathF.Max(0f, content - inner.Height));
+            float y = inner.Top - offset;
+            for (int i = 0; i < Children.Count; i++)
+            {
+                LayoutEngine.Arrange(Children[i], new RectF(inner.X, y, inner.Width, a.ChildMain[i]));
+                y += a.ChildMain[i] + Style.Gap;
+            }
         }
+        finally { FlexArrays.Depth--; }
     }
 }
 
