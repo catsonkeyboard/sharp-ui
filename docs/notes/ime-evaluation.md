@@ -17,4 +17,10 @@
 - Windows 精确候选跟随 + 内联组合(preedit 下划线/文本)需直连 IMM32/TSF(hwnd + 光标屏幕坐标),
   即 D5 既定"手写平台层",归 **M3e**;SDL3(Silk.NET)/GLFW 为 R3 备选路线。
 - 复评触发条件:用户报告候选窗位置影响输入体验 / 升级 native SDL2 后提交文本失效 / M3e 无障碍(TSF/UIA)立项。
-- 2026-10-25 修复:候选窗激活已落地(App 经原生 SDL_StartTextInput/SetTextInputRect 桥接,用户报告的"候选框不显示"即此缺口);preedit 内联显示仍待 Veldrid 绑定缺口。
+- 2026-10-25 修复一(不够):SDL_StartTextInput/SetTextInputRect 桥接落地,但用户复测候选框仍不显示。
+- 2026-10-25 修复二(根因,裁定#34):查证 SDL 源码——SDL ≤2.0.17 在 WM_IME_SETCONTEXT 无条件 `*lParam = 0`,
+  掐掉 ISC_SHOWUICOMPOSITIONWINDOW|ISC_SHOWUICANDIDATEWINDOW(原生组合/候选窗被 SDL **设计性压制**,
+  其原意是自绘候选,仅 UI-less TSF 路径)。2.0.18 新增 `SDL_HINT_IME_SHOW_UI("SDL_IME_SHOW_UI")` 放行原生 UI。
+  处置:vendor SDL 2.30.8(native/SDL2/,zlib 许可随附)经构建目标覆盖 Veldrid 包内 2.0.8(ABI 兼容,
+  探针实证),App.Create 窗口创建前 `SDL_SetHint("SDL_IME_SHOW_UI","1")`;StartTextInput/SetTextInputRect 接线保留。
+  preedit 内联显示仍待 Veldrid 缺口(SDL_TextEditingEvent 未透传,组合文本显示于 IME 自身 UI)。

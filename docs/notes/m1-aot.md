@@ -25,3 +25,11 @@ drwxr-xr-x 1 <user> <group>        0 Oct 25 10:00 ..
 -rwxr-xr-x 1 <user> <group>  5844480 Jun  3  2022 libveldrid-spirv.dll
 --- du -sh ---
 134M	artifacts/aot-win-x64
+
+## 已知问题(2026-10-25,裁定#35)
+
+NativeAOT 产物在启动时抛 `MissingMethodException: Vortice.DXGI.IDXGIFactory 无参构造`——
+SharpGen.Runtime 2.0.0-beta.13 的 `MarshallingHelpers.FromPointer<T>` 走 `Activator` 反射,
+当前 ILCompiler(10.0.12)下 AOT 不放行;JIT(开发/Release 运行)不受影响。
+rd.xml Dynamic="Required All" 实测无效。处置:M3e 时一并解决(升级 Vortice 3.x 系或自研 D3D11 后端
+取代 Veldrid.D3D11 路径——M3d-ii 本就计划之);此前 AOT 验收条目视为失效。

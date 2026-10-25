@@ -41,6 +41,7 @@ public sealed class App
 
     static AppWindow CreateWindow(string title, int width, int height, Func<Element>? render)
     {
+        SdlTextInput.EnableImeUi();   // 裁定#34:须在窗口创建前;旧版 SDL 上无害 no-op
         VeldridStartup.CreateWindowAndGraphicsDevice(
             new WindowCreateInfo { WindowTitle = title, WindowWidth = width, WindowHeight = height },
             new GraphicsDeviceOptions { Debug = false, PreferStandardClipSpaceYDirection = true },

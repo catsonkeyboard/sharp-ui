@@ -32,6 +32,14 @@ public static class SdlTextInput
     /// <summary>开启窗口文本输入模式(IME 组合/候选启动门);返回值 SDL_bool,窗口无效仅 0,忽略。</summary>
     public static void Start(IntPtr sdlWindow) => _ = SDL_StartTextInput(sdlWindow);
 
+    /// <summary>放行原生 IME UI(裁定#34:SDL ≤2.0.17 无条件清零 WM_IME_SETCONTEXT 的 ISC_SHOWUI* 压制组合/候选窗;
+    /// 2.0.18+ 经本 hint 放行。须在窗口创建前调用;旧版 SDL 上为无害 no-op 返回 false)。</summary>
+    public static void EnableImeUi()
+    {
+        _ = SDL_SetHint("SDL_IME_SHOW_UI", "1");
+        _ = SDL_SetHint("SDL_IME_SUPPORT_EXTENDED_BASICS", "1");   // 2.0.22+:支持更多 IME 消息(无害 no-op 于旧版)
+    }
+
     /// <summary>关闭窗口文本输入模式(系统 IME 恢复普通状态)。</summary>
     public static void Stop(IntPtr sdlWindow) => SDL_StopTextInput(sdlWindow);
 
@@ -57,6 +65,10 @@ public static class SdlTextInput
 
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
     private static extern void SDL_SetTextInputRect(IntPtr window, ref SdlRect rect);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
+    private static extern bool SDL_SetHint([MarshalAs(UnmanagedType.LPStr)] string name,
+        [MarshalAs(UnmanagedType.LPStr)] string value);
 }
 
 /// <summary>每窗文本输入状态机(IME 热修):Run 每帧以 (窗口句柄, 聚焦 TextField id, 光标像素矩形) 驱动。
