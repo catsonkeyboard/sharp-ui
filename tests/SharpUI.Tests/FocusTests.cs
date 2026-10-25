@@ -95,4 +95,53 @@ public class FocusTests
         focus.HandleKeys(new[] { new KeyEventData(Veldrid.Key.Tab, true, false) });
         Assert.Equal(t.ResolvedId, focus.FocusedId);
     }
+
+    [Fact]
+    public void Escape_UnfocusesAndEnterBecomesNoOp()
+    {
+        (PanelElement root, ButtonElement a, _) = TwoButtons();
+        FocusManager focus = Frame(root);
+        focus.HandleKeys(new[] { new KeyEventData(Veldrid.Key.Tab, true, false) });
+        focus.HandleKeys(new[] { new KeyEventData(Veldrid.Key.Escape, true, false) });
+        Assert.Null(focus.FocusedId);
+        focus.HandleKeys(new[] { new KeyEventData(Veldrid.Key.Enter, true, false) });   // 无焦:不崩、无激活
+        Assert.Null(focus.FocusedThisFrame);
+    }
+
+    [Fact]
+    public void Enter_OnFocusedNonButton_IsNoOp()
+    {
+        TextElement t = Ui.Text("hi").Focusable();
+        PanelElement root = Ui.Column(t);
+        IdResolver.Assign(root);
+        var focus = new FocusManager();
+        focus.BeginFrame();
+        TreeWalk.Register(root, focus);
+        focus.HandleKeys(new[] { new KeyEventData(Veldrid.Key.Tab, true, false) });
+        focus.HandleKeys(new[] { new KeyEventData(Veldrid.Key.Enter, true, false) });   // 聚焦非按钮:不崩
+        Assert.True(focus.IsFocused(t));
+    }
+
+    [Fact]
+    public void PressOnEmpty_ClearsFocus_AndCancelPressKillsPendingClick()
+    {
+        (PanelElement root, ButtonElement a, _) = TwoButtons();
+        FocusManager focus = Frame(root);
+        focus.HandleKeys(new[] { new KeyEventData(Veldrid.Key.Tab, true, false) });
+        Assert.True(focus.IsFocused(a));
+
+        Interaction.Update(root, new RawInput(new PointF(50, 190), new[] { true }), focus);  // 空白处按压(按钮高约 100)
+        Assert.Null(focus.FocusedId);
+
+        int clicks = 0;
+        ButtonElement b = new("B", () => clicks++);
+        PanelElement root2 = Ui.Column(b);
+        root2.Style.CrossAlign = CrossAxisAlignment.Stretch;
+        LayoutEngine.Arrange(root2, new RectF(0, 0, 100, 200));
+        IdResolver.Assign(root2);
+        Interaction.Update(root2, new RawInput(new PointF(50, 5), new[] { true }));          // 按下
+        Interaction.CancelPress();                                                            // 窗口失焦
+        Interaction.Update(root2, new RawInput(new PointF(50, 5), new[] { false }));          // 迟到的释放
+        Assert.Equal(0, clicks);
+    }
 }

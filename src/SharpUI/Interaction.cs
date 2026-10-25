@@ -37,6 +37,8 @@ public static class Interaction
                 _pressedOn = hovered?.ResolvedId;
                 if (hovered is { Focusable: true })
                     focus?.SetFocus(hovered);
+                if (hovered is null)
+                    focus?.Clear();
             }
             else
             {
@@ -52,4 +54,7 @@ public static class Interaction
         }
         return new InputState(raw.Mouse, _leftHeld, pressed, released, hovered);
     }
+
+    /// <summary>取消进行中的按压(窗口失焦时由 App 调用;规格书 M2b-i)。</summary>
+    public static void CancelPress() => _pressedOn = null;
 }

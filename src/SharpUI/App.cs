@@ -35,6 +35,7 @@ public sealed class App
             out GraphicsDevice device);
         device.MainSwapchain.SyncToVerticalBlank = true;   // 60fps VSync(spec §7)
         window.Resized += () => device.ResizeMainWindow((uint)window.Width, (uint)window.Height);
+        window.FocusLost += Interaction.CancelPress;   // D15:Sdl2Window.FocusLost 存在
         return new App(window, device, render);
     }
 

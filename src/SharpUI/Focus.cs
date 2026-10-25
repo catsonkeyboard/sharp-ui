@@ -28,6 +28,8 @@ public sealed class FocusManager
 
     public void SetFocus(Element e) => _focusedId = e.ResolvedId;
 
+    public void Clear() => _focusedId = null;
+
     public bool IsFocused(Element e) =>
         e.ResolvedId is not null && e.ResolvedId == _focusedId;
 
@@ -40,6 +42,9 @@ public sealed class FocusManager
             {
                 case Key.Tab:
                     Cycle(ke.Shift);
+                    break;
+                case Key.Escape:
+                    _focusedId = null;
                     break;
                 case Key.Enter:
                 case Key.KeypadEnter:
