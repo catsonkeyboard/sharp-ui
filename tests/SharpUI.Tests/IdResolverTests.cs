@@ -2,6 +2,9 @@ using SharpUI;
 
 namespace SharpUI.Tests;
 
+// IdResolver.LastDuplicateKeys 为进程级静态;Assign 的写入方(IdResolverTests/PerfTests/
+// FocusTests/InteractionTests)必须同集串行,否则并行枚举会撞 "Collection was modified"。
+[Collection("interaction")]
 public class IdResolverTests
 {
     static PanelElement Build(bool swapped = false)
@@ -66,5 +69,27 @@ public class IdResolverTests
         PanelElement root = Ui.Column(Ui.Column(left), Ui.Column(right));
         IdResolver.Assign(root);
         Assert.NotEqual(left.ResolvedId, right.ResolvedId);
+    }
+
+    [Fact]
+    public void DuplicateSiblingKeys_AreDetected()
+    {
+        PanelElement col = Ui.Panel();
+        col.Add(Ui.Text("a").Key("dup"));
+        col.Add(Ui.Text("b").Key("dup"));
+        col.Add(Ui.Text("c").Key("ok"));
+        IdResolver.Assign(col);
+        Assert.Contains(IdResolver.LastDuplicateKeys, id => id.EndsWith("/dup"));
+        Assert.Equal(1, IdResolver.LastDuplicateKeys.Count);   // 第二次出现记一次
+    }
+
+    [Fact]
+    public void SameKeyInDifferentBranches_NotFlagged()
+    {
+        PanelElement root = Ui.Column(
+            Ui.Column(Ui.Text("l").Key("t")),
+            Ui.Column(Ui.Text("r").Key("t")));
+        IdResolver.Assign(root);
+        Assert.Empty(IdResolver.LastDuplicateKeys);
     }
 }

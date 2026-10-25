@@ -4,6 +4,7 @@ using static SharpUI.Ui;
 
 namespace SharpUI.Tests;
 
+[Collection("interaction")]   // Frame() 调 IdResolver.Assign,与 IdResolver 静态检测共享串行集
 public class PerfTests
 {
     [Fact]
