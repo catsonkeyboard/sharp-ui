@@ -41,7 +41,7 @@ public sealed class App
     static AppWindow CreateWindow(string title, int width, int height, Func<Element>? render)
     {
         SdlTextInput.EnableImeUi();                       // 裁定#34:窗口创建前
-        SdlNative.EnsureVideoInit();                      // 裁定#38:与 Veldrid.Sdl2 同模块(SDL2.dll 基目录副本)
+        SdlNative.EnsureVideoInit();                      // 裁定#38:Init 落点与 Veldrid 建窗模块可分裂(T4 实证),不可假设;见 SdlNative 类注
         var window = new Sdl2Window(title, 100, 100, width, height, SDL_WindowFlags.Resizable | SDL_WindowFlags.Shown, false);
         var ctx = D3D11Context.CreateForWindow(SdlNative.GetWin32Hwnd(window.SdlWindowHandle),
             (uint)window.Width, (uint)window.Height);   // 交换链 Present(1,0) 即 VSync(spec §7,每窗)
