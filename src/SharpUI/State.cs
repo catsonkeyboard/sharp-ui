@@ -27,6 +27,13 @@ public sealed class StateStore
         return initial;
     }
 
+    /// <summary>写入并触碰(值类型状态的持久化路径;规格书 M2b)。</summary>
+    public void Set<T>(string id, T value)
+    {
+        _touched.Add(id);
+        _values[id] = value;
+    }
+
     public void Sweep()
     {
         _stale?.Clear();

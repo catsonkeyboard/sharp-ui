@@ -58,4 +58,28 @@ public class StateTests
         store.Sweep();                // 本帧零触碰
         Assert.Equal(0, store.Count);
     }
+
+    [Fact]
+    public void Set_PersistsValueTypesAcrossSweeps()
+    {
+        var store = new StateStore();
+        store.Set("count", 41);
+        store.Sweep();
+        Assert.Equal(41, store.Get("count", 0));
+        store.Set("count", store.Get("count", 0) + 1);
+        store.Sweep();
+        Assert.Equal(42, store.Get("count", 0));
+    }
+
+    [Fact]
+    public void Set_OverwritesAndTouchesExisting()
+    {
+        var store = new StateStore();
+        store.Get<int>("n");
+        store.Sweep();
+        store.Set("n", 7);
+        store.Sweep();
+        Assert.Equal(7, store.Get("n", 0));
+        Assert.Equal(1, store.Count);
+    }
 }
