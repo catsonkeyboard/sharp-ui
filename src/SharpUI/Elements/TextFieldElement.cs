@@ -76,7 +76,7 @@ public sealed class TextFieldElement : PanelElement, ITextFeedable
             }
             float textTop = Frame.Y + (Frame.Height - atlas.Measure(text, 14f).Height) / 2f;
             atlas.DrawRun(pc.Mesh, text, new PointF(Frame.X + PadX, textTop), 14f, false, textColor);
-            if (focused)
+            if (focused && Anim.Blink())   // 光标闪烁(D23):墙钟取模,无状态
             {
                 float cursorX = Frame.X + PadX + atlas.Measure(st.Text[..st.Cursor], 14f).Width;
                 pc.Mesh.AddQuad(new RectF(cursorX, Frame.Y + 4f, 1f, Frame.Height - 8f),
