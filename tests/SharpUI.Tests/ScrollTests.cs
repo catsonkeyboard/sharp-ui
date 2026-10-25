@@ -29,6 +29,7 @@ public class ScrollTests
         App.State = new StateStore();
         ScrollElement s = Tall(10);                       // 300 高内容
         LayoutEngine.Arrange(s, new RectF(0, 0, 100, 100));
+        IdResolver.Assign(s);                             // 裁定#22:直连 Dispatch 前补稳定 id
         string id = s.ResolvedId!;
         Scroll.Dispatch(s, new InputState(new PointF(50, 50), false, false, false, null, WheelDelta: 1f));
         Assert.Equal(40f, App.State!.Get("scroll:" + id, 0f));
@@ -43,6 +44,7 @@ public class ScrollTests
         App.State = new StateStore();
         ScrollElement s = Tall(10);
         LayoutEngine.Arrange(s, new RectF(0, 0, 100, 100));
+        IdResolver.Assign(s);                             // 裁定#22:直连 Dispatch 前补稳定 id
         Scroll.Dispatch(s, new InputState(new PointF(500, 500), false, false, false, null, WheelDelta: 1f));
         Assert.Equal(0f, App.State!.Get("scroll:" + s.ResolvedId!, 0f));
         App.State = null;
@@ -53,8 +55,9 @@ public class ScrollTests
     {
         App.State = new StateStore();
         ScrollElement inner = Tall(10).Basis(100f);   // D19:滚动测量按内容,须显式限高才可滚
-        ScrollElement outer = Scroll(new Spacer(new SizeF(50, 500)), inner);   // 外层也含长内容
+        ScrollElement outer = Scroll(inner, new Spacer(new SizeF(50, 900)));   // inner 在顶部,处 outer 视口内可见(裁定#22)
         LayoutEngine.Arrange(outer, new RectF(0, 0, 200, 100));
+        IdResolver.Assign(outer);                     // 裁定#22:直连 Dispatch 前补稳定 id
         PointF p = new(inner.Frame.X + 10, inner.Frame.Y + 10);                 // 内层内
         Scroll.Dispatch(outer, new InputState(p, false, false, false, null, WheelDelta: 1f));
         Assert.Equal(40f, App.State!.Get("scroll:" + inner.ResolvedId!, 0f));
@@ -69,6 +72,7 @@ public class ScrollTests
         var inner = Panel();  inner.Add(new Spacer(new SizeF(50, 20)));         // 短内容,不滚
         ScrollElement outer = Scroll(inner, new Spacer(new SizeF(50, 900)));
         LayoutEngine.Arrange(outer, new RectF(0, 0, 200, 100));
+        IdResolver.Assign(outer);                     // 裁定#22:直连 Dispatch 前补稳定 id
         Scroll.Dispatch(outer, new InputState(new PointF(50, 10), false, false, false, null, WheelDelta: 1f));
         Assert.Equal(40f, App.State!.Get("scroll:" + outer.ResolvedId!, 0f));
         App.State = null;
@@ -80,6 +84,7 @@ public class ScrollTests
         App.State = new StateStore();
         ScrollElement s = Tall(10);
         LayoutEngine.Arrange(s, new RectF(0, 0, 100, 100));
+        IdResolver.Assign(s);                             // 裁定#22:直连 Dispatch 前补稳定 id
         Scroll.Dispatch(s, new InputState(new PointF(50, 50), false, false, false, null, WheelDelta: 1f));   // offset=40
         LayoutEngine.Arrange(s, new RectF(0, 0, 100, 100));                     // 重排应用偏移
         Assert.Equal(-40f, s.Children![0].Frame.Y);
