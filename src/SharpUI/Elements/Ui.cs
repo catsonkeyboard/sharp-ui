@@ -28,4 +28,5 @@ public static class ElementExtensions
     public static T Center<T>(this T e) where T : Element { e.Style.MainAlign = MainAxisAlignment.Center; return e; }
     public static T CrossCenter<T>(this T e) where T : Element { e.Style.CrossAlign = CrossAxisAlignment.Center; return e; }
     public static T Key<T>(this T e, string key) where T : Element { e.Key = key; return e; }
+    public static T Focusable<T>(this T e) where T : Element { e.Focusable = true; return e; }
 }

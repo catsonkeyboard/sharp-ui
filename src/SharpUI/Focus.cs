@@ -1,0 +1,80 @@
+using Veldrid;
+
+namespace SharpUI;
+
+/// <summary>焦点管理:焦点以稳定 id 跨帧保持;Tab 序为 DOM 序(父先子后)。</summary>
+public sealed class FocusManager
+{
+    readonly List<string> _tabOrder = new();
+    readonly Dictionary<string, Element> _byId = new();
+    string? _focusedId;
+
+    public string? FocusedId => _focusedId;
+    public Element? FocusedThisFrame { get; private set; }
+
+    public void BeginFrame()
+    {
+        _tabOrder.Clear();
+        _byId.Clear();
+    }
+
+    public void Register(Element e)
+    {
+        if (string.IsNullOrEmpty(e.ResolvedId)) return;
+        _byId[e.ResolvedId!] = e;
+        if (e.Focusable) _tabOrder.Add(e.ResolvedId!);
+    }
+
+    public void SetFocus(Element e) => _focusedId = e.ResolvedId;
+
+    public bool IsFocused(Element e) =>
+        e.ResolvedId is not null && e.ResolvedId == _focusedId;
+
+    public void HandleKeys(ReadOnlySpan<KeyEventData> keys)
+    {
+        foreach (KeyEventData ke in keys)
+        {
+            if (!ke.Down) continue;
+            switch (ke.Key)
+            {
+                case Key.Tab:
+                    Cycle(ke.Shift);
+                    break;
+                case Key.Enter:
+                case Key.KeypadEnter:
+                case Key.Space:
+                    if (_focusedId is not null
+                        && _byId.TryGetValue(_focusedId, out Element? e)
+                        && e is ButtonElement button)
+                    {
+                        button.InvokeClick();
+                    }
+                    break;
+            }
+        }
+        FocusedThisFrame = _focusedId is not null && _byId.TryGetValue(_focusedId, out Element? cur)
+            ? cur
+            : null;
+    }
+
+    void Cycle(bool backward)
+    {
+        if (_tabOrder.Count == 0) return;
+        int index = _focusedId is null ? -1 : _tabOrder.IndexOf(_focusedId);
+        index = backward
+            ? (index <= 0 ? _tabOrder.Count - 1 : index - 1)
+            : (index + 1) % _tabOrder.Count;
+        _focusedId = _tabOrder[index];
+    }
+}
+
+public static class TreeWalk
+{
+    public static void Register(Element root, FocusManager focus)
+    {
+        focus.Register(root);
+        if (root.Children is not { Count: > 0 }) return;
+        foreach (Element child in root.Children)
+            Register(child, focus);
+    }
+}

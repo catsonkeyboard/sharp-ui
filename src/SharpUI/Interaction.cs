@@ -20,7 +20,7 @@ public static class Interaction
     static bool _leftHeld;
     static string? _pressedOn;   // 按下瞬间的命中元素稳定 id;点击 = 按下与松开同 id(规格书 D10)
 
-    public static InputState Update(Element root, in RawInput raw)
+    public static InputState Update(Element root, in RawInput raw, FocusManager? focus = null)
     {
         // 防御(偏离任务书代码清单的一行):未经 Assign 的树直连 Update 时补算稳定 id,
         // 否则 ResolvedId 全 null,`_pressedOn is not null` 门会把所有点击吞掉。
@@ -35,6 +35,8 @@ public static class Interaction
                 _leftHeld = true;
                 pressed = true;
                 _pressedOn = hovered?.ResolvedId;
+                if (hovered is { Focusable: true })
+                    focus?.SetFocus(hovered);
             }
             else
             {

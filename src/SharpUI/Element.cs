@@ -16,6 +16,7 @@ public abstract class Element
 
     /// <summary>用户提供的稳定键;未提供时按 类型名+兄弟索引 回退(规格书 D10)。</summary>
     public string? Key { get; internal set; }
+    public bool Focusable;
     internal string? ResolvedId { get; set; }
 
     public Element Add(Element child)

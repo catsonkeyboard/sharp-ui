@@ -43,20 +43,26 @@ public sealed class App
         Atlas = new TextAtlas(_ctx);
         State = new StateStore();
         var mesh = new MeshBuilder();
+        var focus = new FocusManager();
         int frames = 0;
         while (_window.Exists)
         {
             InputSnapshot snapshot = _window.PumpEvents();
             Element root = _render is null ? new Spacer(SizeF.Zero) : _render();
             IdResolver.Assign(root);
+            focus.BeginFrame();
+            TreeWalk.Register(root, focus);
             SizeF screen = new(_window.Width, _window.Height);
             LayoutEngine.Arrange(root, new RectF(0, 0, screen.Width, screen.Height));
             RawInput raw = new(
                 new PointF(snapshot.MousePosition.X, snapshot.MousePosition.Y),
-                LeftEvents(snapshot));
-            InputState input = Interaction.Update(root, in raw);
+                LeftEvents(snapshot),
+                MapKeys(snapshot));
+            InputState input = Interaction.Update(root, in raw, focus);
+            focus.HandleKeys(raw.KeyEvents ?? Array.Empty<KeyEventData>());
+            input = input with { Focused = focus.FocusedThisFrame };
             mesh.Clear();
-            root.Draw(new PaintContext(mesh, Atlas, input));   // 显式 in 不能接右值(CS8156),隐式传递等价
+            root.Draw(new PaintContext(mesh, Atlas, input));
             _renderer.Submit(mesh, screen, _ctx.Device.MainSwapchain.Framebuffer);
             _ctx.Device.SwapBuffers();
             State.Sweep();
@@ -64,6 +70,18 @@ public sealed class App
                 _window.Close();
         }
         return 0;
+    }
+
+    static KeyEventData[] MapKeys(InputSnapshot snapshot)
+    {
+        if (snapshot.KeyEvents.Count == 0) return Array.Empty<KeyEventData>();
+        var keys = new KeyEventData[snapshot.KeyEvents.Count];
+        for (int i = 0; i < snapshot.KeyEvents.Count; i++)
+        {
+            KeyEvent ke = snapshot.KeyEvents[i];
+            keys[i] = new KeyEventData(ke.Key, ke.Down, ke.Modifiers.HasFlag(ModifierKeys.Shift));
+        }
+        return keys;
     }
 
     static bool[] LeftEvents(InputSnapshot snapshot)
