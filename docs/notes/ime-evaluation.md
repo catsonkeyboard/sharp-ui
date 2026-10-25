@@ -17,3 +17,4 @@
 - Windows 精确候选跟随 + 内联组合(preedit 下划线/文本)需直连 IMM32/TSF(hwnd + 光标屏幕坐标),
   即 D5 既定"手写平台层",归 **M3e**;SDL3(Silk.NET)/GLFW 为 R3 备选路线。
 - 复评触发条件:用户报告候选窗位置影响输入体验 / 升级 native SDL2 后提交文本失效 / M3e 无障碍(TSF/UIA)立项。
+- 2026-10-25 修复:候选窗激活已落地(App 经原生 SDL_StartTextInput/SetTextInputRect 桥接,用户报告的"候选框不显示"即此缺口);preedit 内联显示仍待 Veldrid 绑定缺口。

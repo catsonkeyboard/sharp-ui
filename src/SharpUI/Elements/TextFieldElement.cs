@@ -89,6 +89,17 @@ public sealed class TextFieldElement : PanelElement, ITextFeedable
     static bool IsClipboardKey(KeyEventData k) =>
         k.Ctrl && (k.Key == Veldrid.Key.C || k.Key == Veldrid.Key.X || k.Key == Veldrid.Key.V);
 
+    /// <summary>光标逻辑像素矩形(IME 热修):App.Run 乘 Scale 换算后喂 SDL_SetTextInputRect,候选窗锚点。
+    /// 空帧/无图集(前缀宽测不出)返回 null;Cursor 取钳制值,x 数学与 Draw 光标一致。</summary>
+    internal RectF? CursorRectLogical()
+    {
+        if (Frame.IsEmpty || App.Atlas is not { } atlas) return null;
+        TextState st = State;
+        int cursor = Math.Clamp(st.Cursor, 0, st.Text.Length);
+        float prefix = cursor > 0 ? atlas.Measure(st.Text[..cursor], 14f).Width : 0f;
+        return new RectF(Frame.X + PadX + prefix, Frame.Y + 2f, 1f, Frame.Height - 4f);
+    }
+
     protected internal override SizeF MeasureSelf(SizeF available)
     {
         if (App.Atlas is null) return new SizeF(80f, 28f);

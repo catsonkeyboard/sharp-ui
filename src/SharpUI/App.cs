@@ -96,6 +96,11 @@ public sealed class App
 
                 SizeF screen = new(w.Window.Width / w.Scale, w.Window.Height / w.Scale);
                 LayoutEngine.Arrange(root, new RectF(0, 0, screen.Width, screen.Height));
+                TextFieldElement? tf = w.Focus.FocusedThisFrame as TextFieldElement;   // IME 热修:Arrange 后帧坐标已就绪
+                w.TextInput.Update(w.Window.SdlWindowHandle, tf?.ResolvedId,
+                    tf is null || tf.CursorRectLogical() is not { } cr ? null
+                    : ((int)(cr.X * w.Scale), (int)(cr.Y * w.Scale),
+                       Math.Max(1, (int)(cr.Width * w.Scale)), (int)(cr.Height * w.Scale)));
                 mesh.Clear();
                 root.Draw(new PaintContext(mesh, w.Atlas, input));
                 w.Renderer.Submit(mesh, screen, w.Ctx.Device.MainSwapchain.Framebuffer, w.Scale);
@@ -107,6 +112,7 @@ public sealed class App
             for (int i = Windows.Count - 1; i >= 1; i--)   // 主窗恒留 [0](关闭即退出循环,不参与移除)
                 if (!Windows[i].Window.Exists)
                 {
+                    Windows[i].TextInput.Update(IntPtr.Zero, null, null);   // IME 热修:移除前确保 Stop(去激活该窗文本输入)
                     Windows[i].Renderer.Dispose();
                     Windows[i].Ctx.Dispose();
                     Windows[i].Atlas.Dispose();   // M1 复审补漏:Skia 原生图集随窗释放,防反复开关泄漏
@@ -115,6 +121,8 @@ public sealed class App
             if (maxFrames > 0 && ++frames >= maxFrames)
                 main.Window.Close();
         }
+        foreach (AppWindow w in Windows)   // IME 热修:退出兜底,残留窗(含主窗)各确保 Stop
+            w.TextInput.Update(IntPtr.Zero, null, null);
         return 0;
     }
 
