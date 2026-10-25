@@ -45,57 +45,34 @@ public sealed class App
         State = new StateStore();
         var mesh = new MeshBuilder();
         var focus = new FocusManager();
+        Element? lastTree = null;
         int frames = 0;
         while (_window.Exists)
         {
-            InputSnapshot snapshot = _window.PumpEvents();
+            RawInput raw = InputMapper.Map(_window.PumpEvents());
+            InputState input = lastTree is not null
+                ? Interaction.Update(lastTree, in raw, focus)
+                : InputState.Empty;
+            UiContext.CurrentInput = input;
+
             Element root = _render is null ? new Spacer(SizeF.Zero) : _render();
             IdResolver.Assign(root);
             focus.BeginFrame();
             TreeWalk.Register(root, focus);
+            focus.HandleKeys(raw.KeyEvents ?? Array.Empty<KeyEventData>());
+            input = input with { Focused = focus.FocusedThisFrame, FocusedId = focus.FocusedId };
+
             SizeF screen = new(_window.Width, _window.Height);
             LayoutEngine.Arrange(root, new RectF(0, 0, screen.Width, screen.Height));
-            RawInput raw = new(
-                new PointF(snapshot.MousePosition.X, snapshot.MousePosition.Y),
-                LeftEvents(snapshot),
-                MapKeys(snapshot));
-            InputState input = Interaction.Update(root, in raw, focus);
-            focus.HandleKeys(raw.KeyEvents ?? Array.Empty<KeyEventData>());
-            input = input with { Focused = focus.FocusedThisFrame };
             mesh.Clear();
             root.Draw(new PaintContext(mesh, Atlas, input));
             _renderer.Submit(mesh, screen, _ctx.Device.MainSwapchain.Framebuffer);
             _ctx.Device.SwapBuffers();
             State.Sweep();
+            lastTree = root;
             if (maxFrames > 0 && ++frames >= maxFrames)
                 _window.Close();
         }
         return 0;
-    }
-
-    static KeyEventData[] MapKeys(InputSnapshot snapshot)
-    {
-        if (snapshot.KeyEvents.Count == 0) return Array.Empty<KeyEventData>();
-        var keys = new KeyEventData[snapshot.KeyEvents.Count];
-        for (int i = 0; i < snapshot.KeyEvents.Count; i++)
-        {
-            KeyEvent ke = snapshot.KeyEvents[i];
-            keys[i] = new KeyEventData(ke.Key, ke.Down, ke.Modifiers.HasFlag(ModifierKeys.Shift));
-        }
-        return keys;
-    }
-
-    static bool[] LeftEvents(InputSnapshot snapshot)
-    {
-        int n = 0;
-        foreach (MouseEvent me in snapshot.MouseEvents)
-            if (me.MouseButton == MouseButton.Left) n++;
-        if (n == 0) return Array.Empty<bool>();
-        var events = new bool[n];
-        int i = 0;
-        foreach (MouseEvent me in snapshot.MouseEvents)
-            if (me.MouseButton == MouseButton.Left)
-                events[i++] = me.Down;
-        return events;
     }
 }

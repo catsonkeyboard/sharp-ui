@@ -145,4 +145,40 @@ public class InteractionTests
 
         Assert.Equal(0, firstClicks);     // 无键回退到索引身份:换位后语义不同,不触发(文档化语义)
     }
+
+    [Fact]
+    public void ClickLedger_RecordsClickedIds_AndHeldFromRaw()
+    {
+        ButtonElement b = new("+", () => { }); b.Key = "plus";
+        PanelElement root = Ui.Panel();
+        root.Style.CrossAlign = CrossAxisAlignment.Stretch;
+        root.Add(b);
+        LayoutEngine.Arrange(root, new RectF(0, 0, 100, 40));
+        IdResolver.Assign(root);
+        string id = b.ResolvedId;
+
+        InputState press = Interaction.Update(root, new RawInput(new PointF(50, 5), new[] { true }, LeftHeld: true));
+        Assert.True(press.LeftDown);
+        InputState release = Interaction.Update(root, new RawInput(new PointF(50, 5), new[] { false }, LeftHeld: false));
+        Assert.False(release.LeftDown);
+        Assert.NotNull(release.ClickedIds);
+        Assert.Contains(id, release.ClickedIds!);
+    }
+
+    [Fact]
+    public void HeldFlagFromSDL_SustainsAcrossFramesWithoutEvents()
+    {
+        ButtonElement b = new("+", () => { }); b.Key = "plus";
+        PanelElement root = Ui.Panel();
+        root.Style.CrossAlign = CrossAxisAlignment.Stretch;
+        root.Add(b);
+        LayoutEngine.Arrange(root, new RectF(0, 0, 100, 40));
+        IdResolver.Assign(root);
+
+        Interaction.Update(root, new RawInput(new PointF(50, 5), new[] { true }, LeftHeld: true));
+        InputState held = Interaction.Update(root, new RawInput(new PointF(50, 5), Array.Empty<bool>(), LeftHeld: true));   // 持续按住、无事件帧
+        Assert.True(held.LeftDown);
+        InputState up = Interaction.Update(root, new RawInput(new PointF(50, 5), new[] { false }, LeftHeld: false));
+        Assert.NotNull(up.ClickedIds);   // 跨帧按压-松开成立
+    }
 }

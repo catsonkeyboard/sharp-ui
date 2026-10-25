@@ -20,8 +20,9 @@ public sealed class ButtonElement : PanelElement
 
     public override void Draw(in PaintContext pc)
     {
-        Background = pc.Input.Focused == this ? Color32.FromRgb(0x60A5FA)
-            : pc.Input.Hovered == this
+        string? id = ResolvedId;
+        Background = pc.Input.FocusedId == id ? Color32.FromRgb(0x60A5FA)
+            : pc.Input.HoveredId == id
                 ? (pc.Input.LeftDown ? Color32.FromRgb(0x1D4ED8) : Color32.FromRgb(0x3B82F6))
             : Color32.FromRgb(0x0C63E4);
         base.Draw(pc);
