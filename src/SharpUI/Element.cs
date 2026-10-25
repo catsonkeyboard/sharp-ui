@@ -14,6 +14,10 @@ public abstract class Element
     public SizeF Measured;   // Arrange 期间的度量缓存
     public bool IsHitTarget; // 命中测试终点(Button = true)
 
+    /// <summary>用户提供的稳定键;未提供时按 类型名+兄弟索引 回退(规格书 D10)。</summary>
+    public string? Key { get; internal set; }
+    internal string? ResolvedId { get; set; }
+
     public Element Add(Element child)
     {
         Children ??= new List<Element>(4);
