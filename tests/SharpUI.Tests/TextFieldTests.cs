@@ -63,4 +63,23 @@ public class TextFieldTests
         App.Atlas = null;
         App.State = null;
     }
+
+    [Fact]
+    public void FocusOnStart_MarksAutoFocusChainably()
+    {
+        var tf = new TextFieldElement("ph");
+        Assert.False(tf.AutoFocus);
+        Assert.Same(tf, tf.FocusOnStart());
+        Assert.True(tf.AutoFocus);
+    }
+
+    [Fact]
+    public void FindAutoFocus_LocatesMarkedFieldInTree()
+    {
+        var marked = Ui.TextField("a").FocusOnStart();
+        Element root = Ui.Column(Ui.Text("t"), Ui.TextField("b"), marked);
+        Assert.Same(marked, App.FindAutoFocus(root));
+        Assert.Null(App.FindAutoFocus(Ui.Column(Ui.Text("t"))));   // 无标记 → null
+        Assert.Null(App.FindAutoFocus(Ui.TextField("c")));          // 未标记单元素 → null
+    }
 }

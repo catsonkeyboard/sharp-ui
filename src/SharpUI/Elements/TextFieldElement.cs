@@ -9,6 +9,16 @@ public sealed class TextFieldElement : PanelElement, ITextFeedable
     /// <summary>State 缺省值(M3b):Get(key, initial) 未命中即存入并共享;record 不可变,共享安全。</summary>
     internal static readonly TextState EmptyState = new();
 
+    /// <summary>启动自动聚焦(IME 热修自测):首帧无焦点时 App.Run 依此标记 SetFocus;常规表单默认不聚焦。</summary>
+    public bool AutoFocus { get; private set; }
+
+    /// <summary>声明本框在应用启动/无既有焦点时自动获得焦点(链式)。</summary>
+    public TextFieldElement FocusOnStart()
+    {
+        AutoFocus = true;
+        return this;
+    }
+
     string _keyFor = "";    // _stateKey 对应的 ResolvedId;id 每帧稳定,值比较相等即复用(M3b 免拼接)
     string _stateKey = "";
 

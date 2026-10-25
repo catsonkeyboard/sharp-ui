@@ -92,6 +92,8 @@ public sealed class App
                 IdResolver.Assign(root);
                 w.Focus.BeginFrame();
                 TreeWalk.Register(root, w.Focus);
+                if (w.Focus.FocusedId is null && FindAutoFocus(root) is { } af)   // IME 热修自测:声明式启动聚焦
+                    w.Focus.SetFocus(af);
                 w.Focus.HandleKeys(raw.KeyEvents ?? Array.Empty<KeyEventData>(), w.Session);
                 input = input with { Focused = w.Focus.FocusedThisFrame, FocusedId = w.Focus.FocusedId };
 
@@ -133,5 +135,15 @@ public sealed class App
         if (lastTree is null || focus.FocusedId is not string id) return;
         if (TreeWalk.Find(lastTree, id) is ITextFeedable feedable)
             feedable.Feed(raw.KeyEvents, raw.Chars);
+    }
+
+    /// <summary>深度优先找首个 AutoFocus TextFieldElement(IME 热修自测:启动聚焦)。</summary>
+    internal static TextFieldElement? FindAutoFocus(Element e)
+    {
+        if (e is TextFieldElement { AutoFocus: true } tf) return tf;
+        if (e.Children is not null)
+            foreach (Element c in e.Children)
+                if (FindAutoFocus(c) is { } hit) return hit;
+        return null;
     }
 }

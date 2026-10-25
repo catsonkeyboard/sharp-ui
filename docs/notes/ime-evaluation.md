@@ -29,3 +29,25 @@
   处置:SetRect 双通道:保留 SDL 官方路径 + 直接 imm32(ImmGetContext→
   ImmSetCompositionWindow(CFS_POINT,光标点)/ImmSetCandidateWindow(CFS_CANDIDATE_POS,光标下方),
   ImmReleaseContext;HWND 经 SDL_GetWindowWMInfo 取,客户区像素坐标即 IMM 坐标系;Win 守卫+句柄缓存)。
+- 2026-10-25 修复四(caret,裁定#37):修复三用户复测仍右下角——Win10/11 微软拼音(TSF)候选 UI 跟随
+  **系统插入符**而非仅 IMM 调用,无 caret 时飘至屏幕角落(ImGui Win32 后端同款处置)。
+  处置:PositionImm 尾部 CreateCaret/SetCaretPos/ShowCaret,Stop 时 DestroyCaret。
+- 2026-10-25 修复五(computer-use 自测闭环,裁定#38+#39,终获实证通过):
+  自测发现修复三/四的 IMM 通道**从未执行**——`SDL_GetWindowWMInfo` 恒返 0。
+  两个叠加根因:
+  - **#38 双模块**:Veldrid.Sdl2 自身预载 `runtimes/<rid>/native/SDL2.dll`,其 DllImport 又解析到应用
+    基目录副本 → 进程内同时存在两份 SDL2 模块(模块枚举实证双 base 地址);窗口属主(已初始化,
+    WasInit=VIDEO)是基目录副本,而 SdlTextInput 旧预载落到孤儿副本,一切 SDL 调用进错模块
+    (WMInfo 报 "Video subsystem has not been initialized";修复二的 SetHint 同样落空——候选框出现
+    纯系 2.30.8 升级本身)。处置:弃 DllImport/预载,显式 LoadLibrary 候选路径 +
+    `SDL_WasInit(VIDEO)` 判定活模块,函数指针直调(SdlApi 绑定层);hint 改在活模块绑定时生效。
+  - **#39 WMInfo 结构越界写**:SDL 2.24+ Windows 联合体 4 指针(window/hdc/hglrc/helperWindow,
+    至 offset 40),旧 SdlSysWmInfo 仅 16 字节——绑定修好后 WMInfo 立刻成功并越界冲毁封送暂存区,
+    纯托管 return 处段错误(版本字读出随机乱码即此副作用)。处置:结构补全 4 指针 + 8 指针余量。
+  另:caret 坐标系修正(SetCaretPos 收**屏幕**坐标,IMM 收**客户区**坐标,同一逻辑点须 ClientToScreen 换算);
+  demo 增大至 900x960(原 480x320 输入框在折叠线下)。
+  **实测通过**(keybd_event 真实键盘管线):拼音 "nihao" → 输入框内组合串(下划线)+
+  候选框出现在输入框正下方偏右(不再屏幕右下角)→ 回车 "你好" 上屏,候选框消失。
+  测试配套:SHARPUI_IME_TRACE=1 逐帧 trace 至 %TEMP%\sharpui-ime-trace.log;SHARPUI_TEST_IME_OPEN=1
+  强制 IME 打开(自动化注入键不触发 Shift 中英切换时用);TextFieldElement.FocusOnStart() 声明式启动聚焦
+  (FindAutoFocus 深度优先,App.Run 无焦点时 SetFocus)绕开合成指针不可靠问题。测试 156→158。
