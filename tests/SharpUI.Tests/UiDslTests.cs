@@ -1,4 +1,5 @@
 using SharpUI;
+using SharpUI.Backends;
 
 namespace SharpUI.Tests;
 
@@ -43,7 +44,7 @@ public class UiDslTests
     [Trait("Category", "Gpu")]
     public void Measure_WiresTextThroughAtlas()
     {
-        using var ctx = GraphicsContext.CreateHeadless(64, 64);
+        using var ctx = D3D11Context.CreateHeadless(64, 64);
         using var atlas = new TextAtlas(ctx);
         App.Atlas = atlas;
         TextElement t = Ui.Text("Hello").Size(20);
@@ -56,7 +57,7 @@ public class UiDslTests
     [Trait("Category", "Gpu")]
     public void PanelDraw_ProducesRoundedRectMesh()
     {
-        using var ctx = GraphicsContext.CreateHeadless(64, 64);
+        using var ctx = D3D11Context.CreateHeadless(64, 64);
         using var atlas = new TextAtlas(ctx);
         PanelElement panel = Ui.Panel().Fill(Color32.White).Radius(8f);
         LayoutEngine.Arrange(panel, new RectF(0, 0, 100, 50));
@@ -79,7 +80,7 @@ public class UiDslTests
     [Trait("Category", "Gpu")]
     public void PanelChildren_ClipToPanelFrame()
     {
-        using var ctx = GraphicsContext.CreateHeadless(64, 64);
+        using var ctx = D3D11Context.CreateHeadless(64, 64);
         using var atlas = new TextAtlas(ctx);
         App.Atlas = atlas;
         PanelElement outer = Ui.Panel().Fill(Color32.White);
@@ -91,7 +92,7 @@ public class UiDslTests
         var mesh = new MeshBuilder();
         outer.Draw(new PaintContext(mesh, atlas, InputState.Empty));
         using var renderer = new Renderer(ctx);
-        renderer.Submit(mesh, new SizeF(64, 64), ctx.MainFramebuffer);
+        renderer.Submit(mesh, new SizeF(64, 64));
         byte[] px = ctx.ReadBackMainFramebuffer();
         Assert.Equal(new byte[] { 0, 0, 255, 255 }, PixelAt(px, 32, 10));    // 内部:red(B 存 0,G 0,R 255)
         Assert.Equal(new byte[] { 20, 18, 18, 255 }, PixelAt(px, 32, 50));   // 越界区被剪→清屏色

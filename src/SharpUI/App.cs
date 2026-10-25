@@ -1,7 +1,6 @@
 using System.Diagnostics;
-using Veldrid;
+using SharpUI.Backends;
 using Veldrid.Sdl2;
-using Veldrid.StartupUtilities;
 
 namespace SharpUI;
 
@@ -41,16 +40,12 @@ public sealed class App
 
     static AppWindow CreateWindow(string title, int width, int height, Func<Element>? render)
     {
-        SdlTextInput.EnableImeUi();   // 裁定#34:须在窗口创建前;旧版 SDL 上无害 no-op
-        VeldridStartup.CreateWindowAndGraphicsDevice(
-            new WindowCreateInfo { WindowTitle = title, WindowWidth = width, WindowHeight = height },
-            new GraphicsDeviceOptions { Debug = false, PreferStandardClipSpaceYDirection = true },
-            VeldridStartup.GetPlatformDefaultBackend(),
-            out Sdl2Window window,
-            out GraphicsDevice device);
-        device.MainSwapchain.SyncToVerticalBlank = true;   // 60fps VSync(spec §7,每窗)
-        window.Resized += () => device.ResizeMainWindow((uint)window.Width, (uint)window.Height);
-        GraphicsContext ctx = GraphicsContext.CreateForWindow(window, device);
+        SdlTextInput.EnableImeUi();                       // 裁定#34:窗口创建前
+        SdlNative.EnsureVideoInit();                      // 裁定#38:与 Veldrid.Sdl2 同模块(SDL2.dll 基目录副本)
+        var window = new Sdl2Window(title, 100, 100, width, height, SDL_WindowFlags.Resizable | SDL_WindowFlags.Shown, false);
+        var ctx = D3D11Context.CreateForWindow(SdlNative.GetWin32Hwnd(window.SdlWindowHandle),
+            (uint)window.Width, (uint)window.Height);   // 交换链 Present(1,0) 即 VSync(spec §7,每窗)
+        window.Resized += () => ctx.Resize((uint)window.Width, (uint)window.Height);
         float scale = Math.Clamp(window.ScaleFactor.X, 0.5f, 4f);
         AppWindow w = new()
         {
@@ -106,8 +101,8 @@ public sealed class App
                        Math.Max(1, (int)(cr.Width * w.Scale)), (int)(cr.Height * w.Scale)));
                 mesh.Clear();
                 root.Draw(new PaintContext(mesh, w.Atlas, input));
-                w.Renderer.Submit(mesh, screen, w.Ctx.Device.MainSwapchain.Framebuffer, w.Scale);
-                w.Ctx.Device.SwapBuffers();
+                w.Renderer.Submit(mesh, screen, w.Scale);
+                w.Ctx.Present();
                 w.LastTree = root;
             }
             State.Sweep();   // 全局一次/帧:所有窗口本帧触碰后才扫描失联键(D25 宽限:>300 帧未触碰才清)

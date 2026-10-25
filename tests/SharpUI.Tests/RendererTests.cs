@@ -1,4 +1,5 @@
 using SharpUI;
+using SharpUI.Backends;
 
 namespace SharpUI.Tests;
 
@@ -8,14 +9,14 @@ public class RendererTests
     [Trait("Category", "Gpu")]
     public void RendersWhiteQuadOverClearColor()
     {
-        using var ctx = GraphicsContext.CreateHeadless(64, 64);
+        using var ctx = D3D11Context.CreateHeadless(64, 64);
         ctx.UpdateAtlasRegion(new byte[] { 255, 255, 255, 255 }, 0, 0, 1, 1);
         var mesh = new MeshBuilder();
-        float inv = 1f / GraphicsContext.AtlasSize;
+        float inv = 1f / D3D11Context.AtlasSize;
         mesh.AddQuad(new RectF(16, 16, 32, 32), new RectF(0, 0, inv, inv), Color32.White);
 
         using var renderer = new Renderer(ctx);
-        renderer.Submit(mesh, new SizeF(64, 64), ctx.MainFramebuffer);
+        renderer.Submit(mesh, new SizeF(64, 64));
 
         byte[] pixels = ctx.ReadBackMainFramebuffer();
         // B8G8R8A8:中心点应为白色
@@ -28,9 +29,9 @@ public class RendererTests
     [Trait("Category", "Gpu")]
     public void EmptyMesh_SubmitsNothing()
     {
-        using var ctx = GraphicsContext.CreateHeadless(64, 64);
+        using var ctx = D3D11Context.CreateHeadless(64, 64);
         using var renderer = new Renderer(ctx);
-        renderer.Submit(new MeshBuilder(), new SizeF(64, 64), ctx.MainFramebuffer);
+        renderer.Submit(new MeshBuilder(), new SizeF(64, 64));
         byte[] pixels = ctx.ReadBackMainFramebuffer();
         Assert.Equal(new byte[] { 20, 18, 18, 255 }, Pixel(pixels, 32, 32));
     }
@@ -39,17 +40,17 @@ public class RendererTests
     [Trait("Category", "Gpu")]
     public void ClipRuns_DrawWithPerRunScissor()
     {
-        using var ctx = GraphicsContext.CreateHeadless(64, 64);
+        using var ctx = D3D11Context.CreateHeadless(64, 64);
         ctx.UpdateAtlasRegion(new byte[] { 255, 255, 255, 255 }, 0, 0, 1, 1);
         var mesh = new MeshBuilder();
-        float inv = 1f / GraphicsContext.AtlasSize;
+        float inv = 1f / D3D11Context.AtlasSize;
         var uv = new RectF(0, 0, inv, inv);
         mesh.AddQuad(new RectF(0, 0, 32, 64), uv, Color32.White);        // 全屏剪裁(默认)
         mesh.SetClip(new RectF(0, 0, 16, 64));                            // 只露出左半
         mesh.AddQuad(new RectF(32, 0, 32, 64), uv, Color32.White);       // 右半区域,被剪
         mesh.SetClip(new RectF(0, 0, float.MaxValue, float.MaxValue));
         using var renderer = new Renderer(ctx);
-        renderer.Submit(mesh, new SizeF(64, 64), ctx.MainFramebuffer);
+        renderer.Submit(mesh, new SizeF(64, 64));
         byte[] px = ctx.ReadBackMainFramebuffer();
         Assert.Equal(new byte[] { 255, 255, 255, 255 }, Pixel(px, 4, 32));    // 左区可见
         Assert.Equal(new byte[] { 20, 18, 18, 255 }, Pixel(px, 40, 32));      // 右区被剪→清屏色(RGB 18,18,20→BGR 存储 [B,G,R,A])
@@ -60,13 +61,13 @@ public class RendererTests
     [Trait("Category", "Gpu")]
     public void ScaleTwoX_LogicalQuadCoversSameFraction()
     {
-        using var ctx = GraphicsContext.CreateHeadless(128, 128);
+        using var ctx = D3D11Context.CreateHeadless(128, 128);
         ctx.UpdateAtlasRegion(new byte[] { 255, 255, 255, 255 }, 0, 0, 1, 1);
         var mesh = new MeshBuilder();
-        float inv = 1f / GraphicsContext.AtlasSize;
+        float inv = 1f / D3D11Context.AtlasSize;
         mesh.AddQuad(new RectF(16, 16, 32, 32), new RectF(0, 0, inv, inv), Color32.White);
         using var renderer = new Renderer(ctx);
-        renderer.Submit(mesh, new SizeF(64, 64), ctx.MainFramebuffer, scale: 2f);
+        renderer.Submit(mesh, new SizeF(64, 64), scale: 2f);
         byte[] px = ctx.ReadBackMainFramebuffer();
         Assert.Equal(new byte[] { 255, 255, 255, 255 }, Pixel(px, 64, 64));   // 物理中心=逻辑中心
         Assert.Equal(new byte[] { 20, 18, 18, 255 }, Pixel(px, 4, 4));

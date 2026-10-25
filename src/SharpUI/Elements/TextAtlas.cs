@@ -1,3 +1,4 @@
+using SharpUI.Backends;
 using SkiaSharp;
 using SkiaSharp.HarfBuzz;
 
@@ -6,7 +7,7 @@ namespace SharpUI;
 /// <summary>文本图集 v2(D21):回退链分 run + HarfBuzz shaping 定位;shaping 结果快照缓存(T4,Measure/DrawRun 共用);字形位图 per-char 缓存(键含槽位)。</summary>
 public sealed class TextAtlas : IDisposable
 {
-    readonly GraphicsContext _ctx;
+    readonly D3D11Context _ctx;   // M3d-ii T4:具体后端上下文(同旧 GraphicsContext 形态);消费面仅 UpdateAtlasRegion
     readonly float _scale;
     readonly SKTypeface[] _typefaces;                    // 槽 0 = 主字体,1.. = 回退
     readonly SKShaper[] _shapers;
@@ -23,7 +24,7 @@ public sealed class TextAtlas : IDisposable
 
     public RectF WhiteUv { get; private set; }
 
-    public TextAtlas(GraphicsContext ctx, float scale = 1f, string[]? fallbackFamilies = null)
+    public TextAtlas(D3D11Context ctx, float scale = 1f, string[]? fallbackFamilies = null)
     {
         _ctx = ctx;
         _scale = scale;
@@ -42,9 +43,9 @@ public sealed class TextAtlas : IDisposable
             _shapers[i] = new SKShaper(_typefaces[i]);
             _probeFonts[i] = new SKFont(_typefaces[i], 16f);
         }
-        _packer = new ShelfPacker(GraphicsContext.AtlasSize, GraphicsContext.AtlasSize);
+        _packer = new ShelfPacker((int)D3D11Context.AtlasSize, (int)D3D11Context.AtlasSize);
         _bitmap = new SKBitmap(new SKImageInfo(
-            GraphicsContext.AtlasSize, GraphicsContext.AtlasSize, SKColorType.Rgba8888, SKAlphaType.Premul));
+            (int)D3D11Context.AtlasSize, (int)D3D11Context.AtlasSize, SKColorType.Rgba8888, SKAlphaType.Premul));
         _canvas = new SKCanvas(_bitmap);
         _canvas.Clear(SKColors.Transparent);
         _canvas.Flush();
@@ -56,8 +57,8 @@ public sealed class TextAtlas : IDisposable
         (int x, int y) = _packer.TryAlloc(1, 1)!.Value;
         _ctx.UpdateAtlasRegion(new byte[] { 255, 255, 255, 255 }, (uint)x, (uint)y, 1, 1);
         WhiteUv = new RectF(
-            x / (float)GraphicsContext.AtlasSize, y / (float)GraphicsContext.AtlasSize,
-            1f / (float)GraphicsContext.AtlasSize, 1f / (float)GraphicsContext.AtlasSize);
+            x / (float)D3D11Context.AtlasSize, y / (float)D3D11Context.AtlasSize,
+            1f / (float)D3D11Context.AtlasSize, 1f / (float)D3D11Context.AtlasSize);
     }
 
     int SlotFor(uint codepoint)
@@ -245,10 +246,10 @@ public sealed class TextAtlas : IDisposable
         gc.Flush();
         _ctx.UpdateAtlasRegion(gb.GetPixelSpan().ToArray(), (uint)slotPx.Value.X, (uint)slotPx.Value.Y, (uint)width, (uint)height);
         return new Glyph(
-            new RectF(slotPx.Value.X / (float)GraphicsContext.AtlasSize,
-                      slotPx.Value.Y / (float)GraphicsContext.AtlasSize,
-                      width / (float)GraphicsContext.AtlasSize,
-                      height / (float)GraphicsContext.AtlasSize),
+            new RectF(slotPx.Value.X / (float)D3D11Context.AtlasSize,
+                      slotPx.Value.Y / (float)D3D11Context.AtlasSize,
+                      width / (float)D3D11Context.AtlasSize,
+                      height / (float)D3D11Context.AtlasSize),
             width, height, -bounds.Top, advance);
     }
 

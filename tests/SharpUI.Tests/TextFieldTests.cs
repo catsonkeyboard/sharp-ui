@@ -1,4 +1,5 @@
 using SharpUI;
+using SharpUI.Backends;
 using static SharpUI.Ui;
 
 namespace SharpUI.Tests;
@@ -53,7 +54,7 @@ public class TextFieldTests
     [Trait("Category", "Gpu")]
     public void Draw_IncludesCursorAndBackgroundQuads()
     {
-        using var ctx = GraphicsContext.CreateHeadless(64, 64);
+        using var ctx = D3D11Context.CreateHeadless(64, 64);
         using var atlas = new TextAtlas(ctx);
         App.Atlas = atlas;
         (TextFieldElement tf, PanelElement root) = Field("ab");

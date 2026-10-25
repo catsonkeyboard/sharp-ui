@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using SharpUI;
+using SharpUI.Backends;
 using static SharpUI.Ui;
 
 namespace SharpUI.Tests;
@@ -11,7 +12,7 @@ public class PerfTests
     [Trait("Category", "Gpu")]
     public void CounterScene_WithinAllocationAndCpuBudget()
     {
-        using var ctx = GraphicsContext.CreateHeadless(64, 64);
+        using var ctx = D3D11Context.CreateHeadless(64, 64);
         using var atlas = new TextAtlas(ctx);
         App.Atlas = atlas;
         var mesh = new MeshBuilder();
@@ -73,7 +74,7 @@ public class PerfTests
     [Trait("Category", "Gpu")]
     public void VirtualList10k_StaysBounded()
     {
-        using var ctx = GraphicsContext.CreateHeadless(64, 64);
+        using var ctx = D3D11Context.CreateHeadless(64, 64);
         using var atlas = new TextAtlas(ctx);
         App.Atlas = atlas;
         App.State = new StateStore();
