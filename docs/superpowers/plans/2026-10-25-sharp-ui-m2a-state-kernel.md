@@ -176,10 +176,10 @@ public class IdResolverTests
     [Fact]
     public void SameKeyInDifferentBranches_StaysDistinct()
     {
+        // 注意:同分支的同键兄弟按 D10 会碰撞(用户错误,React 语义),故必须分放分支
         TextElement left = Ui.Text("l").Key("t");
         TextElement right = Ui.Text("r").Key("t");
-        PanelElement row = Ui.Row(left, right);
-        PanelElement root = Ui.Column(row);
+        PanelElement root = Ui.Column(Ui.Column(left), Ui.Column(right));
         IdResolver.Assign(root);
         Assert.NotEqual(left.ResolvedId, right.ResolvedId);
     }
