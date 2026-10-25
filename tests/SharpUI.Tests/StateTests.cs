@@ -44,8 +44,9 @@ public class StateTests
         store.Get<int>("kept");
         store.Get<int>("dropped");
         store.Sweep();
-        store.Get<int>("kept");       // 第二帧只触碰 kept
-        store.Sweep();
+        for (int i = 0; i < 301; i++) store.Tick();   // D25 宽限:清扫只清 >300 帧未触碰的键,推进帧越过宽限
+        store.Get<int>("kept");       // 第二帧只触碰 kept(帧戳刷新)
+        store.Sweep();                // dropped 距上次触碰 301 帧 → 清除
         Assert.Equal(1, store.Count);
     }
 
@@ -55,6 +56,7 @@ public class StateTests
         var store = new StateStore();
         store.Get<int>("x");
         store.Sweep();
+        for (int i = 0; i < 301; i++) store.Tick();   // 越过宽限期后清扫,x 已 301 帧未触碰
         store.Sweep();                // 本帧零触碰
         Assert.Equal(0, store.Count);
     }
@@ -81,5 +83,27 @@ public class StateTests
         store.Sweep();
         Assert.Equal(7, store.Get("n", 0));
         Assert.Equal(1, store.Count);
+    }
+
+    [Fact]
+    public void Sweep_WithinGrace_KeepsUntouchedEntries()   // D25 宽限:未触碰 ≤300 帧,Sweep 保留
+    {
+        var store = new StateStore();
+        store.Get<int>("x");          // stamp @ frame 0
+        store.Sweep();                // 宽限期内的清扫不再立即清除
+        for (int i = 0; i < 300; i++) store.Tick();
+        store.Sweep();                // 300 - 0 = 300,不 > 300 → 仍保留
+        Assert.Equal(1, store.Count);
+    }
+
+    [Fact]
+    public void Sweep_AfterGrace_EvictsUntouchedEntries()   // 301 帧未触碰 → 清除(边界 = 严格大于)
+    {
+        var store = new StateStore();
+        store.Get<int>("x");          // stamp @ frame 0
+        store.Sweep();
+        for (int i = 0; i < 301; i++) store.Tick();
+        store.Sweep();                // 301 - 0 = 301 > 300 → 清除
+        Assert.Equal(0, store.Count);
     }
 }

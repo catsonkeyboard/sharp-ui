@@ -102,12 +102,14 @@ public sealed class App
                 w.Ctx.Device.SwapBuffers();
                 w.LastTree = root;
             }
-            State.Sweep();   // 全局一次/帧:所有窗口本帧触碰后才扫描失联键
+            State.Sweep();   // 全局一次/帧:所有窗口本帧触碰后才扫描失联键(D25 宽限:>300 帧未触碰才清)
+            State.Tick();    // 帧计数 +1(M3c):宽限期以帧为刻度,先 Sweep 后 Tick
             for (int i = Windows.Count - 1; i >= 1; i--)   // 主窗恒留 [0](关闭即退出循环,不参与移除)
                 if (!Windows[i].Window.Exists)
                 {
                     Windows[i].Renderer.Dispose();
                     Windows[i].Ctx.Dispose();
+                    Windows[i].Atlas.Dispose();   // M1 复审补漏:Skia 原生图集随窗释放,防反复开关泄漏
                     Windows.RemoveAt(i);
                 }
             if (maxFrames > 0 && ++frames >= maxFrames)
