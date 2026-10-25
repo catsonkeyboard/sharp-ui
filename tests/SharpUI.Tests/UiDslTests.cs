@@ -63,4 +63,14 @@ public class UiDslTests
         panel.Draw(new PaintContext(mesh, atlas, InputState.Empty));
         Assert.Equal(108, mesh.VertexCount);   // 与 TessellationTests 计数一致
     }
+
+    [Fact]
+    public void Button_FactoryCreatesWiredButton()
+    {
+        int clicks = 0;
+        ButtonElement b = Ui.Button("OK", () => clicks++);
+        Assert.Equal("OK", ((TextElement)b.Children![0]).Text);
+        b.InvokeClick();
+        Assert.Equal(1, clicks);
+    }
 }

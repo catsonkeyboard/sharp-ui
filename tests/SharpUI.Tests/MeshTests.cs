@@ -57,4 +57,15 @@ public class MeshTests
         Assert.Equal(0, mesh.VertexCount);
         Assert.Equal(0, mesh.IndexCount);
     }
+
+    [Fact]
+    public void AddQuad_ThrowsAtVertexOverflow()
+    {
+        var mesh = new MeshBuilder();
+        for (int i = 0; i < 65536 / 4; i++)          // 16384 quads = 恰好 65536 顶点
+            mesh.AddQuad(new RectF(i % 100, 0, 1, 1), new RectF(0, 0, 1, 1), Color32.White);
+        Assert.Equal(65536, mesh.VertexCount);
+        Assert.Throws<InvalidOperationException>(() =>
+            mesh.AddQuad(new RectF(0, 0, 1, 1), new RectF(0, 0, 1, 1), Color32.White));
+    }
 }

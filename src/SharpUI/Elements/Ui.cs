@@ -7,6 +7,7 @@ public static class Ui
     public static TextElement Text(string text) => new(text);
     public static Spacer Spacer(SizeF size) => new(size);
     public static PanelElement Panel() => new();
+    public static ButtonElement Button(string label, Action onClick) => new(label, onClick);
 
     static PanelElement Container(Axis axis, Element?[] children)
     {

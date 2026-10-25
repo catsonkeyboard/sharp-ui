@@ -40,6 +40,9 @@ public sealed class MeshBuilder
 
     void Ensure(int extraVerts, int extraIndices)
     {
+        if (_vertexCount + extraVerts > ushort.MaxValue + 1)
+            throw new InvalidOperationException(
+                $"Mesh exceeds 65536 vertices ({_vertexCount + extraVerts}); the frame must be split or cleared.");
         if (_vertexCount + extraVerts > _vertices.Length)
             Array.Resize(ref _vertices, Math.Max(_vertices.Length * 2, _vertexCount + extraVerts));
         if (_indexCount + extraIndices > _indices.Length)
