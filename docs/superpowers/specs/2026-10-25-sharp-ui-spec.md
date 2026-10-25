@@ -241,7 +241,7 @@ IME 定位:SDL2 `KeyCharPresses`(已验证 `IReadOnlyList<char>`)承载 IME 提�
 | # | 风险 | 等级 | 缓解 |
 |---|------|------|------|
 | R1 | Veldrid 冻结无更新 | 低 | API 已锁版本且全部本机验证;渲染器只碰窄接口,M3 自研后端替换 |
-| R2 | Veldrid.SPIRV 传递依赖 Newtonsoft.Json 9.0.1(NU1903 高危通告,本机已复现) | 中 | 在 csproj 显式直接引用 Newtonsoft.Json 13.0.3 覆盖(计划 Task 5 内置) |
+| R2 | 传递依赖 Newtonsoft.Json 9.0.1(NU1903 高危通告,本机已复现;原链 Veldrid.SPIRV 已随 M3d-ii 移除,现存活链=Veldrid.SDL2→NativeLibraryLoader,2026-10-26 移除-复发-恢复实证) | 中 | csproj 显式直接引用 Newtonsoft.Json 13.0.3 钉版浮动压制;退出条件=M3e 替换窗口层移除 Veldrid.SDL2 后删除 |
 | R3 | SDL2 的 IME/文本输入能力弱 | 中 | M2 调研:SDL3(Silk.NET)/GLFW/原生平台层三选一;M3 手写平台层兜底 |
 | R4 | SkiaSharp 原生库体积影响 AOT 产物与启动 | 低 | 记录基线;远期自研光栅化后消除 |
 | R5 | GC 停顿破坏帧预算 | 中 | M1 预算纪律 + 每帧分配测量入 CI;M2 元素/List 池化 |
