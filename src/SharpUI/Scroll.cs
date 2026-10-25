@@ -61,3 +61,41 @@ public static class Scroll
         return false;
     }
 }
+
+/// <summary>固定行高虚拟化列表(D20):Arrange 时按可见窗 ±1 重建行;行 Key=索引字符串。</summary>
+public sealed class VirtualListElement : ScrollElement
+{
+    readonly int _count;
+    readonly float _itemHeight;
+    readonly Action<int, PanelElement> _render;
+
+    public VirtualListElement(string key, int count, float itemHeight, Action<int, PanelElement> render)
+    {
+        Key = key;
+        _count = count;
+        _itemHeight = itemHeight;
+        _render = render;
+        Add(new Spacer(SizeF.Zero));   // 占位:LayoutEngine.Arrange 对无子容器短路,须非空才进 ArrangeChildren(首排即清空重建)
+    }
+
+    protected internal override void ArrangeChildren(RectF inner)
+    {
+        Children!.Clear();   // 构造已占位,此处必非空(简报的 Children??= 不可编译:Element.Children 私有 set)
+        ContentMain = _count * _itemHeight;
+        ViewportMain = inner.Height;
+        float offset = Math.Clamp(StateOffset(), 0f, MathF.Max(0f, ContentMain - inner.Height));
+        int first = Math.Max(0, (int)MathF.Floor(offset / _itemHeight) - 1);
+        int lastExcl = Math.Min(_count, (int)MathF.Ceiling((offset + inner.Height) / _itemHeight) + 1);
+        for (int i = first; i < lastExcl; i++)
+        {
+            var row = new PanelElement { Key = i.ToString() };
+            row.Style.CrossAlign = CrossAxisAlignment.Stretch;
+            _render(i, row);
+            Children.Add(row);
+        }
+        for (int i = first; i < lastExcl; i++)
+            LayoutEngine.Arrange(Children[i - first],
+                new RectF(inner.X, inner.Top + i * _itemHeight - offset, inner.Width, _itemHeight));
+        IdResolver.AssignChildren(this);   // 重建后重排子树 id(保自 id)
+    }
+}

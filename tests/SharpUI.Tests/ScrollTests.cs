@@ -91,4 +91,45 @@ public class ScrollTests
         Assert.Equal(-10f, s.Children[1].Frame.Y);
         App.State = null;
     }
+
+    [Fact]
+    public void VirtualList_BuildsOnlyVisibleWindow()
+    {
+        App.State = new StateStore();
+        VirtualListElement list = Ui.VirtualList("rows", 100, 24f, static (i, row) =>
+            row.Add(new TextElement($"row {i}")));
+        LayoutEngine.Arrange(list, new RectF(0, 0, 200, 96));     // 4 行可见 +2 过扫
+        Assert.InRange(list.Children!.Count, 4, 8);
+        Assert.Equal("0", list.Children[0].Key);
+        Assert.Equal(0f, list.Children[0].Frame.Y);
+        Assert.Equal(24f, list.Children[1].Frame.Y);
+        App.State = null;
+    }
+
+    [Fact]
+    public void VirtualList_ScrollShiftsWindowAndKeysStayStable()
+    {
+        App.State = new StateStore();
+        VirtualListElement list = Ui.VirtualList("rows", 100, 24f, static (i, row) =>
+            row.Add(new TextElement($"row {i}")));
+        LayoutEngine.Arrange(list, new RectF(0, 0, 200, 96));
+        list.ScrollBy(48f);                                        // offset=48
+        LayoutEngine.Arrange(list, new RectF(0, 0, 200, 96));      // 重建窗
+        Assert.Equal("1", list.Children![0].Key);                  // 窗口下移,键随索引
+        Assert.Equal(-24f, list.Children[0].Frame.Y);              // 行1 y=1*24-48(部分滚出)
+        Assert.Equal("6", list.Children[^1].Key);                  // 可见到 5,+1 过扫
+        App.State = null;
+    }
+
+    [Fact]
+    public void VirtualList_ClampsAndReportsFullContent()
+    {
+        App.State = new StateStore();
+        VirtualListElement list = Ui.VirtualList("rows", 100, 24f, static (i, row) => row.Add(new TextElement(i.ToString())));
+        LayoutEngine.Arrange(list, new RectF(0, 0, 200, 96));
+        Assert.Equal(2400f, list.ContentMain);
+        Scroll.Dispatch(list, new InputState(new PointF(50, 10), false, false, false, null, WheelDelta: 1000f));
+        Assert.Equal(2304f, App.State!.Get("scroll:" + list.ResolvedId!, 0f));   // 钳 2400-96
+        App.State = null;
+    }
 }

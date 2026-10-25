@@ -29,6 +29,8 @@ public static class Ui
         return scroll;
     }
 
+    public static VirtualListElement VirtualList(string key, int count, float itemHeight, Action<int, PanelElement> render) => new(key, count, itemHeight, render);
+
     static PanelElement Container(Axis axis, Element?[] children)
     {
         var panel = new PanelElement();
