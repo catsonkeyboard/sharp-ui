@@ -33,4 +33,53 @@ public static class Shaders
             o_color = f_color * texel;
         }
         """;
+
+    /// <summary>M3d-ii:D3D11 HLSL(vs_5_0/ps_5_0 运行时编译)。与上方 GLSL 语义等价;
+    /// GLSL 源保留供 M3e OpenGL 后端复用(D3 决策)。</summary>
+    public const string HlslVertexSource = """
+        cbuffer ScreenSize : register(b0)
+        {
+            float2 u_screenSize;
+        };
+
+        struct VSIn
+        {
+            float2 position : POSITION;
+            float2 texCoord : TEXCOORD0;
+            float4 color : COLOR0;
+        };
+
+        struct VSOut
+        {
+            float4 position : SV_Position;
+            float2 texCoord : TEXCOORD0;
+            float4 color : COLOR0;
+        };
+
+        VSOut VSMain(VSIn i)
+        {
+            VSOut o;
+            o.position = float4(i.position.x / u_screenSize.x * 2.0 - 1.0,
+                                1.0 - i.position.y / u_screenSize.y * 2.0, 0.0, 1.0);
+            o.texCoord = i.texCoord;
+            o.color = i.color;
+            return o;
+        }
+        """;
+
+    public const string HlslFragmentSource = """
+        Texture2D atlas : register(t0);
+        SamplerState atlasSampler : register(s0);
+
+        struct PSIn
+        {
+            float2 texCoord : TEXCOORD0;
+            float4 color : COLOR0;
+        };
+
+        float4 PSMain(PSIn i) : SV_Target
+        {
+            return i.color * atlas.Sample(atlasSampler, i.texCoord);
+        }
+        """;
 }

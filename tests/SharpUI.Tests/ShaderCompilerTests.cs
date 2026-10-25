@@ -1,0 +1,27 @@
+using SharpUI;
+using SharpUI.Backends;
+
+namespace SharpUI.Tests;
+
+public class ShaderCompilerTests
+{
+    [Fact]  // 纯 CPU(d3dcompiler_47),无 GPU 依赖
+    public void Compile_HlslVertexAndFragment_SucceedWithNonEmptyBytecode()
+    {
+        (byte[] vs, string? vsErr) = ShaderCompiler.Compile(Shaders.HlslVertexSource, "VSMain", "vs_5_0");
+        Assert.Null(vsErr);
+        Assert.True(vs.Length > 0);
+
+        (byte[] ps, string? psErr) = ShaderCompiler.Compile(Shaders.HlslFragmentSource, "PSMain", "ps_5_0");
+        Assert.Null(psErr);
+        Assert.True(ps.Length > 0);
+    }
+
+    [Fact]
+    public void Compile_SyntaxError_ReturnsErrorMessage()
+    {
+        (byte[] code, string? err) = ShaderCompiler.Compile("float4 garbage(", "VSMain", "vs_5_0");
+        Assert.NotNull(err);
+        Assert.Contains("error", err, StringComparison.OrdinalIgnoreCase);
+    }
+}
