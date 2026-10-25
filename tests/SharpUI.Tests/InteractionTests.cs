@@ -87,4 +87,61 @@ public class InteractionTests
         Interaction.Update(releaseFrame, new RawInput(new PointF(10, 10), new[] { false }));
         Assert.Equal(1, clicks);
     }
+
+    static PanelElement BuildReorder(bool swapped, Action onInc)
+    {
+        ButtonElement inc = new("+", onInc); inc.Key = "inc";
+        ButtonElement dec = new("-", () => { }); dec.Key = "dec";
+        PanelElement col = Ui.Panel();
+        col.Style.CrossAlign = CrossAxisAlignment.Stretch;   // 修正:Atlas 缺省时按钮仅 32px 宽,x=50 命不中;拉伸后断言坐标有效
+        col.Add(swapped ? dec : inc);
+        col.Add(swapped ? inc : dec);
+        return col;
+    }
+
+    [Fact]
+    public void KeyedButtons_ClickSurvivesReorderAcrossRebuild()
+    {
+        int incClicks = 0;
+        PanelElement t1 = BuildReorder(false, () => incClicks++);
+        PanelElement t2 = BuildReorder(true, () => incClicks++);
+        LayoutEngine.Arrange(t1, new RectF(0, 0, 100, 200));
+        LayoutEngine.Arrange(t2, new RectF(0, 0, 100, 200));
+        IdResolver.Assign(t1);
+        IdResolver.Assign(t2);
+        float h = t1.Children![0].Frame.Height;
+
+        Interaction.Update(t1, new RawInput(new PointF(50, 5), new[] { true }));
+        Interaction.Update(t2, new RawInput(new PointF(50, h + 5), new[] { false }));
+
+        Assert.Equal(1, incClicks);       // 键 "inc" 在两帧中位于不同位置仍被正确命中
+    }
+
+    [Fact]
+    public void UnkeyedButtons_ReorderBreaksClick()
+    {
+        int firstClicks = 0;
+        PanelElement Build(bool swapped)
+        {
+            ButtonElement a = new("+", () => firstClicks++);
+            ButtonElement b = new("-", () => { });
+            PanelElement col = Ui.Panel();
+            col.Style.CrossAlign = CrossAxisAlignment.Stretch;   // 修正:同上,否则空转通过(几何上永不命中)
+            col.Add(swapped ? b : a);
+            col.Add(swapped ? a : b);
+            return col;
+        }
+        PanelElement t1 = Build(false);
+        PanelElement t2 = Build(true);
+        LayoutEngine.Arrange(t1, new RectF(0, 0, 100, 200));
+        LayoutEngine.Arrange(t2, new RectF(0, 0, 100, 200));
+        IdResolver.Assign(t1);
+        IdResolver.Assign(t2);
+        float h = t1.Children![0].Frame.Height;
+
+        Interaction.Update(t1, new RawInput(new PointF(50, 5), new[] { true }));
+        Interaction.Update(t2, new RawInput(new PointF(50, h + 5), new[] { false }));
+
+        Assert.Equal(0, firstClicks);     // 无键回退到索引身份:换位后语义不同,不触发(文档化语义)
+    }
 }
