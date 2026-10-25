@@ -68,4 +68,23 @@ public class InteractionTests
             new PointF(inner.Frame.X + 1, inner.Frame.Y + 1), Array.Empty<bool>()));
         Assert.Same(inner, s.Hovered);
     }
+
+    [Fact]
+    public void RebuiltTree_ClickFiresAcrossFrames()
+    {
+        var clicks = 0;
+        Element Build()
+        {
+            PanelElement tree = Ui.Panel();
+            tree.Add(new ButtonElement("OK", () => clicks++));
+            LayoutEngine.Arrange(tree, new RectF(0, 0, 200, 100));
+            return tree;
+        }
+
+        Element pressFrame = Build();
+        Element releaseFrame = Build();   // 结构/几何相同的不同实例(模拟 App 每帧重建)
+        Interaction.Update(pressFrame, new RawInput(new PointF(10, 10), new[] { true }));
+        Interaction.Update(releaseFrame, new RawInput(new PointF(10, 10), new[] { false }));
+        Assert.Equal(1, clicks);
+    }
 }

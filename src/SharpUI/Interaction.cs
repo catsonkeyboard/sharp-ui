@@ -11,26 +11,28 @@ public readonly record struct InputState(PointF Mouse, bool LeftDown, bool LeftP
 public static class Interaction
 {
     static bool _leftHeld;
-    static Element? _pressedOn;   // 按下瞬间的命中目标;点击 = 按下与松开命中同一目标
+    static int[]? _pressedOn;   // 按下瞬间的命中路径;点击 = 按下与松开命中同一路径(App 每帧重建树,实例引用不跨帧稳定)
 
     public static InputState Update(Element root, in RawInput raw)
     {
         bool pressed = false, released = false;
-        Element? hovered = root.HitTest(raw.Mouse);
+        (Element Hit, int[] Path)? hit = HitTestWithPath(root, raw.Mouse);
+        Element? hovered = hit?.Hit;
+        int[]? hoveredPath = hit?.Path;
         foreach (bool down in raw.LeftEvents)
         {
             if (down)
             {
                 _leftHeld = true;
                 pressed = true;
-                _pressedOn = hovered;
+                _pressedOn = hoveredPath;
             }
             else
             {
                 _leftHeld = false;
                 released = true;
-                if (_pressedOn is not null && ReferenceEquals(_pressedOn, hovered)
-                    && hovered is ButtonElement button)
+                if (_pressedOn is not null && hovered is ButtonElement button
+                    && PathsEqual(hoveredPath!, _pressedOn))
                 {
                     button.InvokeClick();
                 }
@@ -38,5 +40,35 @@ public static class Interaction
             }
         }
         return new InputState(raw.Mouse, _leftHeld, pressed, released, hovered);
+    }
+
+    /// <summary>与 Element.HitTest 同序(子节点从后往前、Frame.Contains 门控),额外记录根到命中目标的兄弟索引路径。</summary>
+    static (Element Hit, int[] Path)? HitTestWithPath(Element root, PointF p)
+    {
+        var path = new List<int>(8);
+        Element? hit = Descend(root, p, path);
+        return hit is null ? null : (hit, path.ToArray());
+    }
+
+    static Element? Descend(Element e, PointF p, List<int> path)
+    {
+        if (!e.Frame.Contains(p)) return null;
+        if (e.Children is not null)
+            for (int i = e.Children.Count - 1; i >= 0; i--)
+            {
+                path.Add(i);
+                if (Descend(e.Children[i], p, path) is { } hit)
+                    return hit;
+                path.RemoveAt(path.Count - 1);
+            }
+        return e.IsHitTarget ? e : null;
+    }
+
+    static bool PathsEqual(int[] a, int[] b)
+    {
+        if (a.Length != b.Length) return false;
+        for (int i = 0; i < a.Length; i++)
+            if (a[i] != b[i]) return false;
+        return true;
     }
 }
