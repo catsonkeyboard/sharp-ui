@@ -13,7 +13,6 @@
 
   <ItemGroup>
     <PackageReference Include="Veldrid.SDL2" Version="4.9.0" />
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="SkiaSharp" Version="4.153.1" />
     <PackageReference Include="SkiaSharp.HarfBuzz" Version="4.153.1" />
   </ItemGroup>

@@ -25,7 +25,7 @@ public interface IRenderContext : IDisposable
     /// <summary>剪裁矩形(目标像素坐标;全开=目标尺寸)。</summary>
     void SetScissor(uint x, uint y, uint w, uint h);
 
-    /// <summary>绘制一段索引几何(零分配路径:钉数组 + UpdateSubresource,内存布局与 UiVertex 20 字节一致)。</summary>
+    /// <summary>绘制一段索引几何(拷贝语义:实现须将传入分段拷入自有常驻 scratch——其字节容量恒等于 GPU 缓冲 ByteWidth——后整块上传;禁止直接钉调用者数组,整块上传语义下越界读,M3d-ii 实证;内存布局与 UiVertex 20 字节一致)。</summary>
     void Draw(UiVertex[] vertices, int vertexCount, ushort[] indices, uint indexCount, uint startIndex);
 
     /// <summary>呈现(窗口路径 Present(1,0) VSync;headless no-op)。</summary>

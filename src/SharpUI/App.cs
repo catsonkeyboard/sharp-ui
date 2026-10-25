@@ -45,7 +45,9 @@ public sealed class App
         var window = new Sdl2Window(title, 100, 100, width, height, SDL_WindowFlags.Resizable | SDL_WindowFlags.Shown, false);
         var ctx = D3D11Context.CreateForWindow(SdlNative.GetWin32Hwnd(window.SdlWindowHandle),
             (uint)window.Width, (uint)window.Height);   // 交换链 Present(1,0) 即 VSync(spec §7,每窗)
-        window.Resized += () => ctx.Resize((uint)window.Width, (uint)window.Height);
+        // 0 尺寸 = 最小化边缘,D3D11Context.ValidateSize 对 0 抛 ArgumentException,异常从 SDL 事件处理器
+        // 冒出会击穿 Run 循环整窗崩溃(旧栈 ResizeMainWindow(0,0) 容忍 0)——忽略本帧 resize。
+        window.Resized += () => { if (window.Width > 0 && window.Height > 0) ctx.Resize((uint)window.Width, (uint)window.Height); };
         float scale = Math.Clamp(window.ScaleFactor.X, 0.5f, 4f);
         AppWindow w = new()
         {
