@@ -74,6 +74,78 @@ public class LayoutTests
         Assert.Equal(10f, m.Width);
     }
 
+    [Fact]
+    public void Wrap_OverlongColumnBreaksIntoLinesStackedHorizontally()
+    {
+        Element root = new ColumnShim(
+            new Spacer(new SizeF(10, 30)),
+            new Spacer(new SizeF(10, 30)))
+        { Style = { Wrap = FlexWrap.Wrap, Gap = 5 } };
+        SizeF m = LayoutEngine.Measure(root, new SizeF(100, 50));
+        Assert.Equal(30f, m.Height);          // 最长行
+        Assert.Equal(25f, m.Width);           // 两行交叉宽 10+10+gap5
+        LayoutEngine.Arrange(root, new RectF(0, 0, 100, 50));
+        Assert.Equal(new RectF(0, 0, 10, 30), root.Children![0].Frame);
+        Assert.Equal(new RectF(15, 0, 10, 30), root.Children[1].Frame);   // 第二行 x=10+gap5
+    }
+
+    [Fact]
+    public void Grow_DistributesFreeSpaceWeighted()
+    {
+        Element root = new ColumnShim(
+            new Spacer(new SizeF(20, 10)) { Style = { FlexGrow = 1 } },
+            new Spacer(new SizeF(30, 10)) { Style = { FlexGrow = 3 } })
+        { Style = { Axis = Axis.Horizontal } };
+        LayoutEngine.Arrange(root, new RectF(0, 0, 200, 50));
+        Assert.Equal(57.5f, root.Children![0].Frame.Width);   // 20 + 150×1/4
+        Assert.Equal(142.5f, root.Children[1].Frame.Width);   // 30 + 150×3/4
+    }
+
+    [Fact]
+    public void Shrink_ShrinksOverflowWeightedByBasis()
+    {
+        Element root = new ColumnShim(
+            new Spacer(new SizeF(60, 10)) { Style = { FlexShrink = 1 } },
+            new Spacer(new SizeF(60, 10)) { Style = { FlexShrink = 1 } })
+        { Style = { Axis = Axis.Horizontal } };
+        LayoutEngine.Arrange(root, new RectF(0, 0, 50, 20));
+        Assert.Equal(25f, root.Children![0].Frame.Width);     // 60 - 70×60/120
+        Assert.Equal(25f, root.Children[1].Frame.Width);
+    }
+
+    [Fact]
+    public void DefaultNoShrink_OverflowPreserved()
+    {
+        Element root = new ColumnShim(
+            new Spacer(new SizeF(60, 10)),
+            new Spacer(new SizeF(60, 10)))
+        { Style = { Axis = Axis.Horizontal } };
+        LayoutEngine.Arrange(root, new RectF(0, 0, 50, 20));
+        Assert.Equal(60f, root.Children![0].Frame.Width);     // M1 语义
+    }
+
+    [Fact]
+    public void Basis_OverridesContentMainSize()
+    {
+        Element root = new ColumnShim(
+            new Spacer(new SizeF(20, 10)) { Style = { FlexBasis = 45 } })
+        { Style = { Axis = Axis.Horizontal } };
+        LayoutEngine.Arrange(root, new RectF(0, 0, 200, 20));
+        Assert.Equal(45f, root.Children![0].Frame.Width);
+    }
+
+    [Fact]
+    public void WrappedLines_StackVerticallyInRow()
+    {
+        Element root = new ColumnShim(
+            new Spacer(new SizeF(30, 10)),
+            new Spacer(new SizeF(30, 10)))
+        { Style = { Axis = Axis.Horizontal, Wrap = FlexWrap.Wrap, Gap = 5 } };
+        LayoutEngine.Arrange(root, new RectF(0, 0, 50, 100));
+        Assert.Equal(new RectF(0, 0, 30, 10), root.Children![0].Frame);
+        Assert.Equal(new RectF(0, 15, 30, 10), root.Children[1].Frame);   // 第二行 y=10+gap5
+    }
+
     /// 测试用容器:无叶子自测尺寸,纯靠子元素。
     sealed class ColumnShim : Element
     {

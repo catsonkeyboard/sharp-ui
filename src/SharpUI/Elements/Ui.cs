@@ -37,4 +37,8 @@ public static class ElementExtensions
     public static T CrossCenter<T>(this T e) where T : Element { e.Style.CrossAlign = CrossAxisAlignment.Center; return e; }
     public static T Key<T>(this T e, string key) where T : Element { e.Key = key; return e; }
     public static T Focusable<T>(this T e) where T : Element { e.Focusable = true; return e; }
+    public static T Grow<T>(this T e, float grow) where T : Element { e.Style.FlexGrow = grow; return e; }
+    public static T Shrink<T>(this T e, float shrink) where T : Element { e.Style.FlexShrink = shrink; return e; }
+    public static T Basis<T>(this T e, float basis) where T : Element { e.Style.FlexBasis = basis; return e; }
+    public static T Wrap<T>(this T e) where T : Element { e.Style.Wrap = FlexWrap.Wrap; return e; }
 }
