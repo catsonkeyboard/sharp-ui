@@ -16,6 +16,7 @@ public sealed class FocusManager
     {
         _tabOrder.Clear();
         _byId.Clear();
+        FocusedThisFrame = null;
     }
 
     public void Register(Element e)

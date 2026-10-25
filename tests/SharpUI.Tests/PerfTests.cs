@@ -55,10 +55,10 @@ public class PerfTests
         // testhost 工作目录在 tests/SharpUI.Tests/bin/{cfg}/net10.0,上溯 5 级到仓库根
         // 仅 Release 写盘:Debug 数字不能覆盖验收记录(SDK 项目仅在 Debug 定义 DEBUG)
 #if !DEBUG
-        string baselinePath = Path.GetFullPath("../../../../../docs/notes/m1-baselines.md");
+        string baselinePath = Path.GetFullPath("../../../../../docs/notes/perf-baselines.md");
         Directory.CreateDirectory(Path.GetDirectoryName(baselinePath)!);
         File.WriteAllText(baselinePath,
-            $"# M1 性能基线(自动生成)\n\n- 每帧分配:{bytesPerFrame:F0} B(预算 65536)\n- 每帧 CPU:{msPerFrame:F2} ms(预算 8)\n- 场景:Counter,480×320,Release 测得(含 id 解析+焦点注册管线)\n");
+            $"# 性能基线(自动生成)\n\n- 每帧分配:{bytesPerFrame:F0} B(预算 65536)\n- 每帧 CPU:{msPerFrame:F2} ms(预算 8)\n- 场景:Counter,480×320,Release 测得(含 id 解析+焦点注册管线)\n");
 #endif
         App.Atlas = null;
     }

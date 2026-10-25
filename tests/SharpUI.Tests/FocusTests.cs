@@ -2,6 +2,7 @@ using SharpUI;
 
 namespace SharpUI.Tests;
 
+[Collection("interaction")]
 public class FocusTests
 {
     static (PanelElement Root, ButtonElement First, ButtonElement Second) TwoButtons()

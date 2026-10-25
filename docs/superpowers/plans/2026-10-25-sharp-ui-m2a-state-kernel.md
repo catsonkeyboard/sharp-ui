@@ -877,7 +877,7 @@ git add -A && git commit -m "feat: focus manager with tab cycle and keyboard act
 
 **Interfaces:**
 - Consumes: 全部 M2a 公开面。
-- Produces: 更新后的性能门禁与 `docs/notes/m1-baselines.md` 同路径的 M2a 基线数字(预算不变 64KB/8ms)。
+- Produces: 更新后的性能门禁与 `docs/notes/perf-baselines.md` 同路径的 M2a 基线数字(预算不变 64KB/8ms)。
 
 - [ ] **Step 1: PerfTests 场景两个 Button 构造改为带键,帧函数计入 id/焦点管线**
 

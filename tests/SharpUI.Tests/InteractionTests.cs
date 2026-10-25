@@ -2,6 +2,7 @@ using SharpUI;
 
 namespace SharpUI.Tests;
 
+[Collection("interaction")]
 public class InteractionTests
 {
     static (Element Root, ButtonElement Button) ButtonAt(RectF frame)

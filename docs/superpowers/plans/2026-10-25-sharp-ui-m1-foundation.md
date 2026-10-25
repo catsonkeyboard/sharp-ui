@@ -2308,12 +2308,12 @@ git add -A && git commit -m "feat: hit-testing interaction and button element, c
 ### Task 12: 性能基线测试
 
 **Files:**
-- Create: `tests/SharpUI.Tests/PerfTests.cs`、`docs/notes/m1-baselines.md`
+- Create: `tests/SharpUI.Tests/PerfTests.cs`、`docs/notes/perf-baselines.md`
 - Test: PerfTests.cs 本身
 
 **Interfaces:**
 - Consumes: 全部前序公开面(`App.Atlas`、`Ui.*`、`LayoutEngine`、`PaintContext`)。
-- Produces: 性能回归门禁(规格书 §9 预算):Counter 场景 ≤64KB/帧、<8ms CPU/帧;实测数字记入 `docs/notes/m1-baselines.md`。
+- Produces: 性能回归门禁(规格书 §9 预算):Counter 场景 ≤64KB/帧、<8ms CPU/帧;实测数字记入 `docs/notes/perf-baselines.md`。
 
 - [ ] **Step 1: 写测试 PerfTests.cs(先跑出真实数字,预算断言即门禁)**
 
@@ -2369,7 +2369,7 @@ public class PerfTests
         Assert.True(msPerFrame < 8.0, $"每帧 CPU {msPerFrame:F2}ms 超预算 8ms");
 
         // testhost 工作目录在 tests/SharpUI.Tests/bin/{cfg}/net10.0,上溯 5 级到仓库根
-        string baselinePath = Path.GetFullPath("../../../../../docs/notes/m1-baselines.md");
+        string baselinePath = Path.GetFullPath("../../../../../docs/notes/perf-baselines.md");
         Directory.CreateDirectory(Path.GetDirectoryName(baselinePath)!);
         File.WriteAllText(baselinePath,
             $"# M1 性能基线(自动生成)\n\n- 每帧分配:{bytesPerFrame:F0} B(预算 65536)\n- 每帧 CPU:{msPerFrame:F2} ms(预算 8)\n- 场景:Counter,480×320,Release 测得\n");
@@ -2381,7 +2381,7 @@ public class PerfTests
 - [ ] **Step 2: 运行测试(Release 才是有效基线)**
 
 Run: `dotnet test -c Release --filter FullyQualifiedName~PerfTests`
-Expected: PASS,且控制台/`docs/notes/m1-baselines.md` 记录实测值。若断言失败,先看数字:分配超标 → 检查是否每帧 `ToString()`/闭包异常放大;CPU 超标 → 检查是否 Debug 语义泄漏(必须 -c Release)。
+Expected: PASS,且控制台/`docs/notes/perf-baselines.md` 记录实测值。若断言失败,先看数字:分配超标 → 检查是否每帧 `ToString()`/闭包异常放大;CPU 超标 → 检查是否 Debug 语义泄漏(必须 -c Release)。
 
 - [ ] **Step 3: 运行全量测试**
 
@@ -2450,6 +2450,6 @@ Task5 → Task6 ─────────────────┤→ Task7 
 
 - [ ] Counter demo 手测通过(Task 11 Step 9)
 - [ ] `dotnet test` 与 `dotnet test -c Release` 全绿
-- [ ] 性能基线记录在 `docs/notes/m1-baselines.md` 且门禁绿
+- [ ] 性能基线记录在 `docs/notes/perf-baselines.md` 且门禁绿
 - [ ] AOT 产物可运行,大小记录在 `docs/notes/m1-aot.md`
 - [ ] 全程零 `unsafe`、零 AOT 分析器警告
