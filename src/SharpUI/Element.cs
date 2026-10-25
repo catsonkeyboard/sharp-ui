@@ -1,7 +1,7 @@
 namespace SharpUI;
 
-/// <summary>绘制上下文(Task 11 将再加 InputState)。</summary>
-public readonly record struct PaintContext(MeshBuilder Mesh, TextAtlas Atlas)
+/// <summary>绘制上下文(M1 最终形态)。</summary>
+public readonly record struct PaintContext(MeshBuilder Mesh, TextAtlas Atlas, InputState Input)
 {
     public RectF WhiteUv => Atlas.WhiteUv;
 }

@@ -1,6 +1,6 @@
 namespace SharpUI;
 
-public sealed class PanelElement : Element
+public class PanelElement : Element
 {
     public Color32 Background = Color32.Transparent;
     public float CornerRadius;

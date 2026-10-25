@@ -59,7 +59,7 @@ public class UiDslTests
         PanelElement panel = Ui.Panel().Fill(Color32.White).Radius(8f);
         LayoutEngine.Arrange(panel, new RectF(0, 0, 100, 50));
         var mesh = new MeshBuilder();
-        panel.Draw(new PaintContext(mesh, atlas));
+        panel.Draw(new PaintContext(mesh, atlas, InputState.Empty));
         Assert.Equal(108, mesh.VertexCount);   // 与 TessellationTests 计数一致
     }
 }

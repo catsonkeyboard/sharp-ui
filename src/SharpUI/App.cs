@@ -41,18 +41,36 @@ public sealed class App
         int frames = 0;
         while (_window.Exists)
         {
-            _window.PumpEvents();
+            InputSnapshot snapshot = _window.PumpEvents();
             Element root = _render is null ? new Spacer(SizeF.Zero) : _render();
             SizeF screen = new(_window.Width, _window.Height);
             LayoutEngine.Measure(root, screen);
             LayoutEngine.Arrange(root, new RectF(0, 0, screen.Width, screen.Height));
+            RawInput raw = new(
+                new PointF(snapshot.MousePosition.X, snapshot.MousePosition.Y),
+                LeftEvents(snapshot));
+            InputState input = Interaction.Update(root, in raw);
             mesh.Clear();
-            root.Draw(new PaintContext(mesh, Atlas));   // 显式 in 不能接右值(CS8156),隐式传递等价
+            root.Draw(new PaintContext(mesh, Atlas, input));   // 显式 in 不能接右值(CS8156),隐式传递等价
             _renderer.Submit(mesh, screen, _ctx.Device.MainSwapchain.Framebuffer);
             _ctx.Device.SwapBuffers();
             if (maxFrames > 0 && ++frames >= maxFrames)
                 _window.Close();
         }
         return 0;
+    }
+
+    static bool[] LeftEvents(InputSnapshot snapshot)
+    {
+        int n = 0;
+        foreach (MouseEvent me in snapshot.MouseEvents)
+            if (me.MouseButton == MouseButton.Left) n++;
+        if (n == 0) return Array.Empty<bool>();
+        var events = new bool[n];
+        int i = 0;
+        foreach (MouseEvent me in snapshot.MouseEvents)
+            if (me.MouseButton == MouseButton.Left)
+                events[i++] = me.Down;
+        return events;
     }
 }
