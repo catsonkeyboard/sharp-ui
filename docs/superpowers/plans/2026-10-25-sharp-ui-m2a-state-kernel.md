@@ -437,6 +437,7 @@ git add -A && git commit -m "feat: id-keyed state store wired into frame loop"
         ButtonElement inc = new("+", onInc); inc.Key = "inc";
         ButtonElement dec = new("-", () => { }); dec.Key = "dec";
         PanelElement col = Ui.Panel();
+        col.Style.CrossAlign = CrossAxisAlignment.Stretch;   // Atlas-null 下按钮自身仅 32px 宽,须拉伸到全宽命中 x=50
         col.Add(swapped ? dec : inc);
         col.Add(swapped ? inc : dec);
         return col;
@@ -469,6 +470,7 @@ git add -A && git commit -m "feat: id-keyed state store wired into frame loop"
             ButtonElement a = new("+", () => firstClicks++);
             ButtonElement b = new("-", () => { });
             PanelElement col = Ui.Panel();
+            col.Style.CrossAlign = CrossAxisAlignment.Stretch;   // 同上:全宽命中
             col.Add(swapped ? b : a);
             col.Add(swapped ? a : b);
             return col;
@@ -520,6 +522,7 @@ public static class Interaction
 
     public static InputState Update(Element root, in RawInput raw)
     {
+        if (root.ResolvedId is null) IdResolver.Assign(root);   // 惰性守卫:未赋 id 的根(遗留测试)兜底;App.Run 恒先 Assign,生产为死代码
         bool pressed = false, released = false;
         Element? hovered = root.HitTest(raw.Mouse);
         foreach (bool down in raw.LeftEvents)
