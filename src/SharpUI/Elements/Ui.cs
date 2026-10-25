@@ -18,6 +18,7 @@ public static class Ui
     public static Spacer Spacer(SizeF size) => new(size);
     public static PanelElement Panel() => new();
     public static ButtonElement Button(string label, Action onClick) => new(label, onClick);
+    public static TextFieldElement TextField(string placeholder = "") => new(placeholder);
 
     /// <summary>竖向滚动容器(D19);与 Container 同构,但 new ScrollElement(默认 Vertical)。</summary>
     public static ScrollElement Scroll(params Element?[] children)
