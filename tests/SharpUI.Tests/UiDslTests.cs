@@ -73,4 +73,29 @@ public class UiDslTests
         b.InvokeClick();
         Assert.Equal(1, clicks);
     }
+
+    [Fact]
+    [Trait("Category", "Gpu")]
+    public void PanelChildren_ClipToPanelFrame()
+    {
+        using var ctx = GraphicsContext.CreateHeadless(64, 64);
+        using var atlas = new TextAtlas(ctx);
+        App.Atlas = atlas;
+        PanelElement outer = Ui.Panel().Fill(Color32.White);
+        PanelElement inner = Ui.Panel().Fill(Color32.FromRgb(0xFF0000));
+        outer.Style.CrossAlign = CrossAxisAlignment.Stretch;
+        outer.Add(inner);
+        inner.Add(new Spacer(new SizeF(64, 100)));   // 撑到 100 高,超出 outer
+        LayoutEngine.Arrange(outer, new RectF(0, 0, 64, 32));
+        var mesh = new MeshBuilder();
+        outer.Draw(new PaintContext(mesh, atlas, InputState.Empty));
+        using var renderer = new Renderer(ctx);
+        renderer.Submit(mesh, new SizeF(64, 64), ctx.MainFramebuffer);
+        byte[] px = ctx.ReadBackMainFramebuffer();
+        Assert.Equal(new byte[] { 0, 0, 255, 255 }, PixelAt(px, 32, 10));    // 内部:red(B 存 0,G 0,R 255)
+        Assert.Equal(new byte[] { 20, 18, 18, 255 }, PixelAt(px, 32, 50));   // 越界区被剪→清屏色
+        App.Atlas = null;
+    }
+
+    static byte[] PixelAt(byte[] px, int x, int y) => px.AsSpan((y * 64 + x) * 4, 4).ToArray();
 }
