@@ -151,13 +151,16 @@ public sealed class D3D11Context : IRenderContext
 
     // ---- IRenderContext v2 ----
 
-    /// <summary>窗口交换链 resize:Release 旧 RTV/后备缓冲 → ResizeBuffers → GetBuffer → 新 RTV;headless 抛。</summary>
+    /// <summary>窗口交换链 resize:解绑 RTV(管线仍间接引用后备缓冲,仅 Release 自身引用不够,MSDN 要求
+    /// 先 OMSetRenderTargets(0,null,null) 否则 DXGI_ERROR_INVALID_CALL)→ Release 旧 RTV/后备缓冲 →
+    /// ResizeBuffers → GetBuffer → 新 RTV;headless 抛。</summary>
     public void Resize(uint width, uint height)
     {
         ThrowIfDisposed();
         ValidateSize(width, height);
         if (_swapChain == IntPtr.Zero)
             throw new NotSupportedException("headless 上下文不支持 Resize(离屏目标尺寸随重建变更)");
+        _omSetRenderTargets(_context, 0, IntPtr.Zero, IntPtr.Zero);   // 解绑管线对后备缓冲的输出绑定
         ReleaseOne(ref _rtv, "ID3D11RenderTargetView");
         ReleaseOne(ref _backBuffer, "ID3D11Texture2D(backbuffer)");
         ReleaseOne(ref _stagingTexture, "ID3D11Texture2D(staging)");   // 尺寸随 resize 失配,惰性重建
@@ -224,7 +227,10 @@ public sealed class D3D11Context : IRenderContext
         _rsSetScissorRects(_context, 1, _scissorPin.AddrOfPinnedObject());
     }
 
-    /// <summary>绘制一段索引几何(零分配):span 拷入常驻 scratch → UpdateSubresource → 全状态落地 → DrawIndexed。</summary>
+    /// <summary>绘制一段索引几何(零分配):取 indices[startIndex .. startIndex+indexCount) 分段,重定基拷入
+    /// 常驻 scratch 头部(DrawIndexed 偏移 0)→ UpdateSubresource 整块上传 → 全状态落地。取舍:分段重定基的
+    /// 每次拷贝量 O(indexCount),一帧 N 个剪裁区段合计 O(总索引数);若上传 [0..startIndex+indexCount) 维持
+    /// GPU 侧偏移,末尾区段每次重传几乎整个前缀,均摊 O(N×总数),故选重定基。</summary>
     public void Draw(UiVertex[] vertices, int vertexCount, ushort[] indices, uint indexCount, uint startIndex)
     {
         ThrowIfDisposed();
@@ -232,13 +238,14 @@ public sealed class D3D11Context : IRenderContext
         ArgumentNullException.ThrowIfNull(indices);
         if (vertexCount < 0 || vertexCount > vertices.Length)
             throw new ArgumentOutOfRangeException(nameof(vertexCount), $"顶点数越界:{vertexCount}(数组 {vertices.Length})");
-        if (indexCount > (uint)indices.Length)
-            throw new ArgumentOutOfRangeException(nameof(indexCount), $"索引数越界:{indexCount}(数组 {indices.Length})");
+        if (indexCount > (uint)indices.Length || startIndex > (uint)indices.Length - indexCount)
+            throw new ArgumentOutOfRangeException(nameof(indexCount),
+                $"索引分段越界:[{startIndex}, {startIndex + indexCount}) > 数组 {indices.Length}");
         if (indexCount == 0) return;
 
         EnsureUploadCapacity(vertexCount, (int)indexCount);
         vertices.AsSpan(0, vertexCount).CopyTo(_vbScratch!);
-        indices.AsSpan(0, (int)indexCount).CopyTo(_ibScratch!);
+        indices.AsSpan((int)startIndex, (int)indexCount).CopyTo(_ibScratch!);
         // 缓冲更新语义:box=NULL = 整块 ByteWidth;scratch 字节容量恒等于 ByteWidth,读取有界
         _updateSubresource(_context, _vertexBuffer, 0, IntPtr.Zero, _vbScratchPin.AddrOfPinnedObject(), 0, 0);
         _updateSubresource(_context, _indexBuffer, 0, IntPtr.Zero, _ibScratchPin.AddrOfPinnedObject(), 0, 0);
@@ -254,7 +261,7 @@ public sealed class D3D11Context : IRenderContext
         _vssSetConstantBuffers(_context, 0, 1, _cbSlotPin.AddrOfPinnedObject());
         _pssSetShaderResources(_context, 0, 1, _srvSlotPin.AddrOfPinnedObject());
         _pssSetSamplers(_context, 0, 1, _samplerSlotPin.AddrOfPinnedObject());
-        _drawIndexed(_context, indexCount, startIndex, 0);
+        _drawIndexed(_context, indexCount, 0, 0);   // 分段已重定基到缓冲头,偏移恒 0
     }
 
     /// <summary>呈现:窗口 Present(1,0) VSync,hr 失败抛(设备丢失显式失败);headless no-op。</summary>
@@ -561,11 +568,10 @@ public sealed class D3D11Context : IRenderContext
         uint ibNeed = (uint)indexCount * sizeof(ushort);
         if (_vertexBuffer == IntPtr.Zero || vbNeed > _vbCapacityBytes)
         {
-            if (vbNeed > _vbCapacityBytes)
-            {
-                _vbCapacityBytes = Math.Max(_vbCapacityBytes * 2, vbNeed);
-                _vbCapacityBytes = (_vbCapacityBytes + UiVertex.SizeInBytes - 1) / UiVertex.SizeInBytes * UiVertex.SizeInBytes;
-            }
+            if (vbNeed > _vbCapacityBytes) _vbCapacityBytes = Math.Max(_vbCapacityBytes * 2, vbNeed);
+            // 无条件圆整到 20 的倍数:首容量 262144/20=13107.2,截断会使 scratch(262140B)< ByteWidth(262144B),
+            // 整块上传越界 4 字节(违反类头声明的"scratch 字节容量恒等于 ByteWidth"不变量)
+            _vbCapacityBytes = (_vbCapacityBytes + UiVertex.SizeInBytes - 1) / UiVertex.SizeInBytes * UiVertex.SizeInBytes;
             ReleaseOne(ref _vertexBuffer, "ID3D11Buffer(vertex)");
             if (_vbScratchPin.IsAllocated) _vbScratchPin.Free();
             _vbScratch = new UiVertex[_vbCapacityBytes / UiVertex.SizeInBytes];
