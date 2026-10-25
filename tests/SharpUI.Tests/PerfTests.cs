@@ -16,13 +16,14 @@ public class PerfTests
         var mesh = new MeshBuilder();
         int state = 0;
         var screen = new SizeF(480, 320);
+        var focus = new FocusManager();   // 帧外单例:避免每帧分配污染计量
 
         Element Build() => Column(
             Text("Counter").Size(28).Bold(),
             Text(state.ToString()).Size(48),
             Row(
-                new ButtonElement("−", () => state--),
-                new ButtonElement("+", () => state++)
+                Ui.Button("−", () => state--).Key("minus"),
+                Ui.Button("+", () => state++).Key("plus")
             ).Padding(0f)
         ).Center().Gap(12f).Padding(24f);
 
@@ -30,7 +31,10 @@ public class PerfTests
         {
             Element root = Build();
             LayoutEngine.Measure(root, screen);
+            IdResolver.Assign(root);
             LayoutEngine.Arrange(root, new RectF(0, 0, screen.Width, screen.Height));
+            focus.BeginFrame();
+            TreeWalk.Register(root, focus);
             mesh.Clear();
             root.Draw(new PaintContext(mesh, atlas, InputState.Empty));
         }
@@ -54,7 +58,7 @@ public class PerfTests
         string baselinePath = Path.GetFullPath("../../../../../docs/notes/m1-baselines.md");
         Directory.CreateDirectory(Path.GetDirectoryName(baselinePath)!);
         File.WriteAllText(baselinePath,
-            $"# M1 性能基线(自动生成)\n\n- 每帧分配:{bytesPerFrame:F0} B(预算 65536)\n- 每帧 CPU:{msPerFrame:F2} ms(预算 8)\n- 场景:Counter,480×320,Release 测得\n");
+            $"# M1 性能基线(自动生成)\n\n- 每帧分配:{bytesPerFrame:F0} B(预算 65536)\n- 每帧 CPU:{msPerFrame:F2} ms(预算 8)\n- 场景:Counter,480×320,Release 测得(含 id 解析+焦点注册管线)\n");
 #endif
         App.Atlas = null;
     }
