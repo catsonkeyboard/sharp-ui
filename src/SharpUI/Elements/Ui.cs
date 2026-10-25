@@ -6,7 +6,9 @@ public static class Ui
     public static PanelElement Row(params Element?[] children) => Container(Axis.Horizontal, children);
     public static TextElement Text(string text) => new(text);
 
-    /// <summary>即时模式逃生舱(D14):rootKey 须全树唯一(同 Key 纪律)。</summary>
+    /// <summary>即时模式逃生舱(D14):rootKey 须全树唯一(同 Key 纪律)。
+    /// 不可作为渲染根(App.Create 的 render 闭包直接返回 Immediate 面板时根 id 为空串,后缀匹配永不成立);
+    /// </summary>
     public static PanelElement Immediate(string rootKey, Action<UiScope> build)
     {
         var root = new PanelElement { Key = rootKey };

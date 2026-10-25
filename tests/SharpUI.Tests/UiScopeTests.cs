@@ -107,4 +107,29 @@ public class UiScopeTests
         Assert.EndsWith("/dbg/PanelElement1/PanelElement0/ButtonElement0",
             col.Children![0].ResolvedId);
     }
+
+    [Fact]
+    public void PointerClick_OnImmediateTree_ReachesClickedPoll()
+    {
+        bool resetClicked = false;
+        Element BuildTree()
+        {
+            PanelElement root = Ui.Column(Ui.Immediate("dbg", ui =>
+            {
+                if (ui.Button("Reset").Clicked()) resetClicked = true;
+            }));
+            root.Style.CrossAlign = CrossAxisAlignment.Stretch;   // Atlas-null 下按钮仅 32px 宽,压点取按钮中部 x=10
+            return root;
+        }
+        Element t1 = BuildTree();
+        LayoutEngine.Arrange(t1, new RectF(0, 0, 100, 200));
+        IdResolver.Assign(t1);
+
+        Interaction.Update(t1, new RawInput(new PointF(10, 5), new[] { true }));
+        UiContext.CurrentInput = Interaction.Update(t1, new RawInput(new PointF(10, 5), new[] { false }));
+
+        BuildTree();                       // 新帧构建:poll 在闭包内读账本
+        Assert.True(resetClicked);
+        UiContext.CurrentInput = default;
+    }
 }

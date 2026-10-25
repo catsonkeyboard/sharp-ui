@@ -13,7 +13,7 @@ public readonly record struct InputState(
     PointF Mouse, bool LeftDown, bool LeftPressed, bool LeftReleased,
     Element? Hovered, Element? Focused = null,
     string? HoveredId = null, string? FocusedId = null,
-    /// <summary>本帧完成点击的 id 账本(指针路径当帧;键盘激活经队列下一帧可见,裁定#18)。</summary>
+    /// <summary>本帧完成点击的 id 账本(指针路径当帧;键盘激活经队列下一帧可见,裁定#18)。调用方不得跨帧持有该列表(别名复用内部缓冲)。</summary>
     IReadOnlyList<string>? ClickedIds = null)
 {
     public static readonly InputState Empty = new(new PointF(-1f, -1f), false, false, false, null);
