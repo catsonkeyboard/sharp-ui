@@ -54,17 +54,22 @@ public static class LayoutEngine
     {
         e.Frame = frame;
         if (e.Children is not { Count: > 0 }) return;
-
-        bool vertical = e.Style.Axis == Axis.Vertical;
         RectF inner = frame.Deflate(e.Style.Padding);
+        e.ArrangeChildren(inner);
+    }
+
+    /// <summary>默认行布局(D19:原 Arrange 的行布局循环原样搬入);经 Element.ArrangeChildren 虚挂钩调用,ScrollElement 等覆写替换。</summary>
+    internal static void ArrangeLines(Element e, RectF inner)
+    {
+        bool vertical = e.Style.Axis == Axis.Vertical;
         float availMain = MathF.Max(0f, vertical ? inner.Height : inner.Width);
         float availCross = MathF.Max(0f, vertical ? inner.Width : inner.Height);
 
-        var childMain = new float[e.Children.Count];
-        var childCross = new float[e.Children.Count];
-        var lineOf = new int[e.Children.Count];
-        var lineMain = new float[e.Children.Count];
-        var lineCross = new float[e.Children.Count];
+        var childMain = new float[e.Children!.Count];
+        var childCross = new float[e.Children!.Count];
+        var lineOf = new int[e.Children!.Count];
+        var lineMain = new float[e.Children!.Count];
+        var lineCross = new float[e.Children!.Count];
         int lines = ComputeLines(e, availMain, availCross, childMain, childCross, lineOf, lineMain, lineCross);
 
         float crossPos = vertical ? inner.X : inner.Y;
@@ -79,7 +84,7 @@ public static class LayoutEngine
             };
             float extent = lines == 1 ? availCross : lineCross[l];   // 单行对齐基准=容器内交叉宽(M1)
             bool firstInLine = true;
-            for (int i = 0; i < e.Children.Count; i++)
+            for (int i = 0; i < e.Children!.Count; i++)
             {
                 if (lineOf[i] != l) continue;
                 Element child = e.Children[i];
@@ -116,7 +121,7 @@ public static class LayoutEngine
     }
 
     /// <summary>行打包 + 行内分配(D16)。输出数组由调用方分配;返回行数。</summary>
-    static int ComputeLines(Element e, float availMain, float availCross,
+    internal static int ComputeLines(Element e, float availMain, float availCross,
         float[] childMain, float[] childCross, int[] lineOf, float[] lineMain, float[] lineCross)
     {
         bool vertical = e.Style.Axis == Axis.Vertical;

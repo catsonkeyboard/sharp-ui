@@ -10,7 +10,8 @@ public static class InputMapper
         new PointF(snapshot.MousePosition.X / scale, snapshot.MousePosition.Y / scale),
         LeftEvents(snapshot.MouseEvents),
         MapKeys(snapshot.KeyEvents),
-        snapshot.IsMouseDown(MouseButton.Left));
+        snapshot.IsMouseDown(MouseButton.Left),
+        snapshot.WheelDelta);
 
     public static bool[] LeftEvents(IReadOnlyList<MouseEvent> mouseEvents)
     {

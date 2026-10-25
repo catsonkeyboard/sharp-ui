@@ -29,6 +29,9 @@ public abstract class Element
     /// <summary>叶子自测尺寸;容器尺寸由 LayoutEngine 依据子元素推导。</summary>
     protected internal virtual SizeF MeasureSelf(SizeF available) => SizeF.Zero;
 
+    /// <summary>子元素排布虚挂钩(D19):默认走 LayoutEngine.ArrangeLines 行布局;ScrollElement 等覆写替换。</summary>
+    protected internal virtual void ArrangeChildren(RectF inner) => LayoutEngine.ArrangeLines(this, inner);
+
     public virtual void Draw(in PaintContext pc) { }
 
     public Element? HitTest(PointF p)

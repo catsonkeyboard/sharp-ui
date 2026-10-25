@@ -23,7 +23,16 @@ public static class IdResolver
     static void Visit(Element e, string parentId, StringBuilder sb)
     {
         e.ResolvedId = parentId;
+        AssignChildren(e);
+    }
+
+    /// <summary>保自 id 只排子树(D20:VirtualList 按窗重建行后对其调用);Assign 的子循环体提取。</summary>
+    internal static void AssignChildren(Element e)
+    {
         if (e.Children is not { Count: > 0 }) return;
+        string parentId = e.ResolvedId!;
+        _sb ??= new StringBuilder(256);
+        StringBuilder sb = _sb;
         HashSet<string>? seenKeys = null;
         for (int i = 0; i < e.Children.Count; i++)
         {

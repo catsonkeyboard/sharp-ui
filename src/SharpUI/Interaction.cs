@@ -5,16 +5,19 @@ namespace SharpUI;
 /// <summary>键盘事件(按时间序)。Key 为 Veldrid.Key(公开面技术债,规格书 D12)。</summary>
 public readonly record struct KeyEventData(Key Key, bool Down, bool Shift);
 
-/// <summary>App 从 SDL InputSnapshot 经 InputMapper 映射;LeftHeld 为持久按键态(D15)。</summary>
+/// <summary>App 从 SDL InputSnapshot 经 InputMapper 映射;LeftHeld 为持久按键态(D15);WheelDelta 为滚轮增量(D19)。</summary>
 public readonly record struct RawInput(
-    PointF Mouse, bool[] LeftEvents, KeyEventData[]? KeyEvents = null, bool LeftHeld = false);
+    PointF Mouse, bool[] LeftEvents, KeyEventData[]? KeyEvents = null, bool LeftHeld = false,
+    float WheelDelta = 0f);
 
 public readonly record struct InputState(
     PointF Mouse, bool LeftDown, bool LeftPressed, bool LeftReleased,
     Element? Hovered, Element? Focused = null,
     string? HoveredId = null, string? FocusedId = null,
     /// <summary>本帧完成点击的 id 账本(指针路径当帧;键盘激活经队列下一帧可见,裁定#18)。调用方不得跨帧持有该列表(别名复用内部缓冲)。</summary>
-    IReadOnlyList<string>? ClickedIds = null)
+    IReadOnlyList<string>? ClickedIds = null,
+    /// <summary>滚轮增量(D19):App 在构建前对上帧树调 Scroll.Dispatch 消费。</summary>
+    float WheelDelta = 0f)
 {
     public static readonly InputState Empty = new(new PointF(-1f, -1f), false, false, false, null);
 }
@@ -72,6 +75,7 @@ public static class Interaction
         return new InputState(
             raw.Mouse, leftDown, pressed, released, hovered,
             HoveredId: hovered?.ResolvedId,
-            ClickedIds: _clicks.Count > 0 ? _clicks : null);
+            ClickedIds: _clicks.Count > 0 ? _clicks : null,
+            WheelDelta: raw.WheelDelta);
     }
 }

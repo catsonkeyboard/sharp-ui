@@ -19,6 +19,16 @@ public static class Ui
     public static PanelElement Panel() => new();
     public static ButtonElement Button(string label, Action onClick) => new(label, onClick);
 
+    /// <summary>竖向滚动容器(D19);与 Container 同构,但 new ScrollElement(默认 Vertical)。</summary>
+    public static ScrollElement Scroll(params Element?[] children)
+    {
+        var scroll = new ScrollElement();
+        foreach (Element? child in children)
+            if (child is not null)
+                scroll.Add(child);
+        return scroll;
+    }
+
     static PanelElement Container(Axis axis, Element?[] children)
     {
         var panel = new PanelElement();

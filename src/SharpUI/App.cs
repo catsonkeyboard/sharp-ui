@@ -58,6 +58,7 @@ public sealed class App
             InputState input = lastTree is not null
                 ? Interaction.Update(lastTree, in raw, focus)
                 : InputState.Empty;
+            if (input.WheelDelta != 0f && lastTree is not null) Scroll.Dispatch(lastTree, in input);
             UiContext.CurrentInput = input;
 
             Element root = _render is null ? new Spacer(SizeF.Zero) : _render();
