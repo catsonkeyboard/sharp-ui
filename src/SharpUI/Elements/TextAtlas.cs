@@ -20,7 +20,6 @@ public sealed class TextAtlas : IDisposable
     readonly SKCanvas _canvas;
 
     public RectF WhiteUv { get; private set; }
-    internal int GlyphSlotCount => _typefaces.Length;
 
     public TextAtlas(GraphicsContext ctx, float scale = 1f, string[]? fallbackFamilies = null)
     {
@@ -234,6 +233,8 @@ public sealed class TextAtlas : IDisposable
         foreach (SKFont f in _probeFonts) f.Dispose();
         foreach (SKShaper s in _shapers) s.Dispose();
         _paint.Dispose();
+        // 粗体 face 单独持有,BoldOf 可能回落到槽 0
+        if (_boldTf is not null && !ReferenceEquals(_boldTf, _typefaces[0])) _boldTf.Dispose();
         for (int i = _typefaces.Length - 1; i >= 1; i--)
             if (!ReferenceEquals(_typefaces[i], _typefaces[0])) _typefaces[i].Dispose();
         _typefaces[0].Dispose();
