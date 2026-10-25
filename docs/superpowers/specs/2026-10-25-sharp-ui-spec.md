@@ -209,7 +209,7 @@ sharp-ui/
 | M3a 文本输入 | 字符通道、TextField(光标/选区/编辑语义)、shaping LRU 缓存 | M2 ✅ |
 | M3b 动画与性能 | 动画系统、池化与 LRU 收紧至 ≤8KB/帧(规格 §9 M2 目标) | M3a |
 | M3c 多窗口与集成 | 多窗口、剪贴板(原生 P/Invoke,已探明 Sdl2Window 无封装)、对话框/托盘/菜单 | M3a |
-| M3d 自研薄后端 | D3D11 → Metal → OpenGL 逐平台替换 Veldrid(渲染器窄接口既备) | M2 ✅ 可并行 |
+| M3d 自研薄后端 ✅(D3D11,2026-10-26;Metal/OpenGL 待排期) | D3D11 → Metal → OpenGL 逐平台替换 Veldrid(渲染器窄接口既备) | M2 ✅ 可并行 |
 | M3e 无障碍 | UIA/AX/AT-SPI 逐步接入 | M3b |
 
 IME 定位:SDL2 `KeyCharPresses`(已验证 `IReadOnlyList<char>`)承载 IME 提交文本,Windows 下中文输入可过;组合窗口定位属"深水区"(需原生平台层),M3c 评估。
@@ -217,7 +217,8 @@ IME 定位:SDL2 `KeyCharPresses`(已验证 `IReadOnlyList<char>`)承载 IME 提�
 - D24(M3c 多窗口):Interaction 静态(`_pressedOn/_clicks/_queued`)会话化为 `InputSession` 实例(每窗口一个;`Interaction.Update(session, root, raw, focus)`);App 重构为 `App`(设备与窗口表)+ `AppWindow`(window/context/atlas/focus/lastTree/session);**服务定位静态改为"当前窗口"语义**(每窗口渲染前置 App.Atlas/UiContext.CurrentInput;StateStore 全局共享);`App.OpenWindow(title,w,h,render) → AppWindow`;主窗关闭即退出,副窗关闭仅移除。InputSnapshot 本就按窗口泵送,天然隔离。
 - D25(M3c 剪贴板与保留):剪贴板走 SDL2 原生导出 `SDL_SetClipboardText/SDL_GetClipboardText`(P/Invoke 已探针,Windows 本机;跨平台库名 M3e CI 处理,同 D18 先例);Ctrl+C/X/V 在 `TextFieldElement.Feed` 于 TextEditing.Apply 前处理(纯函数 `TextEditing.Paste/CutResult` 可测);**StateStore 宽限清扫**:条目记 lastTouched 帧,App 每帧 Tick,未触碰超 300 帧(≈5s)才清——虚拟列表行滚出后文本保留(修终审 I-1)。
 - D26(M3c 范围调整):原生对话框/托盘/菜单移 M3e——每项均为逐平台数周级原生工程(comdlg32/IFileDialog/NotifyIcon/Win32 菜单),与"多窗口+剪贴板"无共享基建;本轮以 IME 组合窗定位评估文档收口。
-- D27(M3d 分期):M3d-i = 渲染后端窄接口抽取(现 GraphicsContext 公开面收为 `IRenderContext`,Renderer 仅依赖之)+ **D3D11 直连探针**(P/Invoke d3d11/dxgi/d3dcompiler_47,均已探针存在;交付"自建设备+交换链+清屏呈现"最小闭环证明互操作模式);M3d-ii = 完整替换 Veldrid(管线/缓冲/图集/剪裁批次),依赖逐平台硬件,M3e CI 后执行;Metal/OpenGL 仅在接口证明后排期。
+- D27(M3d 分期):M3d-i = 渲染后端窄接口抽取(现 GraphicsContext 公开面收为 `IRenderContext`,Renderer 仅依赖之)+ **D3D11 直连探针**(P/Invoke d3d11/dxgi/d3dcompiler_47,均已探针存在;交付"自建设备+交换链+清屏呈现"最小闭环证明互操作模式);M3d-ii = 完整替换 Veldrid(管线/缓冲/图集/剪裁批次),依赖逐平台硬件,M3e CI 后执行;Metal/OpenGL 仅在接口证明后排期。**(2026-10-26 收官:M3d-i/ii ✅ —— GraphicsContext 退役为 D3D11Context + IRenderContext v2,Veldrid/Veldrid.SPIRV/Veldrid.StartupUtilities 移除(Veldrid.SDL2 保留),"M3e CI 后执行"提前为本机真实设备全量 GPU 测试;裁定#40。)**
+- 裁定#40(M3d-ii 定稿,2026-10-26):D3D11 直连后端定稿——COM 槽位纪律内化于 `D3D11Native` 声明层(逐槽标注本机 SDK d3d11.h/dxgi.h 声明序推导,锚点校验和:设备 CreateRTV=9、上下文 DrawIndexed=12/OM=33/ClearRTV=50、SwapChain GetBuffer=9,spike 60 帧闭环实证);SdlNative 双 SDL2 模块教训二次实证(裁定#38 复燃):模块落点不可假设,活模块 WMInfo 多候选探测是正确性依赖、不可"简化"掉;Veldrid.SDL2 保留为窗口/输入层(范围界定见 D27)。附带收账:AOT 裁定#35 关闭(Vortice 随图形包移除,见 docs/notes/m1-aot.md),性能基线持平(5948B/0.05ms,docs/notes/perf-baselines.md)。
 
 ## 8. 测试策略
 
