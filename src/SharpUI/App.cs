@@ -9,6 +9,9 @@ public sealed class App
     /// <summary>TextElement 度量用(M1 服务定位,M2 换度量上下文)。</summary>
     public static TextAtlas? Atlas { get; internal set; }
 
+    /// <summary>跨帧状态存储(M1 服务定位模式,同 Atlas;M2b 度量上下文重构时收编)。</summary>
+    public static StateStore? State { get; internal set; }
+
     readonly Sdl2Window _window;
     readonly GraphicsContext _ctx;
     readonly Renderer _renderer;
@@ -38,12 +41,14 @@ public sealed class App
     public int Run(int maxFrames = 0)
     {
         Atlas = new TextAtlas(_ctx);
+        State = new StateStore();
         var mesh = new MeshBuilder();
         int frames = 0;
         while (_window.Exists)
         {
             InputSnapshot snapshot = _window.PumpEvents();
             Element root = _render is null ? new Spacer(SizeF.Zero) : _render();
+            IdResolver.Assign(root);
             SizeF screen = new(_window.Width, _window.Height);
             LayoutEngine.Arrange(root, new RectF(0, 0, screen.Width, screen.Height));
             RawInput raw = new(
@@ -54,6 +59,7 @@ public sealed class App
             root.Draw(new PaintContext(mesh, Atlas, input));   // 显式 in 不能接右值(CS8156),隐式传递等价
             _renderer.Submit(mesh, screen, _ctx.Device.MainSwapchain.Framebuffer);
             _ctx.Device.SwapBuffers();
+            State.Sweep();
             if (maxFrames > 0 && ++frames >= maxFrames)
                 _window.Close();
         }
