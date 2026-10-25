@@ -53,6 +53,7 @@ public class RendererTests
         byte[] px = ctx.ReadBackMainFramebuffer();
         Assert.Equal(new byte[] { 255, 255, 255, 255 }, Pixel(px, 4, 32));    // 左区可见
         Assert.Equal(new byte[] { 20, 18, 18, 255 }, Pixel(px, 40, 32));      // 右区被剪→清屏色(RGB 18,18,20→BGR 存储 [B,G,R,A])
+        Assert.Equal(new byte[] { 255, 255, 255, 255 }, Pixel(px, 24, 32));    // 区段隔离:run1 几何(run2 剪裁外)仍按全屏剪裁绘制
     }
 
     [Fact]

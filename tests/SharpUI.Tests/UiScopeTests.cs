@@ -111,6 +111,7 @@ public class UiScopeTests
     [Fact]
     public void PointerClick_OnImmediateTree_ReachesClickedPoll()
     {
+        App.Atlas = null;   // 消除环境依赖:显式确保无残留图集
         bool resetClicked = false;
         Element BuildTree()
         {
