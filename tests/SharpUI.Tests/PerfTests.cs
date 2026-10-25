@@ -68,4 +68,36 @@ public class PerfTests
 #endif
         App.Atlas = null;
     }
+
+    [Fact]
+    [Trait("Category", "Gpu")]
+    public void VirtualList10k_StaysBounded()
+    {
+        using var ctx = GraphicsContext.CreateHeadless(64, 64);
+        using var atlas = new TextAtlas(ctx);
+        App.Atlas = atlas;
+        App.State = new StateStore();
+        var mesh = new MeshBuilder();
+        var screen = new SizeF(480, 320);
+        VirtualListElement list = Ui.VirtualList("big", 10000, 24f, static (i, row) =>
+            row.Add(new TextElement($"item {i}")));
+        void Frame()
+        {
+            LayoutEngine.Arrange(list, new RectF(0, 0, screen.Width, screen.Height));
+            mesh.Clear();
+            list.Draw(new PaintContext(mesh, atlas, InputState.Empty));
+        }
+        for (int i = 0; i < 30; i++) Frame();                       // 预热
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        const int Frames = 200;
+        for (int i = 0; i < Frames; i++) Frame();
+        sw.Stop();
+        double bpf = (GC.GetAllocatedBytesForCurrentThread() - before) / (double)Frames;
+        Assert.True(mesh.VertexCount < 4000, $"visible mesh {mesh.VertexCount} verts unbounded");
+        Assert.True(bpf <= 64 * 1024, $"每帧分配 {bpf:F0}B 超预算");
+        Assert.True(sw.Elapsed.TotalMilliseconds / Frames < 8.0);
+        App.State = null;
+        App.Atlas = null;
+    }
 }
