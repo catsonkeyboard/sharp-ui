@@ -43,11 +43,55 @@ public static class SdlTextInput
     /// <summary>关闭窗口文本输入模式(系统 IME 恢复普通状态)。</summary>
     public static void Stop(IntPtr sdlWindow) => SDL_StopTextInput(sdlWindow);
 
-    /// <summary>锚定组合/候选窗矩形(调用方负责逻辑→屏幕像素换算);驱动 imm32 ImmSetCandidateWindow。</summary>
+    /// <summary>锚定组合/候选窗矩形(调用方负责逻辑→屏幕像素换算)。
+    /// 双通道(裁定#36):SDL_SetTextInputRect(官方路径)+ 直接 IMM32 ImmSetCompositionWindow/ImmSetCandidateWindow
+    /// (SDL 2.30 亦不调 SetCandidateWindow,且其 Composition 落点实测不准——候选框飘到屏幕右下角即此因)。</summary>
     public static void SetRect(IntPtr sdlWindow, int x, int y, int w, int h)
     {
         SdlRect r = new() { X = x, Y = y, W = w, H = h };
         SDL_SetTextInputRect(sdlWindow, ref r);
+        PositionImm(sdlWindow, x, y, h);
+    }
+
+    static void PositionImm(IntPtr sdlWindow, int x, int y, int lineHeight)
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        IntPtr hwnd = HwndOf(sdlWindow);
+        if (hwnd == IntPtr.Zero) return;
+        IntPtr himc = ImmGetContext(hwnd);
+        if (himc == IntPtr.Zero) return;
+        try
+        {
+            var cf = new CompositionForm { Style = CfsPoint, Pos = new NativePoint { X = x, Y = y } };
+            ImmSetCompositionWindow(himc, ref cf);
+            var cand = new CandidateForm
+            {
+                Index = 0,
+                Style = CfsCandidatePos,
+                Pos = new NativePoint { X = x, Y = y + Math.Max(16, lineHeight) },
+            };
+            ImmSetCandidateWindow(himc, ref cand);
+        }
+        finally { ImmReleaseContext(hwnd, himc); }
+    }
+
+    static readonly Dictionary<IntPtr, IntPtr> _hwndCache = new();
+
+    static IntPtr HwndOf(IntPtr sdlWindow)
+    {
+        if (_hwndCache.TryGetValue(sdlWindow, out IntPtr hwnd)) return hwnd;
+        hwnd = QueryWin32Hwnd(sdlWindow);
+        if (hwnd != IntPtr.Zero) _hwndCache[sdlWindow] = hwnd;
+        return hwnd;
+    }
+
+    /// <summary>SDL 窗口句柄 → Win32 HWND(客户区坐标即 IMM 坐标系);版本字以运行时 SDL_GetVersion 填充(升级安全)。</summary>
+    static IntPtr QueryWin32Hwnd(IntPtr sdlWindow)
+    {
+        var v = new SdlVersion();
+        SDL_GetVersion(ref v);
+        var info = new SdlSysWmInfo { Maj = v.Major, Min = v.Minor, Pat = v.Patch };
+        return SDL_GetWindowWMInfo(sdlWindow, ref info) != 0 && info.Subsystem == SyswmWindows ? info.Hwnd : IntPtr.Zero;
     }
 
     /// <summary>SDL_Rect(顺序 int x,y,w,h);仅 SetTextInputRect 封送用。</summary>
@@ -69,6 +113,49 @@ public static class SdlTextInput
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
     private static extern bool SDL_SetHint([MarshalAs(UnmanagedType.LPStr)] string name,
         [MarshalAs(UnmanagedType.LPStr)] string value);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    private static extern void SDL_GetVersion(ref SdlVersion v);
+
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    private static extern int SDL_GetWindowWMInfo(IntPtr window, ref SdlSysWmInfo info);
+
+    // ---- imm32 直连(裁定#36) ----
+    const uint CfsPoint = 0x0002;            // CFS_POINT:组合窗锚定到指定点(IME 可微调)
+    const uint CfsCandidatePos = 0x0040;     // CFS_CANDIDATE_POS:候选窗置于指定点
+    const int SyswmWindows = 1;
+
+    [DllImport("imm32.dll")]
+    private static extern IntPtr ImmGetContext(IntPtr hwnd);
+
+    [DllImport("imm32.dll")]
+    private static extern bool ImmSetCompositionWindow(IntPtr himc, ref CompositionForm form);
+
+    [DllImport("imm32.dll")]
+    private static extern bool ImmSetCandidateWindow(IntPtr himc, ref CandidateForm form);
+
+    [DllImport("imm32.dll")]
+    private static extern bool ImmReleaseContext(IntPtr hwnd, IntPtr himc);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SdlVersion { public byte Major, Minor, Patch; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativePoint { public int X, Y; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct CompositionForm { public uint Style; public NativePoint Pos; public int L, T, R, B; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct CandidateForm { public uint Index, Style; public NativePoint Pos; public int L, T, R, B; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SdlSysWmInfo
+    {
+        public byte Maj, Min, Pat;
+        public int Subsystem;
+        public IntPtr Hwnd;   // Windows 分支联合体首成员;win 分支 {HWND,HDC,HGLRC} 均指针,仅取首员
+    }
 }
 
 /// <summary>每窗文本输入状态机(IME 热修):Run 每帧以 (窗口句柄, 聚焦 TextField id, 光标像素矩形) 驱动。

@@ -24,3 +24,8 @@
   处置:vendor SDL 2.30.8(native/SDL2/,zlib 许可随附)经构建目标覆盖 Veldrid 包内 2.0.8(ABI 兼容,
   探针实证),App.Create 窗口创建前 `SDL_SetHint("SDL_IME_SHOW_UI","1")`;StartTextInput/SetTextInputRect 接线保留。
   preedit 内联显示仍待 Veldrid 缺口(SDL_TextEditingEvent 未透传,组合文本显示于 IME 自身 UI)。
+- 2026-10-25 修复三(定位,裁定#36):候选框已显示(修复二)但飘至屏幕右下角——SDL 2.30 的
+  SetTextInputRect→ImmSetCompositionWindow 链落点不准且从不调用 ImmSetCandidateWindow。
+  处置:SetRect 双通道:保留 SDL 官方路径 + 直接 imm32(ImmGetContext→
+  ImmSetCompositionWindow(CFS_POINT,光标点)/ImmSetCandidateWindow(CFS_CANDIDATE_POS,光标下方),
+  ImmReleaseContext;HWND 经 SDL_GetWindowWMInfo 取,客户区像素坐标即 IMM 坐标系;Win 守卫+句柄缓存)。
