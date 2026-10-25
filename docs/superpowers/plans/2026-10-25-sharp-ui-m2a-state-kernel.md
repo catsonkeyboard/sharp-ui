@@ -596,6 +596,7 @@ public class FocusTests
         ButtonElement a = new("A", () => { });
         ButtonElement b = new("B", () => { });
         PanelElement root = Ui.Column(a, b);
+        root.Style.CrossAlign = CrossAxisAlignment.Stretch;   // Atlas-null 下按钮自身仅 32px 宽,须拉伸全宽命中 x=50(裁定#16)
         LayoutEngine.Arrange(root, new RectF(0, 0, 100, 200));
         IdResolver.Assign(root);
         return (root, a, b);
