@@ -9,10 +9,11 @@ namespace SharpUI.Backends;
 /// 立即上下文经出参取得以规避 GetImmediateContext 槽位风险) → CreateSwapChain(legacy,
 /// 640×480 BGRA8 双缓冲) → GetBuffer(0) → CreateRenderTargetView → OMSetRenderTargets →
 /// ClearRenderTargetView(RGBA) → Present(1,0)。清屏采用基接口 ID3D11DeviceContext::ClearRenderTargetView
-/// (槽 46)而非 ID3D11DeviceContext1::ClearView:后者槽位取决于基接口(104 方法)精确尾段计数且返回 void、
+/// (槽 50)而非 ID3D11DeviceContext1::ClearView:后者槽位取决于基接口(104 方法)精确尾段计数且返回 void、
 /// 错槽即进程崩溃无法"显式失败";基接口槽位以 d3d11.h 声明顺序双计数核验,功能等价(无着色器纯色清屏)。
 /// 槽位纪律:每个 COM 对象取得后立即做 IUnknown AddRef(槽 1)/Release(槽 2)往返实证,
-/// 任何不一致抛异常(带接口名与槽号)——探针测试据此守卫整张槽位表。
+/// 任何不一致抛异常(带接口名与槽号)——该往返实证的是 IUnknown 槽 1/2 与对象活性;
+/// 其余槽位由各调用的 hr 检查与 60 帧呈现闭环间接证实。
 /// </summary>
 public static class D3D11Spike
 {
@@ -51,6 +52,7 @@ public static class D3D11Spike
             if (_state is null || _state.Hwnd != hwnd)
             {
                 _state?.Dispose();
+                _state = null;   // 先置空再重建:CreateState 失败重试时不留已 Dispose 的悬置状态(与 Reset 同型)
                 _state = CreateState(hwnd);
             }
             return _state.PresentClear(r, g, b);
@@ -156,7 +158,7 @@ public static class D3D11Spike
             s._relSwapChain = ReleaseFn(s._swapChain);
             ValidateIUnknown(s._swapChain, "IDXGISwapChain");
 
-            // 5) 后备缓冲 + RTV(交换链槽 8;设备槽 9)
+            // 5) 后备缓冲 + RTV(交换链槽 9;设备槽 9)
             var getBuffer = Vfn<GetBufferFn>(s._swapChain, SlotSwapChainGetBuffer, "IDXGISwapChain::GetBuffer");
             Guid iidTex = IidTexture2D;
             hr = getBuffer(s._swapChain, 0, ref iidTex, out s._backBuffer);
@@ -170,7 +172,7 @@ public static class D3D11Spike
             s._relRtv = ReleaseFn(s._rtv);
             ValidateIUnknown(s._rtv, "ID3D11RenderTargetView");
 
-            // 6) 绑定 OM 槽 0(上下文槽 29;views 数组经 HGlobal 零 unsafe 传递,调用内拷贝后立即释放)
+            // 6) 绑定 OM 槽 0(上下文槽 33;views 数组经 HGlobal 零 unsafe 传递,调用内拷贝后立即释放)
             s._om = Vfn<OmSetRenderTargetsFn>(s._context, SlotContextOmSetRenderTargets, "ID3D11DeviceContext::OMSetRenderTargets");
             s._clear = Vfn<ClearRenderTargetViewFn>(s._context, SlotContextClearRenderTargetView, "ID3D11DeviceContext::ClearRenderTargetView");
             s._present = Vfn<PresentFn>(s._swapChain, SlotSwapChainPresent, "IDXGISwapChain::Present");

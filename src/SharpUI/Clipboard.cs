@@ -46,15 +46,15 @@ public static class Clipboard
         finally { SDL_free(p); }   // SDL 约定:调用方负责释放返回串
     }
 
-    [DllImport(Lib)]
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
     private static extern int SDL_InitSubSystem(uint flags);
 
-    [DllImport(Lib, CharSet = CharSet.Ansi)]
+    [DllImport(Lib, CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
     private static extern int SDL_SetClipboardText(string text);
 
-    [DllImport(Lib)]
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
     private static extern IntPtr SDL_GetClipboardText();
 
-    [DllImport(Lib)]
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
     private static extern void SDL_free(IntPtr ptr);
 }
