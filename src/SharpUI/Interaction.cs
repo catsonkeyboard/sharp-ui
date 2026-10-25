@@ -6,7 +6,7 @@ namespace SharpUI;
 public readonly record struct KeyEventData(Key Key, bool Down, bool Shift);
 
 /// <summary>App 从 SDL InputSnapshot 映射;LeftEvents 按时间序记录左键按下(true)/抬起(false)。</summary>
-public readonly record struct RawInput(PointF Mouse, bool[] LeftEvents, KeyEventData[]? KeyEvents = null);
+public readonly record struct RawInput(PointF Mouse, bool[] LeftEvents, KeyEventData[]? KeyEvents = null, bool LeftHeld = false);
 
 public readonly record struct InputState(
     PointF Mouse, bool LeftDown, bool LeftPressed, bool LeftReleased,
