@@ -16,6 +16,13 @@ internal static class D3D11Native
     // IUnknown(unknwn.h,三接口共用):QueryInterface(0)/AddRef(1)/Release(2)
     internal const int SlotAddRef = 1, SlotRelease = 2;
 
+    // IDXGIFactory : IDXGIObject(IUnknown 0-2 + SetPrivateData(3)/SetPrivateDataInterface(4)/GetPrivateData(5)
+    // /GetParent(6)),自有方法自槽 7 起(shared\dxgi.h C++ 声明序与 C 接口 vtable 结构体序双列互证):
+    //   EnumAdapters(7) MakeWindowAssociation(8) GetWindowAssociation(9) CreateSwapChain(10) CreateSoftwareAdapter(11)
+    // ★校验和:两槽均经 D3D11Spike 60 帧呈现闭环实证(EnumAdapters→adapter0→CreateSwapChain 成链)。
+    internal const int SlotFactoryEnumAdapters = 7;           // IDXGIFactory::EnumAdapters
+    internal const int SlotFactoryCreateSwapChain = 10;       // IDXGIFactory::CreateSwapChain
+
     // ID3D11Device : IUnknown 直连(无 DeviceChild 中间层;d3d11.h L14143 起 C++ 声明序逐方法计数,
     // 与同文件 C 接口 vtable 结构体序互证):
     //   自有方法序:CreateBuffer(3) CreateTexture1D(4) CreateTexture2D(5) CreateTexture3D(6)
@@ -65,6 +72,8 @@ internal static class D3D11Native
     internal const int SlotCtxIaSetIndexBuffer = 19;
     internal const int SlotCtxIaSetPrimitiveTopology = 24;   // GSSetConstantBuffers/GSSetShader(22/23) 之后
     internal const int SlotCtxOmSetRenderTargets = 33;       // ★锚点(D3D11Spike 实证)
+    internal const int SlotCtxOmSetBlendState = 35;          // d3d11.h 推导:OMSetRenderTargetsAndUAV(34)/OMSetDepthStencilState(36) 之间
+    internal const int SlotCtxRsSetState = 43;               // d3d11.h 推导:DispatchIndirect(42) 之后、RSSetViewports(44) 之前
     internal const int SlotCtxRsSetViewports = 44;           // d3d11.h 推导:RSSetState(43) 之后(校验和 50 对齐)
     internal const int SlotCtxRsSetScissorRects = 45;        // d3d11.h 推导:RSSetViewports(44) 之后
     internal const int SlotCtxCopyResource = 47;             // d3d11.h 推导:CopySubresourceRegion(46) 之后
@@ -110,6 +119,7 @@ internal static class D3D11Native
     // 注:简报原稿 BlendOne=1 系笔误(1 是 ZERO),此处按头文件实数修正为 2。
     internal const uint BlendOne = 2, BlendInvSrcAlpha = 6;
     internal const uint BlendOpAdd = 1;                      // D3D11_BLEND_OP_ADD
+    internal const uint ComparisonNever = 1;                 // D3D11_COMPARISON_NEVER(枚举自 1 起;非比较采样器标准值)
     internal const uint FillSolid = 3, CullNone = 1;         // D3D11_FILL_SOLID / D3D11_CULL_NONE
     internal const uint TopologyTriangleList = 4;            // D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST(d3dcommon.h)
     internal const uint InputPerVertexData = 0;              // D3D11_INPUT_PER_VERTEX_DATA

@@ -35,7 +35,10 @@ public static class Shaders
         """;
 
     /// <summary>M3d-ii:D3D11 HLSL(vs_5_0/ps_5_0 运行时编译)。与上方 GLSL 语义等价;
-    /// GLSL 源保留供 M3e OpenGL 后端复用(D3 决策)。</summary>
+    /// GLSL 源保留供 M3e OpenGL 后端复用(D3 决策)。
+    /// PSIn 首成员必须为 SV_Position:D3D11 级间链接按硬件寄存器配对(VS 输出 r0=SV_Position,
+    /// r1/r2=TEXCOORD/COLOR);PS 不声明 SV_Position 会使 TEXCOORD/COLOR 落在 r0/r1 →
+    /// "mismatched hardware registers" 链接错误,采样/顶点色读 0(Task 3 真机调试层实证)。</summary>
     public const string HlslVertexSource = """
         cbuffer ScreenSize : register(b0)
         {
@@ -73,6 +76,7 @@ public static class Shaders
 
         struct PSIn
         {
+            float4 position : SV_Position;   // 寄存器对齐必需,见 HlslVertexSource 注释
             float2 texCoord : TEXCOORD0;
             float4 color : COLOR0;
         };

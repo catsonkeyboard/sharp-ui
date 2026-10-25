@@ -5,8 +5,12 @@ using Veldrid.SPIRV;
 
 namespace SharpUI;
 
-/// <summary>Veldrid 设备上下文;实现 IRenderContext(Renderer 窄接口,D27/M3d-i)。</summary>
-public sealed class GraphicsContext : IDisposable, IRenderContext
+/// <summary>
+/// Veldrid 设备上下文(D27/M3d-i)。M3d-ii Task 3 过渡:IRenderContext 已重写为 v2(后端中立,由
+/// Backends.D3D11Context 实现),本类不再实现该接口;公开成员保留,充当旧 Renderer/TextAtlas 与旧 GPU
+/// 测试的宿主。【T4 删除:Renderer 迁移 IRenderContext v2 + D3D11Context 后整体退役。】
+/// </summary>
+public sealed class GraphicsContext : IDisposable
 {
     public const int AtlasSize = 1024;
 

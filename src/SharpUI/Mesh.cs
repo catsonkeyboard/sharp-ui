@@ -45,6 +45,12 @@ public sealed class MeshBuilder
     public ReadOnlySpan<ushort> Indices => _indices.AsSpan(0, _indexCount);
     public RectF CurrentClip => _clip;
 
+    /// <summary>原始顶点数组(M3d-ii 零分配上传:后端 GCHandle 钉此数组直传 GPU)。</summary>
+    internal UiVertex[] VerticesBuffer => _vertices;
+
+    /// <summary>原始索引数组(同上)。</summary>
+    internal ushort[] IndicesBuffer => _indices;
+
     /// <summary>读取时物化尾段(最后一次 SetClip 之后的开放区段),否则丢失末端几何。</summary>
     public ReadOnlySpan<ClipRun> ClipRuns
     {

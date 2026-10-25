@@ -1,28 +1,33 @@
-using Veldrid;
-
 namespace SharpUI;
 
-/// <summary>
-/// 渲染后端窄接口(D27/M3d-i):Renderer 的全部上下文依赖,M3d-ii 逐平台自研后端的替换点。
-/// 前两项(MainFramebuffer/UpdateAtlasRegion)为既定核面;其余五项为 Renderer 实际所需(「薄到 Renderer
-/// 实际所需」+「Renderer 仅依赖之」)。Veldrid 类型仍暴露在签名中 = 既定 D12 债,接口面后端中立化时清偿。
-/// </summary>
-public interface IRenderContext
+/// <summary>渲染后端窄接口 v2(M3d-ii,D12 清偿:不再暴露 Veldrid 类型)。Renderer 经此驱动任意后端;
+/// 剪裁区段→scissor 的换算留在 Renderer(平台共享逻辑),后端只做命令落地。</summary>
+public interface IRenderContext : IDisposable
 {
-    /// <summary>主帧缓冲(headless 离屏目标;窗口路径每帧现取 Device.MainSwapchain.Framebuffer,避免 resize 陈旧,见 App.Run)。</summary>
-    Framebuffer MainFramebuffer { get; }
+    /// <summary>当前主目标像素尺寸(scissor 全开与清屏基准;窗口路径随 Resize 更新)。</summary>
+    uint TargetWidth { get; }
 
-    /// <summary>图集区域上传(TextAtlas 白点/字形写入)。</summary>
+    /// <summary>当前主目标像素尺寸(scissor 全开与清屏基准;窗口路径随 Resize 更新)。</summary>
+    uint TargetHeight { get; }
+
+    /// <summary>窗口交换链 resize;headless 抛 NotSupportedException。</summary>
+    void Resize(uint width, uint height);
+
+    /// <summary>图集区域上传(RGBA 字节,左上原点)。</summary>
     void UpdateAtlasRegion(byte[] rgba, uint x, uint y, uint width, uint height);
 
-    /// <summary>设备(缓冲创建/命令提交);以下管线面为 Renderer 构造与 Submit 所需。</summary>
-    GraphicsDevice Device { get; }
+    /// <summary>帧起始:绑主目标 + 设视口 + 清屏(r,g,b,a 线性)。</summary>
+    void BeginFrame(float r, float g, float b, float a);
 
-    CommandList Commands { get; }
+    /// <summary>顶点着色器屏幕尺寸常量(逻辑像素)。</summary>
+    void SetScreenSize(float logicalWidth, float logicalHeight);
 
-    Pipeline Pipeline { get; }
+    /// <summary>剪裁矩形(目标像素坐标;全开=目标尺寸)。</summary>
+    void SetScissor(uint x, uint y, uint w, uint h);
 
-    DeviceBuffer ScreenSizeBuffer { get; }
+    /// <summary>绘制一段索引几何(零分配路径:钉数组 + UpdateSubresource,内存布局与 UiVertex 20 字节一致)。</summary>
+    void Draw(UiVertex[] vertices, int vertexCount, ushort[] indices, uint indexCount, uint startIndex);
 
-    ResourceSet AtlasSet { get; }
+    /// <summary>呈现(窗口路径 Present(1,0) VSync;headless no-op)。</summary>
+    void Present();
 }
