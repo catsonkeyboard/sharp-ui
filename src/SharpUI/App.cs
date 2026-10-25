@@ -30,6 +30,7 @@ public sealed class App
             VeldridStartup.GetPlatformDefaultBackend(),
             out Sdl2Window window,
             out GraphicsDevice device);
+        device.MainSwapchain.SyncToVerticalBlank = true;   // 60fps VSync(spec §7)
         window.Resized += () => device.ResizeMainWindow((uint)window.Width, (uint)window.Height);
         return new App(window, device, render);
     }
@@ -44,7 +45,6 @@ public sealed class App
             InputSnapshot snapshot = _window.PumpEvents();
             Element root = _render is null ? new Spacer(SizeF.Zero) : _render();
             SizeF screen = new(_window.Width, _window.Height);
-            LayoutEngine.Measure(root, screen);
             LayoutEngine.Arrange(root, new RectF(0, 0, screen.Width, screen.Height));
             RawInput raw = new(
                 new PointF(snapshot.MousePosition.X, snapshot.MousePosition.Y),

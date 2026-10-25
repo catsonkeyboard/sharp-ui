@@ -39,6 +39,7 @@ public class UiDslTests
     }
 
     [Fact]
+    [Trait("Category", "Gpu")]
     public void Measure_WiresTextThroughAtlas()
     {
         using var ctx = GraphicsContext.CreateHeadless(64, 64);

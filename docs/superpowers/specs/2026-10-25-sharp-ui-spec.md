@@ -219,7 +219,7 @@ IME 深水区(必要时替换窗口层)、无障碍(UIA/AX/AT-SPI)、动画、�
 ```
 VeldridStartup.CreateWindowAndGraphicsDevice(WindowCreateInfo, GraphicsDeviceOptions, GraphicsBackend, out Sdl2Window, out GraphicsDevice)
 VeldridStartup.GetPlatformDefaultBackend()
-new GraphicsDeviceOptions { Debug, PreferStandardClipSpaceYDirection }      // 无 SyncToVBlank 成员
+new GraphicsDeviceOptions { Debug, PreferStandardClipSpaceYDirection }      // 无 SyncToVBlank 成员;vsync 用下一行的 MainSwapchain.SyncToVerticalBlank(App.Create 已设 true)
 gd.MainSwapchain.SyncToVerticalBlank = true
 window.Resized += () => gd.ResizeMainWindow((uint)window.Width, (uint)window.Height)
 window.PumpEvents() → InputSnapshot { KeyEvents, MouseEvents, MousePosition, WheelDelta }   // 无 CharEvents
@@ -239,4 +239,4 @@ SkiaSharp:SKTypeface.FromFamilyName / SKFont / SKPaint / SKBitmap(SKImageInfo) /
   bmp.GetPixelSpan(); bmp.PeekPixels()
 ```
 
-> 与新版 Veldrid 文档记忆的差异(易踩坑):4.9 无 `GraphicsDeviceBuilder`、无 `PipelineDescription`(是 `GraphicsPipelineDescription`)、`Map` 无 out 参数、`CreateFromSpirv` 返回数组、顶点元素构造为 `(name, semantic, format)`、vsync 在 Swapchain 上。
+> 与新版 Veldrid 文档记忆的差异(易踩坑):4.9 无 `GraphicsDeviceBuilder`、无 `PipelineDescription`(是 `GraphicsPipelineDescription`)、`Map` 无 out 参数、`CreateFromSpirv` 返回数组、顶点元素构造为 `(name, semantic, format)`、vsync 挂在 Swapchain 上(已在 App.Create 设置)。
