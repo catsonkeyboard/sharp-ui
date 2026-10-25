@@ -18,7 +18,12 @@ internal static class Program
                     new ButtonElement("−", () => state.Count--),
                     Ui.Spacer(new SizeF(8f, 0f)),
                     new ButtonElement("+", () => state.Count++)
-                ).Gap(0f)
+                ).Gap(0f),
+                Ui.Immediate("debug", ui =>
+                {
+                    ui.Text($"count = {state.Count}", 14, 0x9AA2B3);
+                    if (ui.Button("Reset").Clicked()) state.Count = 0;
+                })
             ).Center().Gap(12f).Padding(24f)).Run();
     }
 }

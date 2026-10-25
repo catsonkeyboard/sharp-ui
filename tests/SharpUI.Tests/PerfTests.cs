@@ -25,7 +25,12 @@ public class PerfTests
             Row(
                 Ui.Button("−", () => state--).Key("minus"),
                 Ui.Button("+", () => state++).Key("plus")
-            ).Padding(0f)
+            ).Padding(0f),
+            Ui.Immediate("debug", ui =>
+            {
+                ui.Text($"count = {state}", 14, 0x9AA2B3);
+                if (ui.Button("Reset").Clicked()) state = 0;
+            })
         ).Center().Gap(12f).Padding(24f);
 
         void Frame()

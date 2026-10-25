@@ -91,4 +91,20 @@ public class UiScopeTests
         Assert.Contains(b.ResolvedId, UiContext.CurrentInput.ClickedIds!);   // 下一帧账本可见
         UiContext.CurrentInput = default;
     }
+
+    [Fact]
+    public void Depth2Path_SuffixMatchesForwardIdChain()
+    {
+        PanelElement panel = Ui.Immediate("dbg", static ui =>
+        {
+            ui.Text("t", 14);
+            ui.Row(static r => r.Column(static c => c.Button("OK")));
+        });
+        PanelElement root = Ui.Column(panel);
+        IdResolver.Assign(root);
+        PanelElement row = (PanelElement)panel.Children![1];          // Text=0, Row=1
+        PanelElement col = (PanelElement)row.Children![0];            // Column=0
+        Assert.EndsWith("/dbg/PanelElement1/PanelElement0/ButtonElement0",
+            col.Children![0].ResolvedId);
+    }
 }
