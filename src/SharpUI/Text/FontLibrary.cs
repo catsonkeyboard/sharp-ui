@@ -74,8 +74,12 @@ internal sealed class WindowsFontLocator : IFontLocator
 
 /// <summary>
 /// D3 文本层 Task 2:FT_Library + 槽位脸表生命周期。槽 0 = "Segoe UI"(spec 固定,同 TextAtlas),
-/// 1.. = 回退族(注册表解析或文件加载失败并入槽 0,同现状 tf ?? _typefaces[0]);每脸配 hb_ft_font
-/// (hb-ft 内建 face 尺度变化检测,度量随脸自动同步,SetPixelSize 后无需重建 hb_font)。
+/// 1.. = 回退族(注册表解析失败或文件缺失并入槽 0,同现状 tf ?? _typefaces[0];文件在而 FT 加载失败
+/// 属异常路径,抛出不并入);每脸配 hb_ft_font。**hb_ft 尺度同步时序(评审 Critical#1 勘误)**:
+/// hb_ft_font_create 创建期从 face->size->metrics 快照尺度(hb-ft.h L95-97 明示建前先设尺寸),
+/// 此后直接 FT_Set_Pixel_Sizes 不触发 hb 再同步(其变更检测只比 hb 侧 serial)——故 FaceHandle.
+/// SetPixelSize 在改尺寸后显式 hb_ft_font_changed(HbFont) 通知 hb 重取尺度并失效 advance cache
+/// (hb_font 对象本身仍复用,不重建)。
 /// 脸加载统一 FT_New_Memory_Face(T0 携带项):文件字节读入托管数组 + GCHandle 钉住传指针——
 /// FT_New_Face 路径参数走 ANSI fopen,非 ASCII 字体路径会因代码页失败;FT 不拷贝入参内存
 /// (freetype.h 明文须存活至 FT_Done_Face),钉住句柄由 FaceHandle 持有并在释放脸之后 Free。
@@ -103,10 +107,19 @@ internal sealed class FontLibrary : IDisposable
         if (err != 0 || _ftLib == IntPtr.Zero)
             throw new InvalidOperationException($"FT_Init_FreeType failed: {err}");
         _files = new string?[1 + fallbackFamilies.Length];
-        _files[0] = ResolveExisting(PrimaryFamily, bold: false)
-            ?? throw new InvalidOperationException($"primary font family '{PrimaryFamily}' not resolvable via font registry");
-        for (int i = 0; i < fallbackFamilies.Length; i++)
-            _files[1 + i] = ResolveExisting(fallbackFamilies[i], bold: false);   // null → 并入槽 0
+        try
+        {
+            _files[0] = ResolveExisting(PrimaryFamily, bold: false)
+                ?? throw new InvalidOperationException($"primary font family '{PrimaryFamily}' not resolvable via font registry");
+            for (int i = 0; i < fallbackFamilies.Length; i++)
+                _files[1 + i] = ResolveExisting(fallbackFamilies[i], bold: false);   // null → 并入槽 0
+        }
+        catch
+        {
+            // 半构造对象无人 Dispose:主族解析失败抛出前释放已初始化的 FT_Library(评审 Minor#1,防句柄泄漏)
+            _ = FreeTypeNative.FT_Done_FreeType(_ftLib);
+            throw;
+        }
     }
 
     /// <summary>槽位数 = 1 主脸 + 回退族数(解析失败的槽保留槽位、脸并入槽 0,同现状)。</summary>
@@ -180,7 +193,8 @@ internal sealed class FontLibrary : IDisposable
     }
 
     /// <summary>FT_New_Memory_Face 统一加载(face index 0:TTC 如 msyh.ttc 取首个 face=常规字重)。
-    /// 钉住的托管字节在 FT_Done_Face 前不得释放(freetype.h 明文),由 FaceHandle 持有句柄兜底。</summary>
+    /// 钉住的托管字节在 FT_Done_Face 前不得释放(freetype.h 明文),由 FaceHandle 持有句柄兜底。
+    /// 备忘(评审 Minor#5):钉住为整文件常驻(非按需分页)——槽位/脸数扩容时留意常驻内存 ≈ Σ字体文件大小。</summary>
     FaceHandle LoadFace(string file)
     {
         byte[] data = File.ReadAllBytes(file);   // 托管读取按 UTF-16 文件名:非 ASCII 路径安全(T0 携带项)
@@ -208,8 +222,12 @@ internal sealed class FontLibrary : IDisposable
 /// <summary>
 /// 单文件脸句柄:FT_Face + hb_ft_font 成对创建、逆序释放(hb_font 引用 face,须先 hb_font_destroy);
 /// 附带钉住的文件字节(FT_New_Memory_Face 不拷贝内存,数据须活到 FT_Done_Face——T0 携带项,
-/// GCHandle 亦使 byte[] 保持可达)。SetPixelSize 缓存当前尺寸:尺寸不变不重设(hb-ft 有 face 尺度
-/// 变化检测,度量随脸自动同步,无需重建 hb_font)。
+/// GCHandle 亦使 byte[] 保持可达)。
+/// **所有权契约(评审 Minor#4)**:实例由 FontLibrary 缓存持有,调用方不得 Dispose——
+/// 误释放将在库存活期留下已死的 FT_Face/hb_font 悬垂指针。
+/// SetPixelSize 缓存当前尺寸:尺寸不变不重设;尺寸变更在 FT_Set_Pixel_Sizes 后**显式调
+/// hb_ft_font_changed** 通知 hb 重取尺度(hb_ft_font_create 创建期快照,FT 直改脸不触发 hb 侧
+/// 变更检测——评审 Critical#1;hb_font 对象复用不重建)。
 /// </summary>
 internal sealed class FaceHandle : IDisposable
 {
@@ -227,13 +245,15 @@ internal sealed class FaceHandle : IDisposable
         _dataPin = dataPin;
     }
 
-    /// <summary>设置像素尺寸(pixelWidth=0 由 pixelHeight 推导等宽);尺寸变化才调 FT_Set_Pixel_Sizes。</summary>
+    /// <summary>设置像素尺寸(pixelWidth=0 由 pixelHeight 推导等宽);尺寸变化才调 FT_Set_Pixel_Sizes,
+    /// 成功后显式 hb_ft_font_changed 同步 hb 尺度(评审 Critical#1:FT 直改不通知 hb,创建期快照会陈旧)。</summary>
     public void SetPixelSize(int px)
     {
         if (px <= 0) throw new ArgumentOutOfRangeException(nameof(px), px, "pixel size must be positive");
         if (px == _pixelSize) return;
         int err = FreeTypeNative.FT_Set_Pixel_Sizes(FtFace, 0, (uint)px);
         if (err != 0) throw new InvalidOperationException($"FT_Set_Pixel_Sizes(0,{px}) failed: {err}");
+        HarfBuzzNative.hb_ft_font_changed(HbFont);   // 重取 face 尺度并失效 advance cache(hb_font 复用)
         _pixelSize = px;
     }
 

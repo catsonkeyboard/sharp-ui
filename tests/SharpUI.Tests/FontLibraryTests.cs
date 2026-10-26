@@ -23,7 +23,7 @@ public class FontLibraryTests
         string? regular = locator.Locate("Segoe UI", bold: false);
         Assert.NotNull(regular);
         Assert.True(File.Exists(regular!), regular!);
-        // 粗体=独立文件:值 "Segoe UI Bold (TrueType)" → seguib.ttf(槽 0 粗体语义与 BoldOf 一致)
+        // 粗体=独立文件:值 "Segoe UI Bold (TrueType)" → segoeuib.ttf(槽 0 粗体语义与 BoldOf 一致)
         string? bold = locator.Locate("Segoe UI", bold: true);
         Assert.NotNull(bold);
         Assert.True(File.Exists(bold!), bold!);
@@ -114,6 +114,24 @@ public class FontLibraryTests
         Assert.True(ascYh > 0f && descYh < 0f, $"yahei {ascYh}/{descYh}");
         (float ascBold, float descBold) = fonts.LineMetrics(0, 16, bold: true);
         Assert.True(ascBold > 0f && descBold < 0f, $"bold {ascBold}/{descBold}");
+    }
+
+    [Fact]
+    [Trait("Category", "Gpu")]
+    public void SetPixelSize_SyncsHbFontScale_NoStaleSnapshot()
+    {
+        using var fonts = new FontLibrary(DefaultFallback);
+        FaceHandle face = fonts.Face(0, bold: false);
+        face.SetPixelSize(16);
+        // hb_font_get_scale 为 26.6 定点:FT_Set_Pixel_Sizes(0,16) 后同步的 hb 尺度应为 16*64=1024。
+        // hb_ft_font_create 在无尺寸脸上创建 → 尺度快照≈0,且 FT 直改脸尺寸不触发 hb 变更检测
+        // (评审 Critical#1)——SetPixelSize 须显式 hb_ft_font_changed 再同步,否则此处读到陈旧 0
+        HarfBuzzNative.hb_font_get_scale(face.HbFont, out int x16, out _);
+        Assert.Equal(1024, x16);
+        // 尺寸再变:32px → 2048(证 changed 每次生效,无创建期零快照/陈旧 advance cache)
+        face.SetPixelSize(32);
+        HarfBuzzNative.hb_font_get_scale(face.HbFont, out int x32, out _);
+        Assert.Equal(2048, x32);
     }
 
     [Fact]

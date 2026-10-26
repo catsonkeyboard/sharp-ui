@@ -110,9 +110,23 @@ internal static class HarfBuzzNative
     internal static extern void hb_shape(IntPtr font, IntPtr buffer, IntPtr features, uint numFeatures);
 
     /// <summary>hb_ft_font_create(hb-ft.h L101-103):包装既有 FT_Face 为 hb_font(度量/字形 ID 与 FT 同源);
-    /// destroy 传 IntPtr.Zero(hb_font 不接管 face 生命周期,FontLibrary 各自管理);dumpbin 实证 ordinal 239。</summary>
+    /// destroy 传 IntPtr.Zero(hb_font 不接管 face 生命周期,FontLibrary 各自管理);dumpbin 实证 ordinal 239。
+    /// hb-ft.h L95-97 明示:建 hb_font 前应先设好脸尺寸,否则 hb-ft 不会正确拾取字号(创建期从
+    /// face->size->metrics 快照尺度;此后直接改 FT_Face 不会自动再同步——评审 Critical#1)。</summary>
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
     internal static extern IntPtr hb_ft_font_create(IntPtr ftFace, IntPtr destroy);
+
+    /// <summary>hb_ft_font_changed(hb-ft.h L125-128,评审 Critical#1 增):"Call when size or variations
+    /// settings on underlying FT_Face changed, and you want to update the hb_font_t from it."——
+    /// FT_Set_Pixel_Sizes 后显式通知,hb_font 从脸重取尺度并失效 advance cache(vendored 8.5.0 的
+    /// 变更检测只比 hb 侧 serial,FT 直改不触发,故必须显式调)。</summary>
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern void hb_ft_font_changed(IntPtr font);
+
+    /// <summary>hb_font_get_scale(hb-font.h L1061-1064,评审 Critical#1 测试锚点增):读 hb_font 尺度
+    /// (26.6 定点像素;FT_Set_Pixel_Sizes(0,P) 经 hb_ft_font_changed 同步后应为 P*64)。出参 int*。</summary>
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern void hb_font_get_scale(IntPtr font, out int xScale, out int yScale);
 
     /// <summary>hb_font_destroy(hb-font.h L1001-1002):引用计数归零才真正释放。</summary>
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
