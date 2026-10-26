@@ -204,7 +204,7 @@ public class SdlWindowTests
             Assert.False(w1.Exists);
             Assert.True(w2.Exists);                                             // 不殃及他窗
 
-            w1.InjectTest(new SdlEvents.SdlEvent { Type = SdlEvents.EventTypeQuit });   // QIT → 全部 MarkClosed
+            w1.InjectTest(new SdlEvents.SdlEvent { Type = SdlEvents.EventTypeQuit });   // QUIT → 全部 MarkClosed
             Assert.False(w2.Exists);
         }
         finally { w1.Dispose(); w2.Dispose(); }

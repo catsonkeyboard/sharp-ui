@@ -42,7 +42,7 @@ public class SdlEventsTests
     [InlineData(0x400000E3u, Key.LWin)]         // KC(SCANCODE_LGUI=227)
     // 未映射 → Unknown(对齐 Veldrid.MapKey default 分支)
     [InlineData(0u, Key.Unknown)]
-    [InlineData(0x4000015Au, Key.Unknown)]      // SDLK_SLEEP(睡眠键,Veldrid 未映射)
+    [InlineData(0x4000011Au, Key.Unknown)]      // SDLK_SLEEP=KC(282)(终审校正:原 0x4000015A 越界;Veldrid 未映射)
     public void KeyFromSym_MapsSdlKeycodes(uint sym, Key expected) =>
         Assert.Equal(expected, SdlEvents.KeyFromSym(sym));
 

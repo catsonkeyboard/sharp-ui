@@ -55,6 +55,6 @@ rd.xml Dynamic="Required All" 实测无效。处置:M3e 时一并解决(升级 V
 
 `dotnet publish examples/Counter/Counter.csproj -c Release -r win-x64 -p:PublishAot=true` 成功(发布前清空旧 publish 目录防陈旧残留);警告仅 IL3000 一条(同前,Microsoft.Extensions.DependencyModel 第三方链;Veldrid.SDL2 已随窗口层收官移除,该链只剩 DependencyModel 自身),零 NU1903、零 CS0618——**裁定#42 收账时记录的 IL3000 "Veldrid.SDL2→NativeLibraryLoader 传递链" 不复存在**。
 
-- 产物(排除 *.pdb 可部署部分):Counter.exe 2,693,120 + SDL2.dll 1,702,400(vendored 2.30.8)+ freetype.dll 686,592 + harfbuzz.dll 1,075,712 = **6,157,824 B ≈ 5.87 MiB(6.16 MB)**——较 D3 收官 6,945,792 B ≈ 6.95 MB **−11.4%**;Counter.exe 3,481,088→2,693,120(−788 KB:Veldrid.SDL2 绑定层与 Newtonsoft 出栈,窗口/输入路径全自研后 ILC 产物缩量)。设计验收 ≤8MB 持续达成。
+- 产物(排除 *.pdb 可部署部分):Counter.exe 2,693,120 + SDL2.dll 1,702,400(vendored 2.30.8)+ freetype.dll 686,592 + harfbuzz.dll 1,075,712 = **6,157,824 B ≈ 5.87 MiB(6.16 MB)**——较 D3 收官 6,945,792 B ≈ 6.95 MB **−11.3%**;Counter.exe 3,481,088→2,693,120(−788 KB:Veldrid.SDL2 绑定层与 Newtonsoft 出栈,窗口/输入路径全自研后 ILC 产物缩量)。设计验收 ≤8MB 持续达成。
 - 依赖树:`dotnet list examples/Counter/Counter.csproj package --include-transitive` 仅 Microsoft.NETCore.App 层面条目,Newtonsoft.Json/Veldrid.* 零条目。
 - 运行实测(桌面**解锁**环境,目视可用):AOT Counter.exe 前台存活 10s(≥5s 标准),Responding=True,MainWindowTitle "SharpUI Counter",CPU 2.33s/10s(渲染循环实做工作),CloseMainWindow 干净退出 ExitCode=0,stdout/stderr 零输出——无未处理异常退出。**全屏抓屏目视渲染完整可见**(标题/计数/按钮/滚动列表/文本框/Reset 全部正确,artifacts/ime-test/aot-smoke.png;解锁环境无需降级承证,金样本与 T4 harness 继续作为像素级护栏)。

@@ -238,9 +238,11 @@ internal static class SdlNative
     // ---- 函数指针解析(每候选按名 GetExport;失败抛,候选句柄非零时导出必在;T1 起 SdlEvents 亦用) ----
     // T2(携带项③):(模块) → 委托 缓存(每委托类型一份静态字典)。Marshal.GetDelegateForFunctionPointer
     // 每调用新分配委托,SDL_PollEvent(每帧×每事件)、GetWindowSize(每帧×2)、GL SwapWindow(每帧)等热路径
-    // 不缓存即持续分配。缓存以泛型静态类按 T 分桶:键(模块, 委托类型)型级精确,且全程走 AOT 友好的
-    // 泛型重载 GetDelegateForFunctionPointer&lt;T&gt;(非泛型 (IntPtr,Type) 重载带 RequiresDynamicCode,
-    // AOT 实证 IL3050,弃用)。锁粒度粗(全 Fn 串行)但调用为纯字典查,纳秒级;UI 单线程,无争用。
+    // 不缓存即持续分配。缓存以泛型静态类按 T 分桶:键=(模块, 委托类型),隐含"一委托类型恒解析
+    // 同一导出名"的不变式由调用点约定维持(当前 18 处 1:1,核对见终审;新增同型二用调用前必须
+    // 复核),且全程走 AOT 友好的泛型重载 GetDelegateForFunctionPointer&lt;T&gt;(非泛型 (IntPtr,Type)
+    // 重载带 RequiresDynamicCode,AOT 实证 IL3050,弃用)。锁粒度粗(全 Fn 串行)但调用为纯字典
+    // 查,纳秒级;UI 单线程,无争用。
 
     static readonly object _fnLock = new();
 

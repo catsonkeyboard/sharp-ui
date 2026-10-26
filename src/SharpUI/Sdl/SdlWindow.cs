@@ -48,8 +48,8 @@ public sealed class SdlWindow : IDisposable
         if (_handle == IntPtr.Zero)
             throw new InvalidOperationException($"SDL_CreateWindow 失败:{SdlEvents.GetError()}");
         WindowId = SdlEvents.GetWindowId(_handle);
-        SdlPump.Register(this);
         _scaleFactor = ComputeScaleFactor();
+        SdlPump.Register(this);   // 构造末行:防未来可抛逻辑留下"已注册幻影窗"(当前不可达,纯防御)
     }
 
     /// <summary>SDL 窗口原生句柄(D3D11 HWND 探测/GL 上下文等消费面)。</summary>

@@ -56,6 +56,8 @@
   泵重构后 IME 链路完整——SHARPUI_TEST_IME_OPEN=1 + keybd_event 真键盘注入 "nihao":组合串 "ni hao"
   + 候选窗(1.你好…)出现在输入框正下方偏右(PositionImm 逐帧 SetRect/ClientToScreen 实证,466 次);
   **空格提交「你好」经 SDL_TEXTINPUT→自有泵→TextField 上屏读回**(3-committed-space 截图)。
+  组合串呈"ni hao"分音节(黄底系统合成窗、输入框下方)而旧记录"nihao"整串输入框内——系 MS 拼音
+  分音节呈现随系统版本/设置变化,非链路回归(PositionImm trace 466 次定位链完好)。
   **勘误上文"回车 '你好' 上屏"**:本机微软拼音回车=提交原始拼音 "nihao"(2-committed-enter 实证;
   Veldrid 时代同理,系当时记录不精确,非本次回归)。回车/空格均为 IME 侧语义,与框架链路无关;
   自动化验证以空格提交为准。Ctrl+A/Backspace 清空在 IME 强制打开态被 IME 吞键(连续注入下),

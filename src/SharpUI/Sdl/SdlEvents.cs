@@ -404,7 +404,7 @@ internal static class SdlEvents
 
     /// <summary>显示器 DPI(SDL_video.h L473;导出名 SDL_GetDisplayDPI —— 大写 DPI,vendored DLL 导出表
     /// 实测核对)。返回约定是 SDL 系少见的"0=成功/负数=失败"(L465-466 文档明言,非 SDL_bool;本机实测
-    /// 2.0.8 副本返回 0 且写出 ddpi=96)。任一输出指针可为 null 的原生语义此处简化为全输出。</summary>
+    /// 2.30.8 副本返回 0 且写出 ddpi=96)。任一输出指针可为 null 的原生语义此处简化为全输出。</summary>
     internal static bool GetDisplayDpi(int index, out float ddpi, out float hdpi, out float vdpi) =>
         SdlNative.Fn<SdlGetDisplayDpiFn>(LiveModule(), "SDL_GetDisplayDPI")(index, out ddpi, out hdpi, out vdpi) == 0;
 
