@@ -4,7 +4,7 @@ namespace SharpUI;
 
 /// <summary>
 /// 文本图集 v3(D3 T4):内部全量自研 FreeType/HarfBuzz(T2 FontLibrary/T3 Shaper+GlyphRasterizer),
-/// 零 Skia 依赖;公共 API(Measure/DrawRun/WhiteUv/Dispose)与 v2 不变。快照缓存语义承袭 D21/D22:
+/// 零第三方文本栈依赖(FT/HB 直连);公共 API(Measure/DrawRun/WhiteUv/Dispose)与 v2 不变。快照缓存语义承袭 D21/D22:
 /// 回退链分 run、shaping 结果快照缓存(LRU 512 粗粒度逐出,Measure/DrawRun 共用)、字形位图缓存
 /// (键 (slot, glyphId, size, bold)——按**字形 ID** 而非码点:hb 默认开 liga,连字经 GlyphIds 出
 /// 真实字形而无码点可反查;亦修复 v2 连字按簇首字符渲染的潜在瑕疵)。坐标约定:Shaper/Rasterizer
@@ -62,7 +62,7 @@ public sealed class TextAtlas : IDisposable
         UnitLen(s, i) == 2 ? (uint)char.ConvertToUtf32(s, i) : s[i];
 
     /// <summary>行度量(物理 px):FT hinted Á/g 墨迹并集(GlyphRasterizer.InkLineMetrics)——
-    /// 与 v2 Skia MeasureText("Ág") bounds 逐值相等(12/18/20/24px+bold 实证),基线与 Measure 高
+    /// 与 v2 旧栈 MeasureText("Ág") bounds 逐值相等(12/18/20/24px+bold 实证),基线与 Measure 高
     /// 零漂移;FT_SizeMetrics(hhea)会下移基线 ~4px@20px 致金样本溢阈(T-3 决策落地时的实证修正)。
     /// Descent 存正(= v2 bounds.Bottom 语义),Measure/DrawRun 消费一致。</summary>
     (float Ascent, float Descent) GetLineMetrics(int size, bool bold)

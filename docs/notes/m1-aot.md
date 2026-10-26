@@ -43,3 +43,10 @@ rd.xml Dynamic="Required All" 实测无效。处置:M3e 时一并解决(升级 V
 - 产物(排除 *.pdb 后可部署部分):Counter.exe 3,315,712 + SDL2.dll 1,702,400(vendored 2.30.8,IME 裁定#34)+ libSkiaSharp.dll 12,875,576 + libHarfBuzzSharp.dll 2,038,112 = **19,931,800 B ≈ 19.9 MB**(M1 Veldrid 时代为 24,774,968 B ≈ 24.8 MB:Counter.exe −1.4 MB(图形设备代码出栈),libveldrid-spirv.dll 5.8 MB 不再需要;新增 libHarfBuzzSharp.dll 为 M2d shaping 功能,非 AOT 回归)。
 - 运行实测(桌面锁定环境,采 T4 冒烟降级标准:进程存活 + 无异常退出):Counter.exe 存活 10s+(≥5s 标准),`Responding=True`,MainWindowTitle "SharpUI Counter",CPU 10s 内 1.14s(渲染循环实做工作),stdout/stderr 零输出——**Vortice.DXGI MissingMethodException 症状消失**,无未处理异常退出。客户区目视渲染受锁屏环境限制不可判读(PrintWindow 客户区黑屏,T4 报告已记录同限;窗口路径像素级正确性由 T4 harness 后备缓冲读回断言承证,与本产物同一渲染路径)。
 - Newtonsoft.Json 直接引用**保留**(2026-10-26 终审修复波两步裁定):M3d-ii 终审曾判其为孤儿移除,但移除后实证 NU1903 经 `Veldrid.SDL2 → NativeLibraryLoader → Newtonsoft.Json 9.0.1`(GHSA-5crp-9r3c-p9vr 高危)传递链复发,stash 复测基线(直接引用在)无警告——该钉版同时压制已消失的 SPIRV 链与仍在依赖图中的 SDL2 链,包不是孤儿;退出条件=M3e 替换窗口层移除 Veldrid.SDL2 时删除(csproj 行内已注)。Vortice/SharpGen 零条目不受影响。
+
+## D3 收官:文本层 FT/HB 直连,Skia 系移除(2026-10-26 Task 5,裁定#42)
+
+`dotnet publish examples/Counter/Counter.csproj -c Release -r win-x64 -p:PublishAot=true` 成功(发布前清空旧 publish 目录防陈旧残留);警告仅 IL3000 一条(同前,Microsoft.Extensions.DependencyModel 第三方链),零 NU1903、零 CS0618。
+
+- 产物(排除 *.pdb 可部署部分):Counter.exe 3,481,088 + SDL2.dll 1,702,400(vendored 2.30.8)+ freetype.dll 686,592 + harfbuzz.dll 1,075,712 = **6,945,792 B ≈ 6.95 MB(6.62 MiB)**——较裁定#35 收账 19,931,800 B ≈ 19.9 MB **−65.2%**;设计验收 ≤8MB 达成。Skia 系原生库(libSkiaSharp.dll 12,875,576 + libHarfBuzzSharp.dll 2,038,112)自产物消失;Counter.exe +165,376 B(FT/HB P/Invoke 声明层与自研文本栈取代旧栈 interop 代码,3,315,712→3,481,088)。
+- 运行实测(桌面锁定,采降级标准:进程存活 + 无未处理异常):AOT Counter.exe 存活 10s(≥5s 标准)后手动终止,Responding=True,MainWindowTitle "SharpUI Counter",CPU 0.88s/10s(渲染循环实做工作),stdout/stderr 零输出——无未处理异常退出。PrintWindow 客户区黑屏(锁屏环境已知限,上文 M1/裁定#35 节同记录);渲染正确性由金样本 6/6(同一 TextAtlas FT/HB 路径,tests/golden/text)承证,捕获帧中 TextField 光标 quad(SharpUI 自绘元素)可见。

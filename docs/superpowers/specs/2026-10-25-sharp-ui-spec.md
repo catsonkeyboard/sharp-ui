@@ -25,7 +25,7 @@ SharpUI 是一个 C# 原生 GPU 自绘的跨平台应用 UI 框架:
 |---|------|------|
 | D1 | 编程模型 | **声明式元素树为核心 + 即时模式逃生舱**。即时模式不是独立系统,而是架设在同一套布局/绘制管线上的第二层 API |
 | D2 | 图形层 | **M1 起用 Veldrid 4.9.0**(统一封装 D3D11/Metal/OpenGL)。自研薄后端(M2 后逐平台替换)是既定退出路径,渲染器只依赖一个窄接口 |
-| D3 | 文本层 | **先借 SkiaSharp**(SKFont 度量 + 光栅化到自管图集),M2 换 HarfBuzzSharp shaping,远期自研字形光栅化(SDF)。度量/图集/绘制 API 从第一天就是自己的,Skia 只在图集生产侧,不进渲染热路径 |
+| D3 | 文本层 | **先借 SkiaSharp**(SKFont 度量 + 光栅化到自管图集),M2 换 HarfBuzzSharp shaping,远期自研字形光栅化(SDF)。度量/图集/绘制 API 从第一天就是自己的,Skia 只在图集生产侧,不进渲染热路径。**(2026-10-26 收官 ✅:FreeType/HarfBuzz 直连全自研替换完成,SkiaSharp/SkiaSharp.HarfBuzz 移除,AOT 部署面 19.9→6.95MB,裁定#42;SDF 为远期项不随收官)** |
 
 ### Veldrid 现状说明
 
@@ -36,7 +36,7 @@ Veldrid 作者自 2023-02 起停止公开发布更新,NuGet 上 4.9.0 为最后�
 - **D4 运行时**:net10.0(SDK 10.0.401)。开发期默认 JIT(支持热重载),发布用 Native AOT。M1 验收平台 Windows(本机);macOS/Linux 构建通道在 M2 通过 CI 建立。
 - **D5 窗口层**:Veldrid.StartupUtilities(SDL2):`CreateWindowAndGraphicsDevice` 一站式创建窗口 + 设备。手写平台层(win32/AppKit/X11/Wayland)推迟到 M3,触发条件是 IME/系统集成需要。
 - **D6 测试**:xUnit(`dotnet new xunit` 模板默认版本)。纯逻辑(几何/网格/细分/布局/图集分包/DSL)为普通单测;需要 GPU 的用 headless D3D11 设备 + 离屏渲染 + staging 读回断言像素,打 `[Trait("Category","Gpu")]`,CI 可 `--filter` 跳过,本机必须全绿。
-- **D7 依赖纪律**:全链路 trimming/AOT 友好(`IsAotCompatible=true` 开分析器),禁止反射序列化、动态代码、XAML。依赖版本锁定:Veldrid 4.9.0、Veldrid.StartupUtilities 4.9.0、Veldrid.SPIRV 1.0.15、SkiaSharp 4.153.1。
+- **D7 依赖纪律**:全链路 trimming/AOT 友好(`IsAotCompatible=true` 开分析器),禁止反射序列化、动态代码、XAML。依赖版本锁定(2026-10-26 现状):Veldrid.SDL2 4.9.0(窗口层)、Newtonsoft.Json 13.0.3 钉版(R2);原生 vendor SDL2 2.30.8/FreeType/HarfBuzz(native/VERSIONS.md);Veldrid 图形系 2026-10-26 M3d-ii 移除、SkiaSharp 系 2026-10-26 D3 收官移除(裁定#40/#42)。
 - **D8 许可**:MIT。
 - **D9 命名**:框架名 SharpUI,仓库名 sharp-ui。
 
@@ -55,7 +55,7 @@ Veldrid 作者自 2023-02 起停止公开发布更新,NuGet 上 4.9.0 为最后�
 │ 布局      LayoutEngine(单向 flex 子集 → M2 全量)│
 ├─────────────────────────────────────────────────┤
 │ 光栅化    MeshBuilder / Tessellator(圆角矩形)   │
-│ 文本      TextAtlas(SkiaSharp 借用) / ShelfPacker│
+│ 文本      TextAtlas(FT/HB 直连) / ShelfPacker    │
 ├─────────────────────────────────────────────────┤
 │ 渲染      Renderer(单 pipeline、单 draw call)   │
 ├─────────────────────────────────────────────────┤
@@ -221,6 +221,7 @@ IME 定位:SDL2 `KeyCharPresses`(已验证 `IReadOnlyList<char>`)承载 IME 提�
 - 裁定#40(M3d-ii 定稿,2026-10-26):D3D11 直连后端定稿——COM 槽位纪律内化于 `D3D11Native` 声明层(逐槽标注本机 SDK d3d11.h/dxgi.h 声明序推导,锚点校验和:设备 CreateRTV=9、上下文 DrawIndexed=12/OM=33/ClearRTV=50、SwapChain GetBuffer=9,spike 60 帧闭环实证);SdlNative 双 SDL2 模块教训二次实证(裁定#38 复燃):模块落点不可假设,活模块 WMInfo 多候选探测是正确性依赖、不可"简化"掉;Veldrid.SDL2 保留为窗口/输入层(范围界定见 D27)。附带收账:AOT 裁定#35 关闭(Vortice 随图形包移除,见 docs/notes/m1-aot.md),性能基线持平(5948B/0.05ms,docs/notes/perf-baselines.md)。
 - 接口耦合债(M3d-ii 终审背记,2026-10-26):TextAtlas 与 AppWindow 仍以具体类型 D3D11Context 声明(消费面实为 IRenderContext 成员 UpdateAtlasRegion/Present/Resize/Dispose),M3e 多后端落地前须接口化;决策点:AtlasSize 常量归属(接口成员 vs 常量类)。**(已清偿:M3e T1,2026-10-26 —— TextAtlas/AppWindow 均改持 IRenderContext,AtlasSize 落接口实例属性并携"构造期显式全零上传"契约;Renderer 自 M3d-ii 起仅依赖接口。)**
 - 裁定#41(M3e 前半定稿,2026-10-26):GL 后端路线定稿(OpenGL 3.3 core,SDL 原生 GL 路线)—— **SDL GL 属主模块**纪律(裁定#38 延伸三次实证:窗口参 GL 调用严格 OwnerModule;建窗前 EnsureVideoInit/SetGlAttribute 全候选,属主副本未收属性即静默回落兼容上下文且仍过版本下限断言,T3 实证);**Y 差异三处收敛**(顶点着色器不翻 Y,与 HLSL 同式 `1.0 - y/h*2`;glScissor Y 翻转 `fbH-y-h`;glReadPixels 读回行序翻转——两段方向锁定像素测试防双翻转);**DrawElements 原生索引字节偏移直绘**(glBufferSubData 显式长度上传,无 D3D11 整块 scratch 重定基之需,IRenderContext.Draw 契约注两可语义);**BeginFrame scissor 复位对齐 D3D11 清屏语义**(glClear 受 scissor test 作用,帧末残留剪裁会把清屏裁成子矩形拖影)。后端选择:`SHARPUI_BACKEND`(`d3d11`/`gl`;Windows 默认 d3d11,非 Windows 默认 gl——后者仅编译保证,本机无环境)。冒烟:Counter 双后端各 7s 存活 + GL 进程 opengl32.dll 加载/默认进程不加载(路由实证)+ 可见窗 90 帧 harness 读回像素断言。附带收账:测试主机禁并行(assembly `CollectionBehavior`,GPU 类并行 0xC0000005 崩主机 T4 实证,IdResolver 静态同因);GL perf 可比测持平(5944B/0.04ms,docs/notes/perf-baselines.md)。Metal/CI 待 Mac 环境/GitHub remote 另立计划(preflight 裁定)。
+- 裁定#42(D3 文本层定稿,2026-10-26):文本层 FreeType/HarfBuzz 直连全自研定稿(设计 spec docs/superpowers/specs/2026-10-26-text-layer-design.md;消费面 100% 收敛于 TextAtlas,公共 API 不变;vendor freetype.dll/harfbuzz.dll 来源/sha256 见 native/VERSIONS.md,FTL/BSD+MIT LICENSE 随附)。**三项规格级裁定(T4 评审核验成立,设计 spec 勘误节同步)**:①金样本阈值原定 均值<2%/max≤96 经**不可达证明**调整——旧栈 Windows 字体宿主=DirectWrite(非 FreeType),两光栅器曲线 AA 逐像素不同,位级平价物理不可达;度量等值的真机制=两引擎对同一 TrueType hinting 字节码执行出相同网格拟合整值;新阈值=均值≤6%×255 + max≤240(仅值域护栏)+ 墨迹包围盒 ±1px 闸 + 精确数值平价单测(advance/行高逐值)。②旧栈 bold-CJK 推进 bug(雅黑 bold ≈13/17px/字,应 20)**隔离不复刻**,bold×1 语料特例容差 12px。③T-3 行度量修订:FT_SizeMetrics(hhea)整体下移基线 ~4px@20px 致金样本溢阈,改 FT hinted Á/g 墨迹并集(InkLineMetrics),12/18/20/24px+bold 五尺寸点与旧栈逐值相等零漂移(原 ≤0.5px 重定基预案未启用)。**T5 收官收账**:SkiaSharp/SkiaSharp.HarfBuzz 包引用移除(`grep -rni skia src/` 零命中);金样本 6/6 绿(永久回归护栏,不依赖 Skia 存续);全量 226/226;AOT 产物实测 19,931,800→**6,945,792 B ≈ 6.95MB**(≤8MB 验收达成:Counter.exe 3.48 + SDL2 1.70 + freetype 0.69 + harfbuzz 1.08 MB,Skia 系原生库自产物消失,明细 docs/notes/m1-aot.md);AOT 冒烟进程存活 10s 无未处理异常(桌面锁定降级标准,渲染由金样本承证);性能基线 5552B/0.05ms(文本栈替换后复测,收官日两次全量 5576/0.04 与 5552/0.05 抖动内,docs/notes/perf-baselines.md)。Newtonsoft.Json 钉版保留(R2:Veldrid.SDL2 链仍在,M3e 后半退出);风险 R4 关闭。
 
 ## 8. 测试策略
 
@@ -244,7 +245,7 @@ IME 定位:SDL2 `KeyCharPresses`(已验证 `IReadOnlyList<char>`)承载 IME 提�
 | R1 | Veldrid 冻结无更新 | 低 | API 已锁版本且全部本机验证;渲染器只碰窄接口,M3 自研后端替换 |
 | R2 | 传递依赖 Newtonsoft.Json 9.0.1(NU1903 高危通告,本机已复现;原链 Veldrid.SPIRV 已随 M3d-ii 移除,现存活链=Veldrid.SDL2→NativeLibraryLoader,2026-10-26 移除-复发-恢复实证) | 中 | csproj 显式直接引用 Newtonsoft.Json 13.0.3 钉版浮动压制;退出条件=M3e 替换窗口层移除 Veldrid.SDL2 后删除 |
 | R3 | SDL2 的 IME/文本输入能力弱 | 中 | M2 调研:SDL3(Silk.NET)/GLFW/原生平台层三选一;M3 手写平台层兜底 |
-| R4 | SkiaSharp 原生库体积影响 AOT 产物与启动 | 低 | 记录基线;远期自研光栅化后消除 |
+| R4 | SkiaSharp 原生库体积影响 AOT 产物与启动 | **已消除**(2026-10-26) | D3 收官:FT/HB 直连替换,Skia 系移除,AOT 部署面 19.9→6.95MB(docs/notes/m1-aot.md) |
 | R5 | GC 停顿破坏帧预算 | 中 | M1 预算纪律 + 每帧分配测量入 CI;M2 元素/List 池化 |
 | R6 | 无 DPI 缩放在高 DPI 屏上界面过小 | 中 | M1 明确不支持并记录;M2 实现 `ScaleFactor` 管线 |
 
@@ -256,7 +257,7 @@ IME 定位:SDL2 `KeyCharPresses`(已验证 `IReadOnlyList<char>`)承载 IME 提�
 - **逃生舱(Escape hatch)**:即时模式 API,供工具/调试场景绕过声明式样板。
 - **Headless**:无窗口 D3D11 设备,用于 GPU 自动化测试与离屏像素读回。
 
-## 附录 A:已验证的 Veldrid 4.9 / SkiaSharp 4 关键 API(本机编译+运行确认)
+## 附录 A:已验证的 Veldrid 4.9 / SkiaSharp 4 关键 API(本机编译+运行确认;Veldrid 图形系/SkiaSharp 系分别于 2026-10-26 M3d-ii/D3 收官移除,本附录留档 M1 期验证史)
 
 ```
 VeldridStartup.CreateWindowAndGraphicsDevice(WindowCreateInfo, GraphicsDeviceOptions, GraphicsBackend, out Sdl2Window, out GraphicsDevice)

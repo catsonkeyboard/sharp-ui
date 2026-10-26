@@ -1,19 +1,13 @@
 # 性能基线(自动生成)
 
-- 每帧分配:5948 B(预算 8192;M3b 深度池后)
+- 每帧分配:5552 B(预算 8192;M3b 深度池后)
 - 每帧 CPU:0.05 ms(预算 8)
 - 场景:Counter,480×320,Release 测得(含 id+焦点+即时面板管线)
 
-<!-- 2026-10-26 复测注记(M3d-ii Task 5,D3D11 直连后端,Veldrid 图形栈移除后 Release 重测):
-     与替换前持平——旧后端(M3bcd 收官)实测 6008 B / 0.06 ms,本次 5948 B / 0.05 ms:
-     分配 −1.0%,CPU 差在两位小数舍入内,均 <10% 无需归因(稳态分配由 build→layout→tessellate
-     CPU 管线主导,后端中立;绘制路径零新分配:GCHandle 钉数组 + UpdateSubresource,Draw 内无 new)。
-     注意:本文件由 Release PerfTests 全文重写,本注记随下次复测被覆盖。 -->
-
-
-<!-- 2026-10-26 GL 后端可比测注记(M3e T4,Release,GlPerfTests.CounterScene_GlHeadless):
-     5944 B / 0.04 ms —— 与 D3D11 基线(5948 B / 0.05 ms,上文 M3d-ii 复测)持平:
-     稳态分配/CPU 由 build→layout→tessellate 后端中立管线主导(Frame() 不触渲染上下文),
-     后端中立性实证;GL 绘制路径零分配(直钉调用者数组 + BufferSubData 显式长度,
-     行序翻转仅在测试读回路径)。断言同预算(≤8192B / <8ms)。
-     注意:本文件由 Release PerfTests 全文重写,本注记随下次复测被覆盖。 -->
+<!-- 2026-10-26 文本路径复测注记(D3 T5 收官,文本层 FT/HB 直连替换后 Release 全量重跑,
+     PerfTests 重写上文数值):D3D11 基线 5948 B / 0.05 ms(M3d-ii)与 GL 可比测 5944 B / 0.04 ms
+     (M3e 前半)→ 本次 5552 B / 0.05 ms(收官日两次全量运行 5576/0.04 与 5552/0.05,运行间抖动内):
+     分配 −6.3~−6.6%(文本栈自研化后稳态分配下降;未逐项拆解,方向与替换一致),CPU 抖动内持平,
+     预算 8192B/8ms 均不破。文本渲染路径由金样本 6/6 承证(Gpu+Compare,tests/golden/text);
+     绘制路径命中缓存零原生调用如旧。历史注记(M3d-ii/M3e 前半)已随 PerfTests 重写被覆盖,
+     数值以本注记引文为准。注意:本文件由 Release PerfTests 全文重写,本注记随下次复测被覆盖。 -->

@@ -6,7 +6,7 @@ namespace SharpUI.Text;
 /// FT 光栅化结果快照(不可变)。度量均为<strong>物理像素</strong>(与 pixelSize 同单位):
 /// T4 消费时再 /scale 转逻辑(快照语义同现状 TextAtlas Glyph:位图物理、外层换算)。
 /// Rgba 为 RGBA 预乘白:FT A8 覆盖 cov → R=G=B=A=cov(白源 255 × alpha=cov,预乘即 RGB=cov;
-/// 直线型写法 (255,255,255,cov) 仅用于理解,入库必须预乘——图集 SKAlphaType.Premul 同约定)。
+/// 直线型写法 (255,255,255,cov) 仅用于理解,入库必须预乘——图集 alpha 恒预乘,同约定)。
 /// BearingLeft/BearingTop=bitmap_left/bitmap_top:笔位原点到位图左/上边(物理 px,top 以基线
 /// 向上为正)。Advance=metrics.horiAdvance(26.6/64,物理 px)——空字形(空格类)位图 W=H=0
 /// 但推进量仍在。
@@ -52,8 +52,8 @@ internal sealed class GlyphRasterizer : IDisposable
 
     /// <summary>行度量(物理 px,v2 "Ág" 语义的 FT 复刻):Á(U+00C1)与 g(U+0067)hinted 墨迹并集——
     /// Ascent=Á 顶(bitmap 前 metrics.horiBearingY,26.6→px),Descent=-g 底(bearingY-height,基线下为正)。
-    /// T4 实证:与 v2 Skia MeasureText("Ág") bounds 在 12/18/20/24px 及粗体 20px 逐值相等(18@20、
-    /// 19@bold20…)。等值机制:Skia 的 Windows 字体宿主是 DirectWrite(非 FreeType),度量等值因两引擎
+    /// T4 实证:与 v2 旧栈 MeasureText("Ág") bounds 在 12/18/20/24px 及粗体 20px 逐值相等(18@20、
+    /// 19@bold20…)。等值机制:v2 旧栈的 Windows 字体宿主是 DirectWrite(非 FreeType),度量等值因两引擎
     /// 对同一 TrueType hinting 字节码执行出相同网格拟合整值——仅限此类整值度量,**覆盖/位图不可比**
     /// (两光栅器曲线 AA 逐像素不同,见 TextGoldenTests 头注),勿据此推断渲染亦平价。TextAtlas 基线/
     /// Measure 高与 v2 零漂移的金样本前提;FT_SizeMetrics(hhea ascender 22@20)会整体下移基线 ~4px,
@@ -111,7 +111,7 @@ internal sealed class GlyphRasterizer : IDisposable
         var rgba = new byte[checked(rows * width * 4)];
         // A8 → RGBA 预乘白:行行展开(buffer 恒指内存首行;pitch 为带符号行跨度,负值自底向上布局
         // 时 row*pitch 步进依旧正确)。白源 255 × cov/255 = cov → 四通道同值(FT 覆盖原值,不做
-        // gamma 拟合:T4 实证金样本(Skia/Windows=DirectWrite 光栅)与 FT 的覆盖映射非单调,
+        // gamma 拟合:T4 实证金样本(v2 旧栈 Windows=DirectWrite 光栅)与 FT 的覆盖映射非单调,
         // 任何全局变换都无法逼近位级平价,见 TextGoldenTests 头注)
         for (int row = 0; row < rows; row++)
         {
