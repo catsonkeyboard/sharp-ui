@@ -1,0 +1,4 @@
+# Vendored third-party texts must stay byte-identical to upstream (hashes recorded
+# in VERSIONS.md); core.autocrlf would rewrite them on fresh checkout otherwise.
+freetype/FTL.TXT -text
+freetype/GPLv2.TXT -text

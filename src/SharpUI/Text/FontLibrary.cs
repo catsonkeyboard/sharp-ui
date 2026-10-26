@@ -137,7 +137,9 @@ internal sealed class FontLibrary : IDisposable
     }
 
     /// <summary>行度量(像素):SizeMetrics 按 FT_Set_Pixel_Sizes 缩放,ascender/descender 为 26.6 定点 → /64。
-    /// 调用方按 (slot,size,bold) 自缓存(同现状 GetLineMetrics;本方法非每帧热路径)。</summary>
+    /// 调用方按 (slot,size,bold) 自缓存(同现状 GetLineMetrics;本方法非每帧热路径)。
+    /// **警告:不可用于布局基线**——布局行度量请用 InkLineMetrics(GlyphRasterizer,T4 裁定:
+    /// 本 SizeMetrics 源与 Skia 时代基线有 ~4px@20px 差,仅保留作原始数据查询;生产零消费)。</summary>
     public (float Ascender, float Descender) LineMetrics(int slot, int pixelSize, bool bold)
     {
         FaceHandle face = Face(slot, bold);

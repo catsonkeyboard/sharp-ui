@@ -20,6 +20,10 @@ Layout follows the `native/SDL2/` precedent (`<lib>/win-x64/<lib>.dll` + `<lib>/
 | built | 2026-10-26 |
 | license | FTL (FreeType License) / GPLv2 dual — see `freetype/LICENSE.txt` |
 
+FTL.TXT/GPLv2.TXT 许可正文随附(终审裁定):`freetype/FTL.TXT` 与 `freetype/GPLv2.TXT`
+逐字节取自上方 sha256 核验过的官方 tarball(`docs/FTL.TXT` `08c13575…9b86baa1`、
+`docs/GPLv2.TXT` `c4120c67…5656c18`);`native/.gitattributes` 标记 `-text` 防换行改写。
+
 ## harfbuzz.dll (win-x64)
 
 | field | value |

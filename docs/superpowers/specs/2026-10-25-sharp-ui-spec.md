@@ -114,6 +114,7 @@ App.Create("Counter", 480, 320, () => Column(
 
 - `Element` 抽象基类:内联 `Style`(布局)、`Children`、`Frame`(绝对布局框)、`Measured`;叶子实现 `MeasureSelf(SizeF)`,全部实现 `Draw(in PaintContext)`。
 - 工厂方法 `Ui.Column/Row/Text/Panel/Spacer/Button`;链式修饰符(`.Size()/.Bold()/.Color()/.Fill()/.Radius()/.Center()/.Gap()/.Padding()`,MyGO 风格);`string` 隐式转换为 `TextElement`。
+- 撞名注意:`SharpUI.Text` 命名空间(D3 文本层)与 `Ui.Text()` DSL 入口撞名——`using SharpUI;` + `using static SharpUI.Ui;` 组合下 `Text(` 裸调用 CS0118,消费者须写 `Ui.Text(...)` 限定(2026-10-26 裁定#42 附注)。
 - 状态归用户(M1 外部普通对象,每帧重建读取);失效 = 连续重绘(VSync 节流)。
 
 ### 5.2 即时模式逃生舱(M2 实现,接口预留)
