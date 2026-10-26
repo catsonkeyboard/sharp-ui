@@ -67,5 +67,6 @@ public class GlPerfTests
         _output.WriteLine($"GL perf: {bytesPerFrame:F0} B/frame, {msPerFrame:F2} ms/frame");
         Assert.True(bytesPerFrame <= 8192, $"每帧分配 {bytesPerFrame:F0}B 超预算 8192B");
         Assert.True(msPerFrame < 8.0, $"每帧 CPU {msPerFrame:F2}ms 超预算 8ms");
+        App.Atlas = null;   // 用后复位:atlas 随 ctx dispose,防悬垂引用泄漏给后续测试(同 PerfTests 惯例)
     }
 }

@@ -14,7 +14,7 @@ public interface IRenderContext : IDisposable
     /// <summary>当前主目标像素尺寸(scissor 全开与清屏基准;窗口路径随 Resize 更新)。</summary>
     uint TargetHeight { get; }
 
-    /// <summary>窗口交换链 resize;headless 抛 NotSupportedException。</summary>
+    /// <summary>窗口交换链 resize;headless 语义由后端取舍:D3D11 抛 NotSupportedException,GL 仅记录尺寸。</summary>
     void Resize(uint width, uint height);
 
     /// <summary>图集区域上传(RGBA 字节,左上原点)。</summary>

@@ -129,8 +129,11 @@ internal static class SdlNative
         return last;
     }
 
-    /// <summary>解析 GL 函数指针(须已有 MakeCurrent 的上下文):有当前上下文的副本(即属主)应答,
-    /// 其余副本返回 NULL;候选序逐一尝试,任一命中即返回。全败返回 Zero(调用方决定是否报缺失)。</summary>
+    /// <summary>解析 GL 函数指针(须已有 MakeCurrent 的上下文):WGL 当前上下文是进程/线程全局态,
+    /// 经任一副本的 SDL_GL_GetProcAddress(内部 wglGetProcAddress)都能应答——非"仅属主应答,其余
+    /// 返回 NULL";核心 1.1 函数 wglGetProcAddress 不应答,SDL 另有 opengl32 GetProcAddress 回退解析。
+    /// 解得的 WGL 指针进程内恒有效、与解析副本无关(跨副本使用安全)。候选序逐一尝试,任一命中即返回,
+    /// 全败返回 Zero(调用方决定是否报缺失)。</summary>
     internal static IntPtr GetGlProcAddress(string proc)
     {
         foreach (IntPtr h in Candidates())
