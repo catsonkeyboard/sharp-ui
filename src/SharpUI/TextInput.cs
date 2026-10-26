@@ -1,21 +1,24 @@
 using System.Runtime.InteropServices;
+using SharpUI.Backends;
 
 namespace SharpUI;
 
-/// <summary>SDL 文本输入(IME)原生桥(IME 热修):旧窗口封装包(4.9.0)未封装 Start/Stop/SetTextInputRect,
-/// 自补原生调用(同 M3c 剪贴板先例)。SetTextInputRect 矩形经 imm32 驱动候选窗定位。
-/// 裁定#38:DllImport 按名解析在"应用基目录 + runtimes/&lt;rid&gt;/native 双份 SDL2.dll"布局下会与
-/// 旧窗口层程序集解析结果分裂成两个已加载模块(实证双 base 地址),本类若落在未初始化副本上,
-/// 一切窗口相关调用失效(WMInfo 报 "Video subsystem has not been initialized")。故不用 DllImport:
-/// 显式加载候选路径,以 SDL_WasInit(VIDEO) 判定窗口属主"活"模块,函数指针直调;
-/// 绑定惰性于首次窗口相关调用(此时旧窗口层已建窗初始化,判定可靠)。</summary>
+/// <summary>SDL 文本输入(IME)原生桥:Start/Stop/SetTextInputRect + IME UI 放行 hint(裁定#34);
+/// SetTextInputRect 矩形经 imm32 驱动候选窗定位。不用 DllImport,函数指针直调(零 unsafe,AOT 兼容)。
+/// 模块落点纪律(裁定#38 终态,窗口层自研后):建窗走 SdlEvents.CreateWindow → LiveModule() =
+/// SdlNative.Candidates() 首选(Primary = 应用基目录优先,候选序见 SdlNative),本类绑定落点必须
+/// 与建窗属主<b>同源同构</b> —— hint(EnableImeUi)与 Start/SetTextInputRect 落到非建窗模块实例时
+/// 对该窗静默失效(双副本分裂布局下两模块并存,窗口层终审 I-1)。故候选序直接复用
+/// SdlNative.Candidates() 枚举,不本地维护路径序(历史"runtimes 副本优先 = 旧窗口层程序集解析位"
+/// 的独立候选序随旧窗口层删除而证伪,不得复述);绑定惰性于首次窗口相关调用,活判定 =
+/// SDL_WasInit(VIDEO) 非零(建窗流程 EnsureVideoInit 已对全候选 SDL_Init)。</summary>
 public static class SdlTextInput
 {
     static SdlApi? _api;
     static bool _wantImeUi;
 
     /// <summary>放行原生 IME UI(裁定#34:SDL ≤2.0.17 无条件清零 WM_IME_SETCONTEXT 的 ISC_SHOWUI* 压制组合/候选窗;
-    /// 2.0.18+ 经 hint 放行)。窗口创建前调用只记意图,hint 于活模块绑定时生效(见裁定#38)。</summary>
+    /// 2.0.18+ 经 hint 放行)。窗口创建前调用只记意图,hint 于绑定时落到建窗属主模块(见裁定#38 终态)。</summary>
     public static void EnableImeUi() => _wantImeUi = true;
 
     /// <summary>开启窗口文本输入模式(IME 组合/候选启动门);返回值 SDL_bool,窗口无效仅 0,忽略。</summary>
@@ -90,24 +93,30 @@ public static class SdlTextInput
     static SdlApi EnsureBound()
     {
         if (_api is { } bound) return bound;
-        string baseDir = AppContext.BaseDirectory;
-        string rid = RuntimeInformation.ProcessArchitecture switch
+        // 候选序(裁定#38 终态):直接复用 SdlNative.Candidates() 枚举,与建窗选择器同源同构 ——
+        // 建窗走 SdlEvents.CreateWindow → LiveModule() = SdlNative.Candidates() 首选(Primary =
+        // 应用基目录优先),绑定落点必须 ≡ 建窗属主:hint 与 Start/SetTextInputRect 落到非建窗
+        // 模块实例时对该窗静默失效(终审 I-1;候选序本地独立维护即漂移源,已废除)。
+        // 活判定 = SDL_WasInit(VIDEO) 非零(建窗流程 EnsureVideoInit 已对全候选 SDL_Init,首选
+        // 候选必活);全候选皆非活(绑定先于任何建窗的罕见时序)则降级绑首选候选,语义同旧版
+        // requireLive:false 兜底。
+        SdlApi? api = null;
+        foreach (IntPtr h in SdlNative.Candidates())
         {
-            Architecture.X64 => "win-x64",
-            Architecture.X86 => "win-x86",
-            Architecture.Arm64 => "win-arm64",
-            _ => "win-x64"
-        };
-        // 候选顺序:runtimes RID 副本(旧窗口层程序集常规解析位)优先,应用基目录副本次之;
-        // 活判定 = 该模块内 SDL_WasInit(VIDEO) 非零(旧窗口层建窗后必然已在属主模块置位)。
-        SdlApi? api = SdlApi.TryBind(Path.Combine(baseDir, "runtimes", rid, "native", "SDL2.dll"), requireLive: true)
-            ?? SdlApi.TryBind(Path.Combine(baseDir, "SDL2.dll"), requireLive: true)
-            ?? SdlApi.TryBind(Path.Combine(baseDir, "runtimes", rid, "native", "SDL2.dll"), requireLive: false)
-            ?? SdlApi.TryBind(Path.Combine(baseDir, "SDL2.dll"), requireLive: false);
+            api = SdlApi.TryBind(h, requireLive: true);
+            if (api is not null) break;
+        }
         if (api is null)
-            throw new DllNotFoundException("SDL2.dll 未找到(基目录与 runtimes/" + rid + "/native 均无)");
+            foreach (IntPtr h in SdlNative.Candidates())
+            {
+                api = SdlApi.TryBind(h, requireLive: false);
+                if (api is not null) break;
+            }
+        if (api is null)
+            throw new DllNotFoundException(
+                "SDL2.dll 无候选模块(SdlNative.Candidates 全空:基目录/runtimes/<rid>/native/程序集探测/按名解析均未命中)");
         if (_wantImeUi && Environment.GetEnvironmentVariable("SHARPUI_TEST_NO_HINTS") != "1")
-            api.ApplyImeUiHints();   // 裁定#34 hint 落到活模块才算数
+            api.ApplyImeUiHints();   // 裁定#34 hint 落到建窗属主模块才算数
         _api = api;
         return api;
     }
@@ -118,8 +127,9 @@ public static class SdlTextInput
 
     // ---- 活模块绑定层(裁定#38) ----
 
-    /// <summary>SDL2 活模块:显式 LoadLibrary 指定路径 + GetExport 函数指针(同路径重复 Load 仅增引用计数,
-    /// 不产生新模块)。requireLive 时以 SDL_WasInit(VIDEO) 校验为窗口属主,失败即卸载让位。</summary>
+    /// <summary>SDL2 模块绑定:句柄来自 SdlNative.Candidates()(进程期缓存常驻,不新增加载/释放)+
+    /// GetExport 函数指针。requireLive 时以 SDL_WasInit(VIDEO) 校验为建窗属主活模块(建窗流程
+    /// EnsureVideoInit 已对其 SDL_Init),失败仅放弃该候选(句柄属 SdlNative,不 Free)。</summary>
     sealed class SdlApi
     {
         readonly nint _mod;
@@ -143,21 +153,14 @@ public static class SdlTextInput
             _wasInit = Bind<DWasInit>("SDL_WasInit");
         }
 
-        internal static SdlApi? TryBind(string path, bool requireLive)
+        internal static SdlApi? TryBind(IntPtr module, bool requireLive)
         {
-            if (!File.Exists(path)) return null;
-            nint mod;
-            try { mod = NativeLibrary.Load(path); }
-            catch { return null; }
-            var api = new SdlApi(mod);
+            var api = new SdlApi(module);
             uint live = api._wasInit(VideoFlag);
             if (Environment.GetEnvironmentVariable("SHARPUI_IME_TRACE") == "1")
-                Trace($"TryBind {path} mod=0x{mod:X} wasInit=0x{live:X} requireLive={requireLive}");
+                Trace($"TryBind mod=0x{module:X} wasInit=0x{live:X} requireLive={requireLive}");
             if (requireLive && live == 0)
-            {
-                NativeLibrary.Free(mod);   // 非属主副本:不留第三份模块
-                return null;
-            }
+                return null;   // 非建窗属主活副本:仅放弃该候选(句柄属 SdlNative 缓存,不 Free)
             return api;
         }
 
