@@ -11,7 +11,8 @@
     <InternalsVisibleTo Include="SharpUI.Tests" />
   </ItemGroup>
 
-  <!-- 原生库 vendoring(D3 文本层 + T3 窗口层;来源/sha256 见 native/VERSIONS.md):
+  <!-- 原生库 vendoring(D3 文本层 + T3 窗口层;来源/sha256 见 native/VERSIONS.md[freetype/harfbuzz]
+       与 native/SDL2/VERSIONS.md[SDL2]):
        freetype/harfbuzz + SDL2(2.30.8)。SDL2 原随旧窗口封装包以 runtimes 资产进输出,该包 T3 移除后
        本 vendoring 即唯一来源(IME 候选窗需 2.0.18+ 的 SDL_HINT_IME_SHOW_UI,见 SdlTextInput)。
        None+CopyToOutputDirectory 经 ProjectReference 传递到消费方输出(测试宿主/示例)根目录,

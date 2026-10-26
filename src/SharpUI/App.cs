@@ -37,7 +37,10 @@ public sealed class App
         return window;
     }
 
-    static AppWindow CreateWindow(string title, int width, int height, Func<Element>? render)
+    /// <summary>建窗全路径(EnableImeUi→EnsureVideoInit→SHARPUI_BACKEND 路由→flags→上下文→Renderer/图集→
+    /// 失焦/resize 接线)。internal 供 WindowSmokeTests 以 App 同款组装驱动双后端窗口 harness
+    /// (T4:像素读回须控末帧不 Present,Run 循环不可注入,故暴露组装点而非绕开重抄时序)。</summary>
+    internal static AppWindow CreateWindow(string title, int width, int height, Func<Element>? render)
     {
         SdlTextInput.EnableImeUi();                       // 裁定#34:窗口创建前
         SdlNative.EnsureVideoInit();                      // 裁定#38:Init 落点与建窗模块可分裂(历史实证),不可假设;见 SdlNative 类注

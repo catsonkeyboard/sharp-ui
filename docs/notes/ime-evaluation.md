@@ -51,3 +51,12 @@
   测试配套:SHARPUI_IME_TRACE=1 逐帧 trace 至 %TEMP%\sharpui-ime-trace.log;SHARPUI_TEST_IME_OPEN=1
   强制 IME 打开(自动化注入键不触发 Shift 中英切换时用);TextFieldElement.FocusOnStart() 声明式启动聚焦
   (FindAutoFocus 深度优先,App.Run 无焦点时 SetFocus)绕开合成指针不可靠问题。测试 156→158。
+
+- 2026-10-26 T4 窗口层收官实测回归(裁定#43 收账,证据 artifacts/ime-test/t4-regression-v3):
+  泵重构后 IME 链路完整——SHARPUI_TEST_IME_OPEN=1 + keybd_event 真键盘注入 "nihao":组合串 "ni hao"
+  + 候选窗(1.你好…)出现在输入框正下方偏右(PositionImm 逐帧 SetRect/ClientToScreen 实证,466 次);
+  **空格提交「你好」经 SDL_TEXTINPUT→自有泵→TextField 上屏读回**(3-committed-space 截图)。
+  **勘误上文"回车 '你好' 上屏"**:本机微软拼音回车=提交原始拼音 "nihao"(2-committed-enter 实证;
+  Veldrid 时代同理,系当时记录不精确,非本次回归)。回车/空格均为 IME 侧语义,与框架链路无关;
+  自动化验证以空格提交为准。Ctrl+A/Backspace 清空在 IME 强制打开态被 IME 吞键(连续注入下),
+  两次回归均如此;IME 非强制态 Backspace 正常(t4-interactions 实证),亦属系统 IME 行为。
