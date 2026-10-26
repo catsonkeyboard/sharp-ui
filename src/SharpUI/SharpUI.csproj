@@ -18,4 +18,24 @@
     <PackageReference Include="SkiaSharp" Version="4.153.1" />
     <PackageReference Include="SkiaSharp.HarfBuzz" Version="4.153.1" />
   </ItemGroup>
+
+  <!-- D3 文本层:native/freetype + native/harfbuzz(来源/sha256 见 native/VERSIONS.md)。
+       None+CopyToOutputDirectory 经 ProjectReference 传递到消费方输出(测试宿主/示例)根目录,
+       P/Invoke 默认解析即可命中;VendorNativeText 再补 OutDir/Publish 的 runtimes/win-x64/native 布局。 -->
+  <ItemGroup>
+    <None Include="..\..\native\freetype\win-x64\freetype.dll" Link="freetype.dll" CopyToOutputDirectory="PreserveNewest" TargetPath="freetype.dll" Visible="false" />
+    <None Include="..\..\native\harfbuzz\win-x64\harfbuzz.dll" Link="harfbuzz.dll" CopyToOutputDirectory="PreserveNewest" TargetPath="harfbuzz.dll" Visible="false" />
+  </ItemGroup>
+
+  <!-- 模式抄 examples/Counter/Counter.csproj 的 VendorModernSdl2:Build/Publish 后复制到 OutDir 根+runtimes/win-x64/native -->
+  <Target Name="VendorNativeText" AfterTargets="Build;Publish" Condition="'$(VendorNativeText)' != 'false'">
+    <ItemGroup>
+      <VendoredText Include="..\..\native\freetype\win-x64\freetype.dll" />
+      <VendoredText Include="..\..\native\harfbuzz\win-x64\harfbuzz.dll" />
+    </ItemGroup>
+    <Copy SourceFiles="@(VendoredText)" DestinationFiles="@(VendoredText->'$(OutDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(VendoredText)" DestinationFiles="@(VendoredText->'$(OutDir)runtimes\win-x64\native\%(Filename)%(Extension)')" SkipUnchangedFiles="true" Condition="Exists('$(OutDir)runtimes\win-x64\native\')" />
+    <Copy SourceFiles="@(VendoredText)" DestinationFiles="@(VendoredText->'$(PublishDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" Condition="'$(PublishDir)' != ''" />
+    <Copy SourceFiles="@(VendoredText)" DestinationFiles="@(VendoredText->'$(PublishDir)runtimes\win-x64\native\%(Filename)%(Extension)')" SkipUnchangedFiles="true" Condition="'$(PublishDir)' != '' and Exists('$(PublishDir)runtimes\win-x64\native\')" />
+  </Target>
 </Project>

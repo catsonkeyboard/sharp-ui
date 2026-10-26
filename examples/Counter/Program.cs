@@ -12,8 +12,8 @@ internal static class Program
     {
         var state = new CounterState();
         return App.Create("SharpUI Counter", 900, 960, () => Column(
-                Text("Counter").Size(28).Bold().Color(0xE8E8EC),
-                Text(state.Count.ToString()).Size(48).Color(0x7AA2F7),
+                Ui.Text("Counter").Size(28).Bold().Color(0xE8E8EC),
+                Ui.Text(state.Count.ToString()).Size(48).Color(0x7AA2F7),
                 Row(
                     new ButtonElement("−", () => state.Count--),
                     Ui.Spacer(new SizeF(8f, 0f)),

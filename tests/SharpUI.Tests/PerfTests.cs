@@ -21,8 +21,8 @@ public class PerfTests
         var focus = new FocusManager();   // 帧外单例:避免每帧分配污染计量
 
         Element Build() => Column(
-            Text("Counter").Size(28).Bold(),
-            Text(state.ToString()).Size(48),
+            Ui.Text("Counter").Size(28).Bold(),
+            Ui.Text(state.ToString()).Size(48),
             Row(
                 Ui.Button("−", () => state--).Key("minus"),
                 Ui.Button("+", () => state++).Key("plus")

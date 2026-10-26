@@ -29,8 +29,8 @@ public class GlPerfTests
         var focus = new FocusManager();
 
         Element Build() => Column(
-            Text("Counter").Size(28).Bold(),
-            Text(state.ToString()).Size(48),
+            Ui.Text("Counter").Size(28).Bold(),
+            Ui.Text(state.ToString()).Size(48),
             Row(
                 Ui.Button("−", () => state--).Key("minus"),
                 Ui.Button("+", () => state++).Key("plus")
