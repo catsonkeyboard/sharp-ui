@@ -133,7 +133,7 @@ public sealed class App
                     Windows[i].TextInput.Update(IntPtr.Zero, null, null);   // IME 热修:移除前确保 Stop(去激活该窗文本输入)
                     Windows[i].Renderer.Dispose();
                     Windows[i].Ctx.Dispose();
-                    Windows[i].Atlas.Dispose();   // M1 复审补漏:Skia 原生图集随窗释放,防反复开关泄漏
+                    Windows[i].Atlas.Dispose();   // M1 复审补漏:文本图集原生资源随窗释放,防反复开关泄漏(D3 T4 起 FT/HB)
                     Windows.RemoveAt(i);
                 }
             if (maxFrames > 0 && ++frames >= maxFrames)

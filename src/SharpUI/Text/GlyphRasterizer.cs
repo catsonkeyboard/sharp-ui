@@ -52,10 +52,13 @@ internal sealed class GlyphRasterizer : IDisposable
 
     /// <summary>行度量(物理 px,v2 "Ág" 语义的 FT 复刻):Á(U+00C1)与 g(U+0067)hinted 墨迹并集——
     /// Ascent=Á 顶(bitmap 前 metrics.horiBearingY,26.6→px),Descent=-g 底(bearingY-height,基线下为正)。
-    /// T4 实证:Skia(字体宿主即 FreeType,full hinting)MeasureText("Ág") bounds 在 12/18/20/24px 及
-    /// 粗体 20px 与本函数逐值相等(18@20、19@bold20…)——TextAtlas 基线/Measure 高与 v2 零漂移,金样本
-    /// 平价的前提;FT_SizeMetrics(hhea ascender 22@20)会整体下移基线 ~4px,不可用(T-3 决策落地修正)。
-    /// 仅 FT_Load_Glyph 填度量不渲染(冷路径,调用方按 (slot,size,bold) 缓存);槽 0 恒有 Á/g(Segoe UI)。</summary>
+    /// T4 实证:与 v2 Skia MeasureText("Ág") bounds 在 12/18/20/24px 及粗体 20px 逐值相等(18@20、
+    /// 19@bold20…)。等值机制:Skia 的 Windows 字体宿主是 DirectWrite(非 FreeType),度量等值因两引擎
+    /// 对同一 TrueType hinting 字节码执行出相同网格拟合整值——仅限此类整值度量,**覆盖/位图不可比**
+    /// (两光栅器曲线 AA 逐像素不同,见 TextGoldenTests 头注),勿据此推断渲染亦平价。TextAtlas 基线/
+    /// Measure 高与 v2 零漂移的金样本前提;FT_SizeMetrics(hhea ascender 22@20)会整体下移基线 ~4px,
+    /// 不可用(T-3 决策落地修正)。仅 FT_Load_Glyph 填度量不渲染(冷路径,调用方按 (slot,size,bold)
+    /// 缓存);槽 0 恒有 Á/g(Segoe UI)。</summary>
     public (float Ascent, float Descent) InkLineMetrics(int slot, int pixelSize, bool bold)
     {
         FaceHandle face = _fonts.Face(slot, bold);

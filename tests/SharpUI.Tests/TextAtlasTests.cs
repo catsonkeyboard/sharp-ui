@@ -1,10 +1,55 @@
 using SharpUI;
 using SharpUI.Backends;
+using SharpUI.Text;
 
 namespace SharpUI.Tests;
 
 public class TextAtlasTests
 {
+    // ---- 精确数值布局平价(T4 评审 Important #2b)----
+    // 金样本三闸(包围盒 ±1px / 均值 / max)对"系统性 ≤1px 平移"存在检出缺口:平移若同时压窄
+    // 包围盒差并摊薄均值,三闸皆可穿。本组单测以写死的精确期望值(当前实现实测,与 v2 Skia 侧
+    // 逐值互证:InkLineMetrics = Skia MeasureText("Ág") bounds 表;Measure 宽 = SKShaper 整行宽
+    // 238.320 vs 238.3125,差 <0.01px)接管该缺口——Shaper/Rasterizer 既有单测为区间断言,兜不住。
+
+    /// <summary>行度量精确平价:FT hinted Á/g 墨迹 = v2 Skia "Ág" 表逐值(12/18/20/24 + bold20;
+    /// 度量等值机制见 GlyphRasterizer.InkLineMetrics 注释:同一 TT hinting 字节码,非同引擎)。</summary>
+    [Fact]
+    [Trait("Category", "Gpu")]
+    public void LineMetrics_PreciseParityWithSkiaEraValues()
+    {
+        using var fonts = new FontLibrary(new[] { "Microsoft YaHei", "Segoe UI Emoji" });
+        using var raster = new GlyphRasterizer(fonts);
+        (float ascent, float descent)[] expected =
+        { (12f, 3f), (17f, 4f), (18f, 5f), (22f, 6f), (19f, 5f) };   // @12/18/20/24 reg + 20 bold
+        (int px, bool bold)[] points = { (12, false), (18, false), (20, false), (24, false), (20, true) };
+        for (int i = 0; i < points.Length; i++)
+        {
+            (float a, float d) = raster.InkLineMetrics(0, points[i].px, points[i].bold);
+            Assert.Equal(expected[i].ascent, a);        // 整值:hint 网格拟合,精确断言
+            Assert.Equal(expected[i].descent, d);
+        }
+    }
+
+    /// <summary>Measure 总宽/行高精确平价(逻辑 px,scale=1;期望值当前实现实测写死——advances 为
+    /// 26.6/64 二进分数,确定性好;precision 2 容忍浮点求和次序微扰,拦 ≥0.01px 级系统平移)。</summary>
+    [Theory]
+    [Trait("Category", "Gpu")]
+    [InlineData(20f, false, 238.3125f, 23f)]    // "The quick brown fox jumps" @20(SKShaper 238.320)
+    [InlineData(18f, false, 214.5f, 21f)]       // @18(= 18/20 × 20px 宽的 26.6 缩放)
+    [InlineData(12f, false, 143f, 15f)]         // @12
+    [InlineData(20f, true, 131.546875f, 24f)]   // "Bold text 123 " @20 bold(SKShaper 131.562)
+    public void Measure_PreciseWidthParityWithSkiaEraValues(float size, bool bold, float width, float height)
+    {
+        using var ctx = D3D11Context.CreateHeadless(64, 64);
+        using var atlas = new TextAtlas(ctx);
+        SizeF m = bold
+            ? atlas.Measure("Bold text 123 ", size, bold)
+            : atlas.Measure("The quick brown fox jumps", size, bold);
+        Assert.Equal(width, m.Width, 2);
+        Assert.Equal(height, m.Height, 2);
+    }
+
     [Fact]
     [Trait("Category", "Gpu")]
     public void WhiteUv_PointsIntoFirstPixel()

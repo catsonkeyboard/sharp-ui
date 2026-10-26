@@ -111,10 +111,14 @@ static class TextGoldenCorpus
 /// 曲线/对角线的覆盖与 FT 灰度光栅逐像素不同(54 字形配对采样:FT 覆盖→Skia 值映射非单调,
 /// 无全局 LUT;15/54 字形位图 ±1px)。可达且已达成的是**布局精确平价**:行度量(FT hinted Á/g
 /// 墨迹与 Skia MeasureText("Ág") 逐值相等)、shaping(hb 与 SKShaper 逐字形笔位差&lt;0.1px)、
-/// 落位(v2 ink-tight quad 置于笔位的怪癖复刻)→ 6 语料墨迹包围盒逐边相等。据此:
-/// ①墨迹包围盒四边相等(强闸,捕获布局回归);②像素差均值 &lt; 6%×255(实测 0.9~4.5,
-/// bold 12.5——粗字曲线边缘多、结构差密度高);③max ≤ 240(单通道结构差上限 = 白字 255-背景,
-/// 捕获空白/反色/大错位类灾难回归)。Trait Gpu:需本机 D3D11 与系统字体。
+/// 落位(v2 ink-tight quad 置于笔位的怪癖复刻)→ 6 语料墨迹包围盒逐边 ±1px 内(3/6 逐边相等)。
+/// 据此:①墨迹包围盒闸(±1px,bold 的 x1 特例 ≤12px 见用例注;捕获布局回归);②像素差均值
+/// &lt; 6%×255(实测 0.9~4.5,
+/// bold 12.5——粗字曲线边缘多、结构差密度高);③max ≤ 240 ——**仅值域护栏**(拦截垃圾输出:
+/// 空白/反色/严重错位;在本帧背景 (20,18,18)×白字下结构上限 = 255-18 = 237,即实测值,正常渲染
+/// 永不触发)。系统性布局平移的检出由包围盒闸与精确数值单测(TextAtlasTests.
+/// LineMetrics_PreciseParity*/Measure_PreciseWidthParity*,T4 评审 Important #2b)承担。
+/// Trait Gpu:需本机 D3D11 与系统字体。
 /// </summary>
 public class TextGoldenTests(ITestOutputHelper output)
 {
