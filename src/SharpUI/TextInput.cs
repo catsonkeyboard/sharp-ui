@@ -2,13 +2,13 @@ using System.Runtime.InteropServices;
 
 namespace SharpUI;
 
-/// <summary>SDL 文本输入(IME)原生桥(IME 热修):Veldrid.Sdl2 4.9 未封装 Start/Stop/SetTextInputRect,
+/// <summary>SDL 文本输入(IME)原生桥(IME 热修):旧窗口封装包(4.9.0)未封装 Start/Stop/SetTextInputRect,
 /// 自补原生调用(同 M3c 剪贴板先例)。SetTextInputRect 矩形经 imm32 驱动候选窗定位。
 /// 裁定#38:DllImport 按名解析在"应用基目录 + runtimes/&lt;rid&gt;/native 双份 SDL2.dll"布局下会与
-/// Veldrid 程序集解析结果分裂成两个已加载模块(实证双 base 地址),本类若落在未初始化副本上,
+/// 旧窗口层程序集解析结果分裂成两个已加载模块(实证双 base 地址),本类若落在未初始化副本上,
 /// 一切窗口相关调用失效(WMInfo 报 "Video subsystem has not been initialized")。故不用 DllImport:
 /// 显式加载候选路径,以 SDL_WasInit(VIDEO) 判定窗口属主"活"模块,函数指针直调;
-/// 绑定惰性于首次窗口相关调用(此时 Veldrid 已建窗初始化,判定可靠)。</summary>
+/// 绑定惰性于首次窗口相关调用(此时旧窗口层已建窗初始化,判定可靠)。</summary>
 public static class SdlTextInput
 {
     static SdlApi? _api;
@@ -98,8 +98,8 @@ public static class SdlTextInput
             Architecture.Arm64 => "win-arm64",
             _ => "win-x64"
         };
-        // 候选顺序:runtimes RID 副本(Veldrid 程序集常规解析位)优先,应用基目录副本次之;
-        // 活判定 = 该模块内 SDL_WasInit(VIDEO) 非零(Veldrid 建窗后必然已在属主模块置位)。
+        // 候选顺序:runtimes RID 副本(旧窗口层程序集常规解析位)优先,应用基目录副本次之;
+        // 活判定 = 该模块内 SDL_WasInit(VIDEO) 非零(旧窗口层建窗后必然已在属主模块置位)。
         SdlApi? api = SdlApi.TryBind(Path.Combine(baseDir, "runtimes", rid, "native", "SDL2.dll"), requireLive: true)
             ?? SdlApi.TryBind(Path.Combine(baseDir, "SDL2.dll"), requireLive: true)
             ?? SdlApi.TryBind(Path.Combine(baseDir, "runtimes", rid, "native", "SDL2.dll"), requireLive: false)

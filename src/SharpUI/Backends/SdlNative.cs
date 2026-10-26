@@ -4,10 +4,10 @@ namespace SharpUI.Backends;
 
 /// <summary>SDL 原生最小面(M3d-ii,T4 冒烟实证修订;M3e T2 增 GL 面):视频子系统初始化 + 窗口 HWND + GL 六函数。
 /// 裁定#38(修订):应用布局"基目录 + runtimes/win-x64/native 双份 SDL2.dll"下,本程序集裸 DllImport
-/// 按名解析与 Veldrid.Sdl2 的解析会分裂为两个已加载模块(同基名不同全路径可并存,TextInput 热修已实证
-/// 双 base 地址;T4 冒烟复现:Init 落模块 A 成功、窗口经 Veldrid 落模块 B,WMInfo 报 "Invalid window"/sub=0)。
-/// 模块落点不可假设:T4 取证明证 Init 落基目录副本而 Veldrid 建窗落 runtimes 副本,双模块并存、属主不定
-/// ——"Init 落点=Veldrid 将绑定的模块"式假设均已被证伪,不得复述。故不用裸 DllImport:
+/// 按名解析与 旧窗口封装包 的解析会分裂为两个已加载模块(同基名不同全路径可并存,TextInput 热修已实证
+/// 双 base 地址;T4 冒烟复现:Init 落模块 A 成功、窗口经旧窗口层落模块 B,WMInfo 报 "Invalid window"/sub=0)。
+/// 模块落点不可假设:T4 取证明证 Init 落基目录副本而旧窗口层建窗落 runtimes 副本,双模块并存、属主不定
+/// ——"Init 落点=旧窗口层将绑定的模块"式假设均已被证伪,不得复述。故不用裸 DllImport:
 /// 1) Init:按候选序(基目录 → runtimes/&lt;rid&gt;/native → 程序集探测)显式 NativeLibrary.Load 首个命中副本,
 ///    SDL_Init 经该句柄函数指针执行——这只是确保"某"副本视频就绪的尽力初始化(失败值忽略,同 StartupUtilities
 ///    先例),其落点不保证是窗口属主模块;
@@ -25,7 +25,7 @@ internal static class SdlNative
     const uint SdlInitVideo = 0x00000020;
 
     // ---- SDL_GLattr / SDL_GLprofile 实数(出处:SDL_video.h typedef enum SDL_GLattr 无显式值按声明序递增;
-    // 取自 SDL release-2.0.8(= 测试宿主 nuget Veldrid.SDL2 所带 DLL 版本)与 release-2.30.6 头两处互证,全 2.x 同序) ----
+    // 取自 SDL release-2.0.8(= 测试宿主 旧 nuget 窗口封装包(T3 已移除)所带 DLL 版本)与 release-2.30.6 头两处互证,全 2.x 同序) ----
 
     internal const int GlAttrBufferSize = 4;          // SDL_GL_BUFFER_SIZE
     internal const int GlAttrDoubleBuffer = 5;        // SDL_GL_DOUBLEBUFFER(简报原稿 14 系笔误:14=MULTISAMPLESAMPLES)
@@ -48,7 +48,7 @@ internal static class SdlNative
     {
         // 评审裁定(T2 Important#1 ②,M3e T3 落地):全部候选句柄逐一 SDL_Init(VIDEO) ——
         // SDL_GL_SetAttribute 须全候选可达(建窗前属主未知);某副本视频未初始化则其拒收 GL 属性,
-        // 窗口(Veldrid 建窗落点不定)恰落在该副本时上下文即非 3.3 core(兼容上下文亦过版本下限断言)。
+        // 窗口(旧窗口层建窗落点不定)恰落在该副本时上下文即非 3.3 core(兼容上下文亦过版本下限断言)。
         // 各候选独立尽力(幂等引用计数,失败值忽略,同 StartupUtilities 先例);全无候选才抛。
         bool any = false;
         foreach (IntPtr h in Candidates())
@@ -88,7 +88,7 @@ internal static class SdlNative
     // ---- GL 面(M3e T2):属主模块纪律见类头 ----
 
     /// <summary>设置 GL 建窗/建上下文属性。时序:调用方须已 EnsureVideoInit(全候选 SDL_Init VIDEO)且
-    /// 尚未建窗 —— 某副本视频未初始化即拒收属性,窗口(Veldrid 建窗落点不定)恰落在该副本时上下文即
+    /// 尚未建窗 —— 某副本视频未初始化即拒收属性,窗口(旧窗口层建窗落点不定)恰落在该副本时上下文即
     /// 非 3.3 core(T3 实证:修复前属主副本未收属性,建的是兼容上下文,亦过版本下限断言)。属主未知
     /// (窗口尚不存在)→ 全候选设置(评审裁定 T2 Important#1 ①:不去 early-return)。返回聚合结果:
     /// 任一候选拒收即非 0(向调用方暴露;上述时序下 SDL_GL_SetAttribute 对合法 attr 恒 0,拒收属异常
@@ -201,8 +201,8 @@ internal static class SdlNative
             _ => "",
         };
         string baseDir = AppContext.BaseDirectory;
-        // 候选序为本类自定(基目录 → runtimes/<rid>/native),非 Veldrid 加载序的复刻——T4 实证两者落点
-        // 可分裂(Init 落基目录副本、Veldrid 建窗落 runtimes 副本);落点不可假设,属主由 GetWin32Hwnd 多候选探测兜底
+        // 候选序为本类自定(基目录 → runtimes/<rid>/native),非旧窗口层加载序的复刻——T4 实证两者落点
+        // 可分裂(Init 落基目录副本、旧窗口层建窗落 runtimes 副本);落点不可假设,属主由 GetWin32Hwnd 多候选探测兜底
         if (NativeLibrary.TryLoad(Path.Combine(baseDir, SdlLib), out _primary)) return _primary;
         if (rid.Length > 0
             && NativeLibrary.TryLoad(Path.Combine(baseDir, "runtimes", rid, "native", SdlLib), out _primary))
@@ -230,7 +230,7 @@ internal static class SdlNative
             Architecture.Arm64 => "win-arm64",
             _ => "",
         };
-        if (rid.Length > 0)   // 同路径幂等:Veldrid 已加载该副本则返回其句柄,不新增模块
+        if (rid.Length > 0)   // 同路径幂等:该副本已加载则返回其句柄,不新增模块
             NativeLibrary.TryLoad(Path.Combine(AppContext.BaseDirectory, "runtimes", rid, "native", SdlLib), out _runtimes);
         return _runtimes;
     }

@@ -1,10 +1,10 @@
 namespace SharpUI;
 
-/// <summary>自有键枚举:Veldrid.Key 的逐成员镜像(含别名与值,成员名一字不差 —— BackSpace 的实际拼写
-/// 即此)。生成法:T1 反射 Veldrid.SDL2 4.9.0 程序集(dotnet fsi,Powershell 5.1 装不进 netstandard2.0),
+/// <summary>自有键枚举:旧窗口层 Key 的逐成员镜像(含别名与值,成员名一字不差 —— BackSpace 的实际拼写
+/// 即此)。生成法:T1 反射 旧窗口封装包 4.9.0 程序集(dotnet fsi,Powershell 5.1 装不进 netstandard2.0),
 /// 全 147 成员(含 ShiftLeft/LShift 等同值别名);清单与统计见 T1 报告。镜像守卫测试
-/// (KeyEnum_MirrorsVeldridMembersAndValues)在 T3 删包前锁定零形变迁移,删包时随使命完成退役。
-/// 注意:本枚举值是 Veldrid 私有编号(非 SDL 键码)——SDL 键码 → Key 经 SdlEvents.KeyFromSym。</summary>
+/// 镜像守卫测试在 T3 删包前锁定零形变迁移,删包时随使命完成退役(账目见 T3 报告)。
+/// 注意:本枚举值是 旧窗口层私有编号(非 SDL 键码)——SDL 键码 → Key 经 SdlEvents.KeyFromSym。</summary>
 public enum Key
 {
     Unknown = 0,
@@ -156,7 +156,7 @@ public enum Key
     LastKey = 131,
 }
 
-/// <summary>鼠标按钮:Veldrid.MouseButton 全 13 成员镜像(值即数组下标语义,Left=0)。
+/// <summary>鼠标按钮:旧窗口层 MouseButton 全 13 成员镜像(值即数组下标语义,Left=0)。
 /// SDL 原生按钮索引(左=1/中=2/右=3,SDL_mouse.h L445-449)→ 本枚举经 SdlEvents.MouseButtonFromId。</summary>
 public enum MouseButton
 {
@@ -175,7 +175,7 @@ public enum MouseButton
     LastButton = 12,
 }
 
-/// <summary>修饰键:Veldrid.ModifierKeys 镜像(反射实数:Alt=1/Control=2/Shift=4/Gui=8 —— 计划稿
+/// <summary>修饰键:旧窗口层 ModifierKeys 镜像(反射实数:Alt=1/Control=2/Shift=4/Gui=8 —— 计划稿
 /// "Shift=1、Alt=4"系记忆值,已按包内实数校正;含 Gui,非仅三修饰)。SDL KMOD 位(SDL_keycode.h
 /// L334-342,L/R 各半)→ 本枚举经 SdlEvents.ModifiersFromMod 聚合。</summary>
 [Flags]

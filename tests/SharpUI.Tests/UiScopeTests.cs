@@ -85,8 +85,8 @@ public class UiScopeTests
         focus.BeginFrame();
         TreeWalk.Register(root, focus);
         var s = new InputSession();
-        focus.HandleKeys(new[] { new KeyEventData(Veldrid.Key.Tab, true, false) });
-        focus.HandleKeys(new[] { new KeyEventData(Veldrid.Key.Enter, true, false) }, s);
+        focus.HandleKeys(new[] { new KeyEventData(Key.Tab, true, false) });
+        focus.HandleKeys(new[] { new KeyEventData(Key.Enter, true, false) }, s);
         Assert.NotNull(activated);                                   // 当帧回调已触发
         UiContext.CurrentInput = Interaction.Update(s, root, new RawInput(new PointF(0, 0), Array.Empty<bool>()));
         Assert.Contains(b.ResolvedId, UiContext.CurrentInput.ClickedIds!);   // 下一帧账本可见

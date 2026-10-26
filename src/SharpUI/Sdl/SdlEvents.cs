@@ -12,7 +12,7 @@ namespace SharpUI;
 /// 遗留非本层窗口事件由 SdlPump 安全丢弃,等价排空)。零 unsafe,AOT 兼容(委托 GetDelegateForFunctionPointer)。</summary>
 internal static class SdlEvents
 {
-    // ---- 事件类型(SDL_events.h SDL_EventType,L58-111;与 Veldrid.SDL2 编译内 SDL_EventType 反射互证一致)----
+    // ---- 事件类型(SDL_events.h SDL_EventType,L58-111;与 旧窗口封装包 编译内 SDL_EventType 反射互证一致)----
     internal const uint EventTypeQuit = 0x100;             // SDL_QUIT(L60)
     internal const uint EventTypeWindow = 0x200;           // SDL_WINDOWEVENT(L94)
     internal const uint EventTypeKeyDown = 0x300;          // SDL_KEYDOWN(L98)
@@ -50,7 +50,7 @@ internal static class SdlEvents
     internal const byte ButtonX2 = 5;      // SDL_BUTTON_X2(L449)
     internal const byte Pressed = 1;       // SDL_PRESSED(SDL_events.h L50;SDL_RELEASED=0,L49)
     internal const uint WheelFlipped = 1;  // SDL_MOUSEWHEEL_FLIPPED(SDL_mouse.h L67-70,NORMAL=0);T2 裁定:
-                                           // 泵 WheelDelta 忽略方向位(Veldrid HandleMouseWheelEvent 源码实证
+                                           // 泵 WheelDelta 忽略方向位(旧窗口层 HandleMouseWheelEvent 源码实证
                                            // "WheelDelta += y" 无方向分支,同基线保留;Windows 恒 NORMAL)
 
     // ---- 窗口 flags(SDL_video.h SDL_WindowFlags,L104-127)----
@@ -118,9 +118,9 @@ internal static class SdlEvents
     // ---- 映射 ----
 
     /// <summary>SDL 键码(SDL_Keycode = keysym.sym)→ Key;未映射 → Key.Unknown。
-    /// 语义基线:Veldrid.Sdl2Window.MapKey(nuspec 钉版提交 a121087,源码比对)按 scancode 映射,本表按 sym
-    /// 映射 —— 对 Veldrid 所映射的全部物理键两法同果(字母 sym 恒小写 'a'..'z'=0x61..0x7A);残余差异仅在
-    /// 非 US 布局(sym 随布局、scancode 随物理位),留 T2 泵语义裁定。Veldrid 怪quirk 保留:
+    /// 语义基线:旧窗口层 Sdl2Window.MapKey(nuspec 钉版提交 a121087,源码比对)按 scancode 映射,本表按 sym
+    /// 映射 —— 对 旧窗口层所映射的全部物理键两法同果(字母 sym 恒小写 'a'..'z'=0x61..0x7A);残余差异仅在
+    /// 非 US 布局(sym 随布局、scancode 随物理位),留 T2 泵语义裁定。旧窗口层怪quirk 保留:
     /// KP_EQUALS → KeypadPlus(Key 枚举无 KeypadEquals 成员)、default → Unknown。
     /// 常量出处:字面量键 SDL_keycode.h L52-150;派生键 KC(X)=0x40000000|X(keycode.h L48,X 取 SDL_scancode.h 实数)。</summary>
     internal static Key KeyFromSym(uint sym) => sym switch
@@ -145,13 +145,13 @@ internal static class SdlEvents
         0x7F => Key.Delete,        // SDLK_DELETE '\x7F'(字面量,非 scancode 派生)
         // 标点字面量键(L59-101;0x2E/0x2F/0x56 等勿与 Win32 VK 码混淆 —— 计划稿混用已校正)
         0x2D => Key.Minus,         // SDLK_MINUS '-'
-        0x3D => Key.Plus,          // SDLK_EQUALS '='(Veldrid:SCANCODE_EQUALS→Plus)
+        0x3D => Key.Plus,          // SDLK_EQUALS '='(旧窗口层:SCANCODE_EQUALS→Plus)
         0x5B => Key.BracketLeft,   // SDLK_LEFTBRACKET '['
         0x5D => Key.BracketRight,  // SDLK_RIGHTBRACKET ']'
         0x5C => Key.BackSlash,     // SDLK_BACKSLASH '\'
         0x3B => Key.Semicolon,     // SDLK_SEMICOLON ';'
         0x27 => Key.Quote,         // SDLK_QUOTE '\''
-        0x60 => Key.Tilde,         // SDLK_BACKQUOTE '`'(Veldrid 用同值别名 Grave)
+        0x60 => Key.Tilde,         // SDLK_BACKQUOTE '`'(旧窗口层用同值别名 Grave)
         0x2C => Key.Comma,         // SDLK_COMMA ','
         0x2E => Key.Period,        // SDLK_PERIOD '.'
         0x2F => Key.Slash,         // SDLK_SLASH '/'
@@ -199,7 +199,7 @@ internal static class SdlEvents
         0x40000062 => Key.Keypad0,       // KC(98)SDLK_KP_0
         0x40000063 => Key.KeypadPeriod,  // KC(99)SDLK_KP_PERIOD(别名 KeypadDecimal 同值)
         0x40000064 => Key.NonUSBackSlash,// KC(100)
-        0x40000067 => Key.KeypadPlus,    // KC(103)SDLK_KP_EQUALS —— Veldrid 映 KeypadPlus 的怪quirk,同基线保留
+        0x40000067 => Key.KeypadPlus,    // KC(103)SDLK_KP_EQUALS —— 旧窗口层映 KeypadPlus 的怪quirk,同基线保留
         0x40000068 => Key.F13,           // KC(104)
         0x40000069 => Key.F14,           // KC(105)
         0x4000006A => Key.F15,           // KC(106)
@@ -225,12 +225,12 @@ internal static class SdlEvents
     };
 
     /// <summary>SDL_Scancode(SDL_keyboard.h SDL_Keysym.scancode 实为 SDL_scancode.h 的 SDL_Scancode)→ Key;
-    /// 未映射 → Key.Unknown。语义基线 = Veldrid.Sdl2Window.MapKey 源码(nuspec 钉版提交 a121087):其 switch
+    /// 未映射 → Key.Unknown。语义基线 = 旧窗口层 Sdl2Window.MapKey 源码(nuspec 钉版提交 a121087):其 switch
     /// 恰取 keysym.<b>scancode</b>(非 sym —— T2 泵层实证比对源码;携带项④),故本表为泵 KeyDown/KeyUp 的
     /// 键路径;KeyFromSym(sym 路径)保留(T1 测试在用,非 US 布局下两者语义不同:scancode 随物理位)。
     /// 怪quirk 对齐:KP_EQUALS → KeypadPlus(Key 枚举无 KeypadEquals)、SLEEP(282)/CLEAR(156)/APPLICATION(101)/
-    /// POWER(102)/NONUSHASH(50) 等不映射 → Unknown。守卫:KeyFromScancode_MirrorsVeldridMapKey_AllScancodes
-    /// 反射直调 Veldrid MapKey 全值域(0..511)比对。常量出处:SDL_scancode.h release-2.30.8(USB HID usage
+    /// POWER(102)/NONUSHASH(50) 等不映射 → Unknown。守卫:历史全值域镜像测试(T3 删包退役)
+    /// 曾以反射直调旧窗口层 MapKey 全值域(0..511)比对。常量出处:SDL_scancode.h release-2.30.8(USB HID usage
     /// 值序:A=4..Z=29、1=30..0=39、CAPSLOCK=57、F1=58..F12=69、DELETE=76、NUMLOCK=83、KP_PERIOD=99、
     /// NONUSBACKSLASH=100、KP_EQUALS=103、F13=104..F24=115、MENU=118、LCTRL=224..RGUI=231)。</summary>
     internal static Key KeyFromScancode(uint scancode) => scancode switch
@@ -252,7 +252,7 @@ internal static class SdlEvents
         42 => Key.BackSpace,    // SDL_SCANCODE_BACKSPACE
         43 => Key.Tab,          // SDL_SCANCODE_TAB
         44 => Key.Space,        // SDL_SCANCODE_SPACE
-        // 标点(L95-110;NONUSHASH=50 Veldrid 未映射,跳过)
+        // 标点(L95-110;NONUSHASH=50 旧窗口层未映射,跳过)
         45 => Key.Minus,        // SDL_SCANCODE_MINUS
         46 => Key.Plus,         // SDL_SCANCODE_EQUALS
         47 => Key.BracketLeft,  // SDL_SCANCODE_LEFTBRACKET
@@ -260,7 +260,7 @@ internal static class SdlEvents
         49 => Key.BackSlash,    // SDL_SCANCODE_BACKSLASH
         51 => Key.Semicolon,    // SDL_SCANCODE_SEMICOLON
         52 => Key.Quote,        // SDL_SCANCODE_APOSTROPHE
-        53 => Key.Tilde,        // SDL_SCANCODE_GRAVE(Veldrid 返回同值别名 Grave)
+        53 => Key.Tilde,        // SDL_SCANCODE_GRAVE(旧窗口层返回同值别名 Grave)
         54 => Key.Comma,        // SDL_SCANCODE_COMMA
         55 => Key.Period,       // SDL_SCANCODE_PERIOD
         56 => Key.Slash,        // SDL_SCANCODE_SLASH
@@ -293,13 +293,13 @@ internal static class SdlEvents
         95 => Key.Keypad7, 96 => Key.Keypad8, 97 => Key.Keypad9,
         98 => Key.Keypad0,
         99 => Key.KeypadPeriod,  // SDL_SCANCODE_KP_PERIOD(别名 KeypadDecimal 同值)
-        // 扩展区(L161-175;APPLICATION=101/POWER=102 Veldrid 未映射,跳过)
+        // 扩展区(L161-175;APPLICATION=101/POWER=102 旧窗口层未映射,跳过)
         100 => Key.NonUSBackSlash,  // SDL_SCANCODE_NONUSBACKSLASH
-        103 => Key.KeypadPlus,      // SDL_SCANCODE_KP_EQUALS —— Veldrid 映 KeypadPlus 怪quirk,同基线保留
+        103 => Key.KeypadPlus,      // SDL_SCANCODE_KP_EQUALS —— 旧窗口层映 KeypadPlus 怪quirk,同基线保留
         104 => Key.F13, 105 => Key.F14, 106 => Key.F15, 107 => Key.F16, 108 => Key.F17,
         109 => Key.F18, 110 => Key.F19, 111 => Key.F20, 112 => Key.F21, 113 => Key.F22,
         114 => Key.F23, 115 => Key.F24,
-        118 => Key.Menu,          // SDL_SCANCODE_MENU(EXECUTE=116/HELP=117 Veldrid 未映射)
+        118 => Key.Menu,          // SDL_SCANCODE_MENU(EXECUTE=116/HELP=117 旧窗口层未映射)
         // 修饰键(SDL_keyboard.h L77-84;值 = 224+ 物理位)
         224 => Key.ControlLeft,   // SDL_SCANCODE_LCTRL
         225 => Key.ShiftLeft,     // SDL_SCANCODE_LSHIFT
@@ -312,7 +312,7 @@ internal static class SdlEvents
         _ => Key.Unknown,
     };
 
-    /// <summary>KMOD 位 → ModifierKeys:左右同键聚合(Veldrid.Sdl2Window.MapModifierKeys 同语义)。
+    /// <summary>KMOD 位 → ModifierKeys:左右同键聚合(旧窗口层 Sdl2Window.MapModifierKeys 同语义)。
     /// NUM/CAPS/MODE/SCROLL 状态位不属键修饰,忽略。</summary>
     internal static ModifierKeys ModifiersFromMod(ushort mod)
     {
@@ -325,8 +325,8 @@ internal static class SdlEvents
     }
 
     /// <summary>SDL 原生按钮索引 → MouseButton:1→左/2→中/3→右/4(X1)→Button1/5(X2)→Button2;未知 → Left。
-    /// T2 泵语义裁定(携带项②):X1/X2 对齐 Veldrid.Sdl2Window.MapMouseButton(源码实证,提交 a121087),
-    /// Veldrid.MouseButton 枚举无 X 命名而以 Button1/Button2 承接;default → Left 同 Veldrid。</summary>
+    /// T2 泵语义裁定(携带项②):X1/X2 对齐 旧窗口层 Sdl2Window.MapMouseButton(源码实证,提交 a121087),
+    /// 旧窗口层 MouseButton 枚举无 X 命名而以 Button1/Button2 承接;default → Left 同旧窗口层。</summary>
     internal static MouseButton MouseButtonFromId(byte id) => id switch
     {
         ButtonMiddle => MouseButton.Middle,
@@ -376,7 +376,7 @@ internal static class SdlEvents
 
     /// <summary>解码 SDL_TextInputEvent.text(char[32] UTF-8,0 终止,@12)并逐字符追加。零 unsafe:56B 联合体
     /// 栈拷贝后 MemoryMarshal 取字节视图(联合体不能含引用字段,AsBytes 合法);文本输入非热路径,UTF-8 解码
-    /// 中间 string 分配可接受(对齐 Veldrid HandleTextInputEvent 的 GetCharCount/GetChars 语义)。</summary>
+    /// 中间 string 分配可接受(对齐 旧窗口层 HandleTextInputEvent 的 GetCharCount/GetChars 语义)。</summary>
     internal static void AppendTextChars(in SdlEvent e, List<char> into)
     {
         SdlEvent copy = e;   // in 参数不可直接 CreateSpan,按值栈拷贝

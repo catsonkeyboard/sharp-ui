@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using SharpUI.Backends;
-using Veldrid.Sdl2;
 
 namespace SharpUI;
 
@@ -41,15 +40,15 @@ public sealed class App
     static AppWindow CreateWindow(string title, int width, int height, Func<Element>? render)
     {
         SdlTextInput.EnableImeUi();                       // 裁定#34:窗口创建前
-        SdlNative.EnsureVideoInit();                      // 裁定#38:Init 落点与 Veldrid 建窗模块可分裂(T4 实证),不可假设;见 SdlNative 类注
+        SdlNative.EnsureVideoInit();                      // 裁定#38:Init 落点与建窗模块可分裂(历史实证),不可假设;见 SdlNative 类注
         // 后端选择(裁定#41):SHARPUI_BACKEND 显式指定优先;"default" 平台默认 —— Windows=D3D11、
         // 非 Windows=GL(后者本轮仅编译保证,本机无环境验证;D3D11 亦仅 Windows 可用)。
         string backend = NormalizeBackendName(Environment.GetEnvironmentVariable("SHARPUI_BACKEND"));
         bool useGl = backend == "gl" || (backend == "default" && !OperatingSystem.IsWindows());
         if (useGl)
             GLContext.SetCoreProfileAttributes();   // 时序:EnsureVideoInit 后、建窗前(3.3 core + 双缓冲;见其注释)
-        var window = new Sdl2Window(title, 100, 100, width, height,
-            SDL_WindowFlags.Resizable | SDL_WindowFlags.Shown | (useGl ? SDL_WindowFlags.OpenGL : 0), false);
+        var window = new SdlWindow(title, 100, 100, width, height,
+            SdlWindowFlags.Resizable | SdlWindowFlags.Shown | (useGl ? SdlWindowFlags.OpenGL : SdlWindowFlags.None));
         IRenderContext ctx = useGl
             ? GLContext.CreateForWindow(window.SdlWindowHandle, (uint)window.Width, (uint)window.Height)   // SwapWindow 节奏=构造期 SetSwapInterval(1)
             : D3D11Context.CreateForWindow(SdlNative.GetWin32Hwnd(window.SdlWindowHandle),
@@ -57,7 +56,7 @@ public sealed class App
         // 0 尺寸 = 最小化边缘,两后端 ValidateSize 对 0 抛 ArgumentException,异常从 SDL 事件处理器
         // 冒出会击穿 Run 循环整窗崩溃(旧栈 ResizeMainWindow(0,0) 容忍 0)——忽略本帧 resize。
         window.Resized += () => { if (window.Width > 0 && window.Height > 0) ctx.Resize((uint)window.Width, (uint)window.Height); };
-        float scale = Math.Clamp(window.ScaleFactor.X, 0.5f, 4f);
+        float scale = Math.Clamp(window.ScaleFactor, 0.5f, 4f);   // SdlWindow 已夹紧,此处幂等(旧窗口层硬编码 1,现为真实 DPI,T2 行为改进)
         AppWindow w = new()
         {
             Window = window,
@@ -90,11 +89,12 @@ public sealed class App
         {
             if (!_stopwatch.IsRunning) _stopwatch.Start();   // Run 首次进入启动墙钟(D23)
             Time = (float)_stopwatch.Elapsed.TotalSeconds;
+            SdlPump.PumpAll();   // T3:帧首一次全局泵,事件按 WindowId 路由到各注册窗(旧窗口层为每窗自泵,T2 单泵裁定)
             int liveCount = Windows.Count;   // 帧首快照:帧中 OpenWindow 的新窗下一帧纳入
             for (int i = 0; i < liveCount; i++)
             {
                 AppWindow w = Windows[i];
-                RawInput raw = InputMapper.Map(w.Window.PumpEvents(), w.Scale);
+                RawInput raw = InputMapper.Map(w.Window.GetSnapshotAndReset(), w.Scale);   // 各窗取当帧快照(T3:自有 InputSnapshot)
                 InputState input = w.LastTree is not null
                     ? Interaction.Update(w.Session, w.LastTree, in raw, w.Focus)
                     : InputState.Empty;
@@ -134,13 +134,17 @@ public sealed class App
                     Windows[i].Renderer.Dispose();
                     Windows[i].Ctx.Dispose();
                     Windows[i].Atlas.Dispose();   // M1 复审补漏:文本图集原生资源随窗释放,防反复开关泄漏(D3 T4 起 FT/HB)
+                    Windows[i].Window.Dispose();  // T2 强制交接:Close 事件仅 MarkClosed,Dispose 负责 Unregister+SDL_DestroyWindow(缺此即次窗原生窗泄漏)
                     Windows.RemoveAt(i);
                 }
             if (maxFrames > 0 && ++frames >= maxFrames)
                 main.Window.Close();
         }
         foreach (AppWindow w in Windows)   // IME 热修:退出兜底,残留窗(含主窗)各确保 Stop
+        {
             w.TextInput.Update(IntPtr.Zero, null, null);
+            w.Window.Dispose();   // 生命周期归 App:退出销毁残留原生窗(主窗 Close 仅置标记;对齐旧窗口层 Close 即销毁的零泄漏语义)
+        }
         return 0;
     }
 

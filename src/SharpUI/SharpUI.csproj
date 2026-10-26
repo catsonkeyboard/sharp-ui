@@ -11,30 +11,27 @@
     <InternalsVisibleTo Include="SharpUI.Tests" />
   </ItemGroup>
 
-  <ItemGroup>
-    <PackageReference Include="Veldrid.SDL2" Version="4.9.0" />
-    <!-- 钉版压制 Veldrid.SDL2→NativeLibraryLoader→9.0.1 (GHSA-5crp-9r3c-p9vr) NU1903;M3e 移除 Veldrid.SDL2 后可删 -->
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-    <!-- D3 T4/T5:文本层全自研 FT/HB,旧第三方文本栈两包已随 TextAtlas 重写移除(主 spec 裁定#42) -->
-  </ItemGroup>
-
-  <!-- D3 文本层:native/freetype + native/harfbuzz(来源/sha256 见 native/VERSIONS.md)。
+  <!-- 原生库 vendoring(D3 文本层 + T3 窗口层;来源/sha256 见 native/VERSIONS.md):
+       freetype/harfbuzz + SDL2(2.30.8)。SDL2 原随旧窗口封装包以 runtimes 资产进输出,该包 T3 移除后
+       本 vendoring 即唯一来源(IME 候选窗需 2.0.18+ 的 SDL_HINT_IME_SHOW_UI,见 SdlTextInput)。
        None+CopyToOutputDirectory 经 ProjectReference 传递到消费方输出(测试宿主/示例)根目录,
-       P/Invoke 默认解析即可命中;VendorNativeText 再补 OutDir/Publish 的 runtimes/win-x64/native 布局。 -->
+       P/Invoke 默认解析(SdlNative 候选序首项=基目录)即可命中;VendorNative 再补 OutDir/Publish 的
+       runtimes/win-x64/native 布局。 -->
   <ItemGroup>
     <None Include="..\..\native\freetype\win-x64\freetype.dll" Link="freetype.dll" CopyToOutputDirectory="PreserveNewest" TargetPath="freetype.dll" Visible="false" />
     <None Include="..\..\native\harfbuzz\win-x64\harfbuzz.dll" Link="harfbuzz.dll" CopyToOutputDirectory="PreserveNewest" TargetPath="harfbuzz.dll" Visible="false" />
+    <None Include="..\..\native\SDL2\win-x64\SDL2.dll" Link="SDL2.dll" CopyToOutputDirectory="PreserveNewest" TargetPath="SDL2.dll" Visible="false" />
   </ItemGroup>
 
-  <!-- 模式抄 examples/Counter/Counter.csproj 的 VendorModernSdl2:Build/Publish 后复制到 OutDir 根+runtimes/win-x64/native -->
-  <Target Name="VendorNativeText" AfterTargets="Build;Publish" Condition="'$(VendorNativeText)' != 'false'">
+  <Target Name="VendorNative" AfterTargets="Build;Publish" Condition="'$(VendorNative)' != 'false'">
     <ItemGroup>
-      <VendoredText Include="..\..\native\freetype\win-x64\freetype.dll" />
-      <VendoredText Include="..\..\native\harfbuzz\win-x64\harfbuzz.dll" />
+      <VendoredNative Include="..\..\native\freetype\win-x64\freetype.dll" />
+      <VendoredNative Include="..\..\native\harfbuzz\win-x64\harfbuzz.dll" />
+      <VendoredNative Include="..\..\native\SDL2\win-x64\SDL2.dll" />
     </ItemGroup>
-    <Copy SourceFiles="@(VendoredText)" DestinationFiles="@(VendoredText->'$(OutDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
-    <Copy SourceFiles="@(VendoredText)" DestinationFiles="@(VendoredText->'$(OutDir)runtimes\win-x64\native\%(Filename)%(Extension)')" SkipUnchangedFiles="true" Condition="Exists('$(OutDir)runtimes\win-x64\native\')" />
-    <Copy SourceFiles="@(VendoredText)" DestinationFiles="@(VendoredText->'$(PublishDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" Condition="'$(PublishDir)' != ''" />
-    <Copy SourceFiles="@(VendoredText)" DestinationFiles="@(VendoredText->'$(PublishDir)runtimes\win-x64\native\%(Filename)%(Extension)')" SkipUnchangedFiles="true" Condition="'$(PublishDir)' != '' and Exists('$(PublishDir)runtimes\win-x64\native\')" />
+    <Copy SourceFiles="@(VendoredNative)" DestinationFiles="@(VendoredNative->'$(OutDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(VendoredNative)" DestinationFiles="@(VendoredNative->'$(OutDir)runtimes\win-x64\native\%(Filename)%(Extension)')" SkipUnchangedFiles="true" Condition="Exists('$(OutDir)runtimes\win-x64\native\')" />
+    <Copy SourceFiles="@(VendoredNative)" DestinationFiles="@(VendoredNative->'$(PublishDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" Condition="'$(PublishDir)' != ''" />
+    <Copy SourceFiles="@(VendoredNative)" DestinationFiles="@(VendoredNative->'$(PublishDir)runtimes\win-x64\native\%(Filename)%(Extension)')" SkipUnchangedFiles="true" Condition="'$(PublishDir)' != '' and Exists('$(PublishDir)runtimes\win-x64\native\')" />
   </Target>
 </Project>

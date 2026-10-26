@@ -12,9 +12,10 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
-  <!-- IME 候选窗(裁定#34):Veldrid.Sdl2 自带 SDL 2.0.8 无条件清零 WM_IME_SETCONTEXT 的 ISC_SHOWUI* 标志
-       (原生组合/候选窗被 SDL 压制);2.0.18+ 的 SDL_HINT_IME_SHOW_UI 才放行。此处用 vendor 的 SDL 2.30.8
-       在构建/发布后覆盖包内 2.0.8(ABI 兼容),配合 SdlTextInput.EnableImeUi() hint 生效。 -->
+  <!-- IME 候选窗(裁定#34):SDL 2.0.8 及更早无条件清零 WM_IME_SETCONTEXT 的 ISC_SHOWUI* 标志(原生
+       组合/候选窗被压制);2.0.18+ 的 SDL_HINT_IME_SHOW_UI 才放行。库侧已 vendor SDL 2.30.8
+       (SharpUI.csproj VendorNative,含本示例布局),本目标为冗余防御:构建/发布后确保 OutDir/Publish
+       各布局均为 2.30.8,配合 SdlTextInput.EnableImeUi() hint 生效。 -->
   <Target Name="VendorModernSdl2" AfterTargets="Build;Publish" Condition="'$(VendorSdl2)' != 'false'">
     <ItemGroup>
       <VendoredSdl2 Include="..\..\native\SDL2\win-x64\SDL2.dll" />

@@ -32,8 +32,8 @@ public class BackendSelectionTests
         SdlTextInput.EnableImeUi();
         SdlNative.EnsureVideoInit();
         GLContext.SetCoreProfileAttributes();
-        var win = new Veldrid.Sdl2.Sdl2Window("gl-harness", 60, 60, 64, 64,
-            Veldrid.Sdl2.SDL_WindowFlags.OpenGL | Veldrid.Sdl2.SDL_WindowFlags.Shown, false);
+        var win = new SdlWindow("gl-harness", 60, 60, 64, 64,
+            SdlWindowFlags.OpenGL | SdlWindowFlags.Shown);
         try
         {
             using var ctx = GLContext.CreateForWindow(win.SdlWindowHandle, 64, 64);
@@ -60,6 +60,6 @@ public class BackendSelectionTests
             Assert.Equal(255, px[i1]); Assert.Equal(255, px[i1 + 3]);
             Assert.Equal(18, px[i2]); Assert.Equal(20, px[i2 + 2]); Assert.Equal(255, px[i2 + 3]);
         }
-        finally { win.Close(); }
+        finally { win.Dispose(); }   // T3:自有层 Close 仅置标记,Dispose 回收原生窗+出泵
     }
 }

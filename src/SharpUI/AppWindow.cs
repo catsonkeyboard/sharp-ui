@@ -1,11 +1,9 @@
-using Veldrid.Sdl2;
-
 namespace SharpUI;
 
 /// <summary>应用窗口(T6 多窗):每窗独占的窗口/设备上下文/渲染器/图集/焦点管理/输入会话与上帧保留树。主窗恒为 App 窗口表 [0]。</summary>
 public sealed class AppWindow
 {
-    internal Sdl2Window Window = null!;
+    internal SdlWindow Window = null!;
     internal IRenderContext Ctx = null!;   // M3e 接口化(spec 背记债清偿):消费面 UpdateAtlasRegion/Present/Resize/Dispose 皆在接口
     internal Renderer Renderer = null!;
     internal TextAtlas Atlas = null!;

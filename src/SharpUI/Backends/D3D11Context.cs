@@ -4,7 +4,7 @@ using System.Text;
 namespace SharpUI.Backends;
 
 /// <summary>
-/// M3d-ii Task 3:D3D11 渲染上下文,实现后端中立 IRenderContext v2(替代 Veldrid GraphicsContext)。
+/// M3d-ii Task 3:D3D11 渲染上下文,实现后端中立 IRenderContext v2(替代旧窗口栈 GraphicsContext)。
 /// headless 路径全功能(离屏 RT + 读回);窗口路径(交换链/Resize/Present)已实现,T4 接线。
 /// 纪律:零 unsafe、NativeAOT 兼容、绘制路径零新分配(常驻钉扎槽 + span 拷贝,稳态无堆分配)。
 /// 槽位纪律(照抄 D3D11Spike 实证模式):每个 COM 对象取得后立即做 IUnknown AddRef/Release 往返实证;

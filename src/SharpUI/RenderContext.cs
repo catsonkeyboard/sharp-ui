@@ -1,6 +1,6 @@
 namespace SharpUI;
 
-/// <summary>渲染后端窄接口 v2(M3d-ii,D12 清偿:不再暴露 Veldrid 类型)。Renderer 经此驱动任意后端;
+/// <summary>渲染后端窄接口 v2(M3d-ii,D12 清偿:不再暴露旧窗口栈类型)。Renderer 经此驱动任意后端;
 /// 剪裁区段→scissor 的换算留在 Renderer(平台共享逻辑),后端只做命令落地。</summary>
 public interface IRenderContext : IDisposable
 {

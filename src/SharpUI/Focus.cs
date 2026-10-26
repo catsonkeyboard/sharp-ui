@@ -1,5 +1,3 @@
-using Veldrid;
-
 namespace SharpUI;
 
 /// <summary>焦点管理:焦点以稳定 id 跨帧保持;Tab 序为 DOM 序(父先子后)。</summary>
@@ -41,15 +39,15 @@ public sealed class FocusManager
             if (!ke.Down) continue;
             switch (ke.Key)
             {
-                case Veldrid.Key.Tab:
+                case Key.Tab:
                     Cycle(ke.Shift);
                     break;
-                case Veldrid.Key.Escape:
+                case Key.Escape:
                     _focusedId = null;
                     break;
-                case Veldrid.Key.Enter:
-                case Veldrid.Key.KeypadEnter:
-                case Veldrid.Key.Space:
+                case Key.Enter:
+                case Key.KeypadEnter:
+                case Key.Space:
                     if (_focusedId is not null
                         && _byId.TryGetValue(_focusedId, out Element? e)
                         && e is ButtonElement button)

@@ -22,8 +22,8 @@ public class GLBaseTests
         SdlNative.SetGlAttribute(SdlNative.GlAttrContextMinorVersion, 3);
         SdlNative.SetGlAttribute(SdlNative.GlAttrContextProfileMask, SdlNative.GlProfileCore);
         SdlNative.SetGlAttribute(SdlNative.GlAttrDoubleBuffer, 1);
-        var win = new Veldrid.Sdl2.Sdl2Window("gl-base-test", 50, 50, 64, 64,
-            Veldrid.Sdl2.SDL_WindowFlags.OpenGL | Veldrid.Sdl2.SDL_WindowFlags.Hidden, false);
+        var win = new SdlWindow("gl-base-test", 50, 50, 64, 64,
+            SdlWindowFlags.OpenGL | SdlWindowFlags.Hidden);
         IntPtr ctx = SdlNative.CreateGlContext(win.SdlWindowHandle);
         Assert.NotEqual(IntPtr.Zero, ctx);
         try
@@ -44,6 +44,6 @@ public class GLBaseTests
             Assert.Equal(18, px[0]);
             Assert.Equal(255, px[3]);
         }
-        finally { win.Close(); }
+        finally { win.Dispose(); }   // T3:自有层 Close 仅置标记,Dispose 回收原生窗+出泵
     }
 }

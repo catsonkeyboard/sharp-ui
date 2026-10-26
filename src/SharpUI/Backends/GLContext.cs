@@ -29,7 +29,7 @@ public sealed class GLContext : IRenderContext
     bool _disposed;
     readonly IntPtr _window;                 // SDL 窗口句柄(headless=自建持有;窗口路径=调用方窗口,不持有)
     readonly bool _ownsWindow;               // headless=true:Dispose 关窗;窗口路径=false(T4 持窗)
-    Veldrid.Sdl2.Sdl2Window? _windowObj;     // 自建窗口对象(仅 headless;Dispose Close)
+    SdlWindow? _windowObj;                   // 自建窗口对象(仅 headless;Dispose 时销毁+出泵,T3 换自有 SdlWindow)
     IntPtr _glContext;                       // SDL_GLContext(属主模块创建,Dispose 于同模块销毁)
     bool _pipelineReady;                     // GL 对象已建(Dispose 的 GL 删除门;构造失败路径保护)
 
@@ -78,15 +78,15 @@ public sealed class GLContext : IRenderContext
         ValidateSize(width, height);
         SdlNative.EnsureVideoInit();
         SetCoreProfileAttributes();
-        var win = new Veldrid.Sdl2.Sdl2Window("sharpui-gl-headless", 50, 50, (int)width, (int)height,
-            Veldrid.Sdl2.SDL_WindowFlags.OpenGL | Veldrid.Sdl2.SDL_WindowFlags.Hidden, false);
+        var win = new SdlWindow("sharpui-gl-headless", 50, 50, (int)width, (int)height,
+            SdlWindowFlags.OpenGL | SdlWindowFlags.Hidden);   // T3:自有窗口层(隐藏窗不抢焦点)
         try
         {
             var ctx = new GLContext(win.SdlWindowHandle, width, height, ownsWindow: true);
             ctx._windowObj = win;
             return ctx;
         }
-        catch { win.Close(); throw; }
+        catch { win.Dispose(); throw; }   // 失败即销毁:自有层 Close 仅置标记,Dispose 才回收原生窗
     }
 
     /// <summary>窗口渲染上下文:调用方 SDL 窗口上自建 GL 上下文并持有;窗口本身不持有(Dispose 不关调用方窗)。
@@ -108,7 +108,7 @@ public sealed class GLContext : IRenderContext
 
     /// <summary>建窗前设置 3.3 core + 双缓冲 GL 属性(T4 提为 internal:App 接线与 CreateHeadless
     /// 共用,单一真相)。时序硬约束:① 先 SdlNative.EnsureVideoInit(全候选 SDL_Init VIDEO)——
-    /// SDL_GL_SetAttribute 须全候选可达,某副本视频未初始化即拒收属性,窗口(Veldrid 建窗落点不定)
+    /// SDL_GL_SetAttribute 须全候选可达,某副本视频未初始化即拒收属性,窗口(旧窗口层建窗落点不定)
     /// 恰落在该副本时上下文即非 3.3 core(T3 已实证该保证,兼容上下文亦过版本下限断言);
     /// ② 建窗前(属性须在建窗时点已就位);③ 建窗须带 OpenGL flag。</summary>
     internal static void SetCoreProfileAttributes()
@@ -471,7 +471,7 @@ public sealed class GLContext : IRenderContext
             SdlNative.DeleteGlContext(_window, _glContext);   // 属主已缓存于 CreateGlContext 时点
             _glContext = IntPtr.Zero;
         }
-        if (_ownsWindow) _windowObj?.Close();
+        if (_ownsWindow) _windowObj?.Dispose();   // T3:销毁自建隐藏窗(Unregister+SDL_DestroyWindow;Close 仅置标记不回收)
         _windowObj = null;
     }
 

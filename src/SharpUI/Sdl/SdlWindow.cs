@@ -13,15 +13,15 @@ public enum SdlWindowFlags
     Resizable = 0x20,   // SDL_WINDOW_RESIZABLE(L109)
 }
 
-/// <summary>自研 SDL 窗口(T2,W-3):替代 Veldrid.Sdl2.Sdl2Window 的 App/AppWindow 消费面(同名成员:
+/// <summary>自研 SDL 窗口(T2,W-3):替代 旧窗口封装包.Sdl2Window 的 App/AppWindow 消费面(同名成员:
 /// SdlWindowHandle/Exists/Width/Height/ScaleFactor/Resized/FocusLost/Close/Dispose;T3 迁移接线)。
-/// 输入不走本类方法泵(Veldrid 每窗自泵),而由全局单泵 SdlPump.PumpAll 按 WindowId 路由,本类持有
+/// 输入不走本类方法泵(旧窗口层每窗自泵),而由全局单泵 SdlPump.PumpAll 按 WindowId 路由,本类持有
 /// 每窗累积缓冲,GetSnapshotAndReset 取当帧快照。语义差异(有意,报告注明):Close() 仅置 closing 标记
-/// 不销毁(销毁随 App 移除路径 Dispose —— Veldrid CloseCore 即时 SDL_DestroyWindow);ScaleFactor 为
-/// DPI/96 创建定格(Veldrid 硬编码 One)。
+/// 不销毁(销毁随 App 移除路径 Dispose —— 旧窗口层 CloseCore 即时 SDL_DestroyWindow);ScaleFactor 为
+/// DPI/96 创建定格(旧窗口层硬编码 One)。
 /// 分配纪律:泵与 GetSnapshotAndReset 零稳态分配 —— 事件列表双份轮换(累积/已释放),取快照时快照独占
 /// 累积侧、下帧累积改入对侧并在再下次取时清空复用(快照时效契约见 InputSnapshot);快照对象本身每帧
-/// 新分配 1 次(Veldrid 亦每帧新引用返回,可接受;报告注明)。鼠标按键态为 ulong 位掩码(0..12 编位)。</summary>
+/// 新分配 1 次(旧窗口层亦每帧新引用返回,可接受;报告注明)。鼠标按键态为 ulong 位掩码(0..12 编位)。</summary>
 public sealed class SdlWindow : IDisposable
 {
     readonly float _scaleFactor;
@@ -81,7 +81,7 @@ public sealed class SdlWindow : IDisposable
     }
 
     /// <summary>DPI 缩放比:窗口所在显示器 hdpi/96,创建时定格缓存;失败兜底 1,并夹紧 [0.5,4]
-    /// (App.CreateWindow 现状语义内聚:其 Math.Clamp 对本值幂等;本机实测 ~1.588)。Veldrid.Sdl2Window
+    /// (App.CreateWindow 现状语义内聚:其 Math.Clamp 对本值幂等;本机实测 ~1.588)。旧窗口层 Sdl2Window
     /// 此属性硬编码 One,本值为行为改进非形变迁移(报告注明)。</summary>
     public float ScaleFactor => _scaleFactor;
 
@@ -93,7 +93,7 @@ public sealed class SdlWindow : IDisposable
     public event Action? FocusLost;
 
     /// <summary>请求关闭:置 closing 标记(Exists→false),原生窗口不动 —— 销毁随 App 移除路径 Dispose
-    /// (与 Veldrid Close 即销毁不同:所有权归 App 生命周期,避免泵回调中销毁的重入风险)。</summary>
+    /// (与旧窗口层 Close 即销毁不同:所有权归 App 生命周期,避免泵回调中销毁的重入风险)。</summary>
     public void Close() => _closing = true;
 
     /// <summary>销毁原生窗口(SDL_DestroyWindow 经活模块;创建落点=LiveModule=属主,见
@@ -125,7 +125,7 @@ public sealed class SdlWindow : IDisposable
         (_mouseEvents, _mouseEventsReleased) = (_mouseEventsReleased, _mouseEvents);
         (_keyEvents, _keyEventsReleased) = (_keyEventsReleased, _keyEvents);
         (_keyChars, _keyCharsReleased) = (_keyCharsReleased, _keyChars);
-        _wheelDelta = 0f;   // MousePosition/_mouseDownMask 跨帧保留(Veldrid 同语义:Clear 不复位二者)
+        _wheelDelta = 0f;   // MousePosition/_mouseDownMask 跨帧保留(旧窗口层同语义:Clear 不复位二者)
         return snapshot;
     }
 
@@ -164,11 +164,11 @@ public sealed class SdlWindow : IDisposable
     }
 }
 
-/// <summary>全局单泵(T2,W-3 裁定:一进程一泵,按 WindowId 路由到注册窗口,替代 Veldrid 每窗自泵 +
+/// <summary>全局单泵(T2,W-3 裁定:一进程一泵,按 WindowId 路由到注册窗口,替代 旧窗口层每窗自泵 +
 /// Sdl2Events 全局广播的混合模式)。每帧一次 PumpAll:循环 PollEvent 排空活模块队列(队列非空即续,
 /// 事件吞吐由队列自限)—— 未注册 WindowId 的事件(前序测试窗口残留/已注销窗口尾部事件)安全丢弃,
 /// 等价于 T1 冒烟实证的"泵前遗留对本泵可见且必须排空"约束;仅无归属 MOUSEMOTION 默认传播(见
-/// Dispatch 注)。QUIT → 全部注册窗口 MarkClosed(进程级退出语义,Veldrid 逐窗 Close 的全局化)。
+/// Dispatch 注)。QUIT → 全部注册窗口 MarkClosed(进程级退出语义,旧窗口层逐窗 Close 的全局化)。
 /// 线程模型:UI 单线程(App.Run 帧)调用,不加锁(与 SDL 事件队列的线程约定一致)。</summary>
 internal static class SdlPump
 {
@@ -195,11 +195,11 @@ internal static class SdlPump
     }
 
     /// <summary>单事件分发(PumpAll 与 SdlWindow.InjectTest 共用入口)。
-    /// 无归属鼠标事件传播策略(简报裁定的务实近似,与 Veldrid 行为对齐性论证):
-    /// ① Veldrid 基线:每窗自泵时以 windowID==self 过滤,无归属事件对该窗不可见;但其 Sdl2Events
+    /// 无归属鼠标事件传播策略(简报裁定的务实近似,与旧窗口层行为对齐性论证):
+    /// ① 旧窗口层基线:每窗自泵时以 windowID==self 过滤,无归属事件对该窗不可见;但其 Sdl2Events
     ///   全局泵向所有订阅窗广播后各窗再过滤 —— 归属判定同为"事件自带 windowID"。
     /// ② 本泵将无归属 MOUSEMOTION 传播给最近聚焦窗:SDL 的 motion 必带光标下窗口 id,无归属仅出现于
-    ///   (a) 已注销/已销毁窗口的队列尾部事件(关闭瞬间)(b) 混宿进程里他方(Veldrid 遗留/T3 前测试)窗口
+    ///   (a) 已注销/已销毁窗口的队列尾部事件(关闭瞬间)(b) 混宿进程里他方(旧窗口层遗留/T3 前测试)窗口
     ///   (c) 焦点簿记空窗。三态下丢弃会使最近聚焦窗鼠标位置冻结(悬浮/拖拽断流),传播给"最近聚焦窗"
     ///   在 (a)(c) 是正确归属,(b) 下目标窗未聚焦不消费点击(按键/按钮事件仍严格按 id 路由、不传播),
     ///   误漂移仅一处只读位置 —— 收益/风险比如此;多窗精确归属留 M3e 后半(SDK 侧 FOCUS/MOUSE_FOCUS
@@ -221,7 +221,7 @@ internal static class SdlPump
             case SdlEvents.EventTypeKeyUp:
                 if (_windows.TryGetValue(e.WindowId, out SdlWindow? keyWin))
                     keyWin.AddKeyEvent(
-                        SdlEvents.KeyFromScancode(e.KeysymScancode),   // 泵键路径=scancode(Veldrid MapKey 基线,携带项④)
+                        SdlEvents.KeyFromScancode(e.KeysymScancode),   // 泵键路径=scancode(旧窗口层 MapKey 基线,携带项④)
                         e.Type == SdlEvents.EventTypeKeyDown,
                         SdlEvents.ModifiersFromMod(e.KeysymMod));
                 return;
@@ -244,7 +244,7 @@ internal static class SdlPump
                 return;
             case SdlEvents.EventTypeMouseWheel:
                 if (_windows.TryGetValue(e.WindowId, out SdlWindow? wheelWin))
-                    wheelWin.AddWheel(e.WheelY);   // += y,忽略 FLIPPED(Veldrid 源码实证语义)
+                    wheelWin.AddWheel(e.WheelY);   // += y,忽略 FLIPPED(旧窗口层源码实证语义)
                 return;
         }
         // 其余事件类型(TEXTEDITING/拖放/游戏手柄等)T1 声明面未覆盖或不消费,安全丢弃(排空语义)。
@@ -255,7 +255,7 @@ internal static class SdlPump
         switch (e.WindowEventCode)
         {
             case SdlEvents.WindowEventResized:
-            case SdlEvents.WindowEventSizeChanged:   // Veldrid 对两子事件同触发 Resized(SizeChanged 亦覆盖程序化 SetWindowSize)
+            case SdlEvents.WindowEventSizeChanged:   // 旧窗口层对两子事件同触发 Resized(SizeChanged 亦覆盖程序化 SetWindowSize)
                 if (e.WindowData1 > 0 && e.WindowData2 > 0)
                     w.RaiseResized();               // 0 尺寸=最小化边缘,源头防御(见 SdlWindow.Resized 注)
                 return;
@@ -267,7 +267,7 @@ internal static class SdlPump
                 w.RaiseFocusLost();
                 return;
             case SdlEvents.WindowEventClose:
-                w.MarkClosed();   // Veldrid 此处调 Close()(即销毁);本层仅置标记,销毁归 App(见 SdlWindow.Close 注)
+                w.MarkClosed();   // 旧窗口层此处调 Close()(即销毁);本层仅置标记,销毁归 App(见 SdlWindow.Close 注)
                 return;
         }
         // 其余窗口子事件(SHOWN/HIDDEN/MOVED/EXPOSED/MINIMIZED/...)不消费,安全丢弃。

@@ -25,7 +25,7 @@ public class TextFieldTests
     public void Feed_CharsPersistThroughStateStore()
     {
         (TextFieldElement tf, PanelElement root) = Field();
-        tf.Feed(new[] { new KeyEventData(Veldrid.Key.A, true, false) }, "hi".ToCharArray());   // 键被忽略,字符入文
+        tf.Feed(new[] { new KeyEventData(Key.A, true, false) }, "hi".ToCharArray());   // 键被忽略,字符入文
         tf.Feed(null, "!".ToCharArray());
         Assert.Equal("hi!", tf.CurrentText);
         App.State = null;
@@ -35,8 +35,8 @@ public class TextFieldTests
     public void Feed_BackspaceAndArrows()
     {
         (TextFieldElement tf, _) = Field("abc");
-        tf.Feed(new[] { new KeyEventData(Veldrid.Key.Left, true, false) }, null);
-        tf.Feed(new[] { new KeyEventData(Veldrid.Key.BackSpace, true, false) }, null);
+        tf.Feed(new[] { new KeyEventData(Key.Left, true, false) }, null);
+        tf.Feed(new[] { new KeyEventData(Key.BackSpace, true, false) }, null);
         Assert.Equal("ac", tf.CurrentText);
         App.State = null;
     }

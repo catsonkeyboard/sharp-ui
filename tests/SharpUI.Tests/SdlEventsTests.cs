@@ -104,61 +104,9 @@ public class SdlEventsTests
     public void KeyFromScancode_MapsSdlScancodes(uint scancode, Key expected) =>
         Assert.Equal(expected, SdlEvents.KeyFromScancode(scancode));
 
-    /// <summary>泵键路径(scancode)与 Veldrid.Sdl2Window.MapKey 全值域锁定:反射直调其私有<b>实例</b>方法
-    /// (SDL_Keysym→Key,switch on keysym.scancode;静态误记已按源码校正 —— 提交 a121087 实为 private
-    /// instance),宿主对象取 GetUninitializedObject(零字段实例,不跑构造即不建原生窗;MapKey 不触实例态,
-    /// 且 Sdl2Window 无终结器,零原生副作用),0..511 全扫,非 Unknown 者按成员名比对。镜像守卫,
-    /// 包删(T3)时随使命完成退役(同 KeyEnum 守卫)。</summary>
-    [Fact]
-    public void KeyFromScancode_MirrorsVeldridMapKey_AllScancodes()
-    {
-        System.Reflection.MethodInfo mapKey = typeof(Veldrid.Sdl2.Sdl2Window).GetMethod("MapKey",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
-            ?? throw new InvalidOperationException("Veldrid MapKey 反射失败(包结构变更?)");
-        object host = System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(Veldrid.Sdl2.Sdl2Window));
-        object keysym = Activator.CreateInstance(typeof(Veldrid.Sdl2.SDL_Keysym))!;
-        System.Reflection.FieldInfo scancodeField = typeof(Veldrid.Sdl2.SDL_Keysym).GetField("scancode")!;
-        int mapped = 0;
-        for (int sc = 0; sc <= 511; sc++)
-        {
-            scancodeField.SetValue(keysym, Enum.ToObject(scancodeField.FieldType, sc));
-            var veldridKey = (Veldrid.Key)mapKey.Invoke(host, new[] { keysym })!;
-            Key ours = SdlEvents.KeyFromScancode((uint)sc);
-            if (veldridKey == Veldrid.Key.Unknown)
-            {
-                Assert.Equal(Key.Unknown, ours);   // Veldrid 不映射者,我们亦不映射
-                continue;
-            }
-            mapped++;
-            Assert.Equal(Enum.Parse<Key>(veldridKey.ToString()), ours);   // 成员名比对(镜像枚举同名同值)
-        }
-        Assert.True(mapped >= 110, $"Veldrid 映射键数异常少:{mapped}(字母26+数字10+标点17+功能键24+导航13+小键盘16+修饰8)");   // 实测 117
-    }
-
-    // ---- 镜像守卫(包删前有效;T3 删 Veldrid.SDL2 时随使命完成退役)----
-    // 成员名+值全比对:防名字镜像而值漂移。
-
-    [Fact]
-    public void KeyEnum_MirrorsVeldridMembersAndValues()
-    {
-        var veldrid = Enum.GetNames<Veldrid.Key>()
-            .Zip(Enum.GetValues<Veldrid.Key>().Cast<int>(), (n, v) => (n, v)).OrderBy(t => t.n).ToArray();
-        var ours = Enum.GetNames<Key>()
-            .Zip(Enum.GetValues<Key>().Cast<int>(), (n, v) => (n, v)).OrderBy(t => t.n).ToArray();
-        Assert.Equal(147, ours.Length);
-        Assert.Equal(veldrid, ours);
-    }
-
-    [Fact]
-    public void MouseAndModifierEnums_MirrorVeldridMembersAndValues()
-    {
-        Assert.Equal(
-            Enum.GetNames<Veldrid.MouseButton>().Zip(Enum.GetValues<Veldrid.MouseButton>().Cast<int>(), (n, v) => (n, v)).OrderBy(t => t.n),
-            Enum.GetNames<MouseButton>().Zip(Enum.GetValues<MouseButton>().Cast<int>(), (n, v) => (n, v)).OrderBy(t => t.n));
-        Assert.Equal(
-            Enum.GetNames<Veldrid.ModifierKeys>().Zip(Enum.GetValues<Veldrid.ModifierKeys>().Cast<int>(), (n, v) => (n, v)).OrderBy(t => t.n),
-            Enum.GetNames<ModifierKeys>().Zip(Enum.GetValues<ModifierKeys>().Cast<int>(), (n, v) => (n, v)).OrderBy(t => t.n));
-    }
+    /// <summary>历史(T1-T2):泵键路径(scancode)曾以反射直调旧窗口层(4.9.0)私有 MapKey 全值域
+    /// 0..511 锁定镜像(实测其映射 117 键);连同 KeyEnum/MouseAndModifierEnums 两成员镜像守卫共 3 测试,
+    /// 随 T3 删包使命完成退役(退役账目见 T3 报告)。锁定责任此后由本文件静态映射表 Theory 承担。</summary>
 
     // ---- 真模块加载冒烟(Trait Gpu:经 SdlNative 活模块绑定,实触 vendored SDL2.dll)----
 

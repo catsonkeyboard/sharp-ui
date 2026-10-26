@@ -39,13 +39,13 @@ public class FocusTests
         (PanelElement root, ButtonElement a, ButtonElement b) = TwoButtons();
         FocusManager focus = Frame(root);
 
-        focus.HandleKeys(new[] { new KeyEventData(Veldrid.Key.Tab, true, false) });
+        focus.HandleKeys(new[] { new KeyEventData(Key.Tab, true, false) });
         Assert.True(focus.IsFocused(a));
-        focus.HandleKeys(new[] { new KeyEventData(Veldrid.Key.Tab, true, false) });
+        focus.HandleKeys(new[] { new KeyEventData(Key.Tab, true, false) });
         Assert.True(focus.IsFocused(b));
-        focus.HandleKeys(new[] { new KeyEventData(Veldrid.Key.Tab, true, false) });
+        focus.HandleKeys(new[] { new KeyEventData(Key.Tab, true, false) });
         Assert.True(focus.IsFocused(a));       // 环回
-        focus.HandleKeys(new[] { new KeyEventData(Veldrid.Key.Tab, true, true) });
+        focus.HandleKeys(new[] { new KeyEventData(Key.Tab, true, true) });
         Assert.True(focus.IsFocused(b));       // Shift+Tab 反向
     }
 
@@ -60,9 +60,9 @@ public class FocusTests
         IdResolver.Assign(root);
         FocusManager focus = Frame(root);
 
-        focus.HandleKeys(new[] { new KeyEventData(Veldrid.Key.Tab, true, false) });   // 聚焦 a
-        focus.HandleKeys(new[] { new KeyEventData(Veldrid.Key.Enter, true, false) });
-        focus.HandleKeys(new[] { new KeyEventData(Veldrid.Key.Space, true, false) });
+        focus.HandleKeys(new[] { new KeyEventData(Key.Tab, true, false) });   // 聚焦 a
+        focus.HandleKeys(new[] { new KeyEventData(Key.Enter, true, false) });
+        focus.HandleKeys(new[] { new KeyEventData(Key.Space, true, false) });
         Assert.Equal(2, clicks);
     }
 
@@ -71,7 +71,7 @@ public class FocusTests
     {
         (PanelElement root1, ButtonElement a1, _) = TwoButtons();
         FocusManager focus = Frame(root1);
-        focus.HandleKeys(new[] { new KeyEventData(Veldrid.Key.Tab, true, false) });
+        focus.HandleKeys(new[] { new KeyEventData(Key.Tab, true, false) });
         Assert.True(focus.IsFocused(a1));
 
         (PanelElement root2, ButtonElement a2, _) = TwoButtons();   // 全新实例,同结构同 id
@@ -92,7 +92,7 @@ public class FocusTests
         var focus = new FocusManager();
         focus.BeginFrame();
         TreeWalk.Register(root, focus);
-        focus.HandleKeys(new[] { new KeyEventData(Veldrid.Key.Tab, true, false) });
+        focus.HandleKeys(new[] { new KeyEventData(Key.Tab, true, false) });
         Assert.Equal(t.ResolvedId, focus.FocusedId);
     }
 
@@ -101,10 +101,10 @@ public class FocusTests
     {
         (PanelElement root, ButtonElement a, _) = TwoButtons();
         FocusManager focus = Frame(root);
-        focus.HandleKeys(new[] { new KeyEventData(Veldrid.Key.Tab, true, false) });
-        focus.HandleKeys(new[] { new KeyEventData(Veldrid.Key.Escape, true, false) });
+        focus.HandleKeys(new[] { new KeyEventData(Key.Tab, true, false) });
+        focus.HandleKeys(new[] { new KeyEventData(Key.Escape, true, false) });
         Assert.Null(focus.FocusedId);
-        focus.HandleKeys(new[] { new KeyEventData(Veldrid.Key.Enter, true, false) });   // 无焦:不崩、无激活
+        focus.HandleKeys(new[] { new KeyEventData(Key.Enter, true, false) });   // 无焦:不崩、无激活
         Assert.Null(focus.FocusedThisFrame);
     }
 
@@ -117,8 +117,8 @@ public class FocusTests
         var focus = new FocusManager();
         focus.BeginFrame();
         TreeWalk.Register(root, focus);
-        focus.HandleKeys(new[] { new KeyEventData(Veldrid.Key.Tab, true, false) });
-        focus.HandleKeys(new[] { new KeyEventData(Veldrid.Key.Enter, true, false) });   // 聚焦非按钮:不崩
+        focus.HandleKeys(new[] { new KeyEventData(Key.Tab, true, false) });
+        focus.HandleKeys(new[] { new KeyEventData(Key.Enter, true, false) });   // 聚焦非按钮:不崩
         Assert.True(focus.IsFocused(t));
     }
 
@@ -138,7 +138,7 @@ public class FocusTests
     {
         (PanelElement root, ButtonElement a, _) = TwoButtons();
         FocusManager focus = Frame(root);
-        focus.HandleKeys(new[] { new KeyEventData(Veldrid.Key.Tab, true, false) });
+        focus.HandleKeys(new[] { new KeyEventData(Key.Tab, true, false) });
         Assert.True(focus.IsFocused(a));
 
         Interaction.Update(new InputSession(), root, new RawInput(new PointF(50, 190), new[] { true }), focus);  // 空白处按压(按钮高约 100)

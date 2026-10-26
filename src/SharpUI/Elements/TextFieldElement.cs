@@ -60,19 +60,19 @@ public sealed class TextFieldElement : PanelElement, ITextFeedable
             foreach (KeyEventData k in keys)
             {
                 if (!k.Down || !k.Ctrl) continue;
-                if (k.Key == Veldrid.Key.C)   // 仅复制:有选区才写剪贴板,状态不动
+                if (k.Key == SharpUI.Key.C)   // 仅复制:有选区才写剪贴板,状态不动
                 {
                     string? copied = TextEditing.CutCopy(s).Copied;
                     if (copied is not null) Clipboard.SetText(copied);
                     clipboardKey = true;
                 }
-                else if (k.Key == Veldrid.Key.X)   // 剪切:写剪贴板 + 采纳删除后状态(无选区 CutCopy 返回原态)
+                else if (k.Key == SharpUI.Key.X)   // 剪切:写剪贴板 + 采纳删除后状态(无选区 CutCopy 返回原态)
                 {
                     (TextState after, string? copied) = TextEditing.CutCopy(s);
                     if (copied is not null) { Clipboard.SetText(copied); s = after; }
                     clipboardKey = true;
                 }
-                else if (k.Key == Veldrid.Key.V)   // 粘贴:空剪贴板为 no-op
+                else if (k.Key == SharpUI.Key.V)   // 粘贴:空剪贴板为 no-op
                 {
                     string text = Clipboard.GetText();
                     if (text.Length > 0) s = TextEditing.Paste(s, text);
@@ -97,7 +97,7 @@ public sealed class TextFieldElement : PanelElement, ITextFeedable
     }
 
     static bool IsClipboardKey(KeyEventData k) =>
-        k.Ctrl && (k.Key == Veldrid.Key.C || k.Key == Veldrid.Key.X || k.Key == Veldrid.Key.V);
+        k.Ctrl && (k.Key == SharpUI.Key.C || k.Key == SharpUI.Key.X || k.Key == SharpUI.Key.V);
 
     /// <summary>光标逻辑像素矩形(IME 热修):App.Run 乘 Scale 换算后喂 SDL_SetTextInputRect,候选窗锚点。
     /// 空帧/无图集(前缀宽测不出)返回 null;Cursor 取钳制值,x 数学与 Draw 光标一致。</summary>
