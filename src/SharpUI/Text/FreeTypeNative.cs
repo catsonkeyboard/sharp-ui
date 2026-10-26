@@ -278,6 +278,14 @@ internal static class FreeTypeNative
     [DllImport(Lib, CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
     internal static extern int FT_New_Face(IntPtr library, string filepathname, int faceIndex, out IntPtr face);
 
+    /// <summary>FT_New_Memory_Face(freetype.h L2613-2618,T2 增)。file_base/file_size 指向调用方内存——
+    /// FT 不拷贝,头文件明文 "You must not deallocate the memory before calling FT_Done_Face"
+    /// → 调用方(FontLibrary)须以钉住句柄保持数据存活至 FT_Done_Face 之后;file_size/face_index 为
+    /// FT_Long(LLP64 4B → int)。T0 携带项:注册表发现统一走此入口(FT_New_Face 的路径参数经 ANSI fopen,
+    /// 非 ASCII 字体路径会因代码页失败)。</summary>
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern int FT_New_Memory_Face(IntPtr library, IntPtr fileBase, int fileSize, int faceIndex, out IntPtr face);
+
     /// <summary>FT_Done_Face(freetype.h L2879)。</summary>
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
     internal static extern int FT_Done_Face(IntPtr face);
