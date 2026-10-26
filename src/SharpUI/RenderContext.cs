@@ -4,6 +4,10 @@ namespace SharpUI;
 /// 剪裁区段→scissor 的换算留在 Renderer(平台共享逻辑),后端只做命令落地。</summary>
 public interface IRenderContext : IDisposable
 {
+    /// <summary>图集边长(像素,方形)。后端契约:构造期显式上传全零初始内容
+    /// (字形 padding 依赖透明零;D3D11/GL 的"初始内容未定义"语义不得依赖驱动隐式清零)。</summary>
+    uint AtlasSize { get; }
+
     /// <summary>当前主目标像素尺寸(scissor 全开与清屏基准;窗口路径随 Resize 更新)。</summary>
     uint TargetWidth { get; }
 

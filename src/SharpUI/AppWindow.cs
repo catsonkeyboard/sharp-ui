@@ -1,4 +1,3 @@
-using SharpUI.Backends;
 using Veldrid.Sdl2;
 
 namespace SharpUI;
@@ -7,7 +6,7 @@ namespace SharpUI;
 public sealed class AppWindow
 {
     internal Sdl2Window Window = null!;
-    internal D3D11Context Ctx = null!;   // 具体:TextAtlas/App.Run(Present/Resize/Dispose)所需;Renderer 侧经 IRenderContext 消费(D27)
+    internal IRenderContext Ctx = null!;   // M3e 接口化(spec 背记债清偿):消费面 UpdateAtlasRegion/Present/Resize/Dispose 皆在接口
     internal Renderer Renderer = null!;
     internal TextAtlas Atlas = null!;
     internal FocusManager Focus = new();

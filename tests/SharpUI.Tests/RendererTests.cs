@@ -12,7 +12,7 @@ public class RendererTests
         using var ctx = D3D11Context.CreateHeadless(64, 64);
         ctx.UpdateAtlasRegion(new byte[] { 255, 255, 255, 255 }, 0, 0, 1, 1);
         var mesh = new MeshBuilder();
-        float inv = 1f / D3D11Context.AtlasSize;
+        float inv = 1f / ctx.AtlasSize;
         mesh.AddQuad(new RectF(16, 16, 32, 32), new RectF(0, 0, inv, inv), Color32.White);
 
         using var renderer = new Renderer(ctx);
@@ -43,7 +43,7 @@ public class RendererTests
         using var ctx = D3D11Context.CreateHeadless(64, 64);
         ctx.UpdateAtlasRegion(new byte[] { 255, 255, 255, 255 }, 0, 0, 1, 1);
         var mesh = new MeshBuilder();
-        float inv = 1f / D3D11Context.AtlasSize;
+        float inv = 1f / ctx.AtlasSize;
         var uv = new RectF(0, 0, inv, inv);
         mesh.AddQuad(new RectF(0, 0, 32, 64), uv, Color32.White);        // 全屏剪裁(默认)
         mesh.SetClip(new RectF(0, 0, 16, 64));                            // 只露出左半
@@ -64,7 +64,7 @@ public class RendererTests
         using var ctx = D3D11Context.CreateHeadless(128, 128);
         ctx.UpdateAtlasRegion(new byte[] { 255, 255, 255, 255 }, 0, 0, 1, 1);
         var mesh = new MeshBuilder();
-        float inv = 1f / D3D11Context.AtlasSize;
+        float inv = 1f / ctx.AtlasSize;
         mesh.AddQuad(new RectF(16, 16, 32, 32), new RectF(0, 0, inv, inv), Color32.White);
         using var renderer = new Renderer(ctx);
         renderer.Submit(mesh, new SizeF(64, 64), scale: 2f);

@@ -12,7 +12,7 @@ public class D3D11ContextHeadlessTests
     public void HeadlessDevice_CompilesShadersAndBuildsPipeline()
     {
         using var ctx = D3D11Context.CreateHeadless(64, 64);
-        Assert.Equal(1024u, D3D11Context.AtlasSize);
+        Assert.Equal(1024u, ctx.AtlasSize);
         Assert.Equal(64u, ctx.TargetWidth);
         Assert.Equal(64u, ctx.TargetHeight);
         Assert.True(ctx.FeatureLevel >= 0xB000, $"feature level 0x{ctx.FeatureLevel:X} < D3D 11.0(sm_5 管线硬门槛)");

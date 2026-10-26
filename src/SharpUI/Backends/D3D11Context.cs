@@ -18,7 +18,8 @@ namespace SharpUI.Backends;
 /// </summary>
 public sealed class D3D11Context : IRenderContext
 {
-    public const uint AtlasSize = 1024;
+    /// <summary>图集边长(M3e 归接口:IRenderContext 契约成员,GL 后端同值实现;const→实例属性破坏性变更,消费面一律经接口/实例)。</summary>
+    public uint AtlasSize => 1024;
 
     public uint TargetWidth { get; private set; }
     public uint TargetHeight { get; private set; }
@@ -120,6 +121,10 @@ public sealed class D3D11Context : IRenderContext
             ReleaseOne(ref _factory, "IDXGIFactory1");
             CreatePipeline();
             AllocPinnedSlots();
+            // M3e 图集零初始化契约(IRenderContext.AtlasSize):Default 堆图集初始内容"未定义",
+            // 构造期显式上传 4MB 全零(一次性;字形 padding 依赖透明零,不得依赖驱动隐式清零)。
+            // 落点在 AllocPinnedSlots 后(UpdateAtlasRegion 依赖 _boxPin),先于任何 BeginFrame/Draw。
+            UpdateAtlasRegion(new byte[AtlasSize * AtlasSize * 4], 0, 0, AtlasSize, AtlasSize);
         }
         catch
         {

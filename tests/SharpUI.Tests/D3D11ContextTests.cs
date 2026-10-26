@@ -26,7 +26,7 @@ public class D3D11ContextTests
     {
         using var ctx = D3D11Context.CreateHeadless(64, 64);
         ctx.UpdateAtlasRegion(new byte[] { 255, 255, 255, 255 }, 0, 0, 1, 1);   // 图集 (0,0) 白
-        float inv = 1f / D3D11Context.AtlasSize;
+        float inv = 1f / ctx.AtlasSize;
         var verts = new UiVertex[4];
         for (int i = 0; i < 4; i++) verts[i] = UiVertex.Create(
             new PointF(i % 2 == 0 ? 16f : 48f, i < 2 ? 16f : 48f),
@@ -49,7 +49,7 @@ public class D3D11ContextTests
     {
         using var ctx = D3D11Context.CreateHeadless(64, 64);
         ctx.UpdateAtlasRegion(new byte[] { 255, 255, 255, 255 }, 0, 0, 1, 1);
-        float inv = 1f / D3D11Context.AtlasSize;
+        float inv = 1f / ctx.AtlasSize;
         var verts = new UiVertex[4];
         for (int i = 0; i < 4; i++) verts[i] = UiVertex.Create(
             new PointF(i % 2 == 0 ? 16f : 48f, i < 2 ? 16f : 48f),
@@ -70,7 +70,7 @@ public class D3D11ContextTests
     {
         using var ctx = D3D11Context.CreateHeadless(64, 64);
         ctx.UpdateAtlasRegion(new byte[] { 255, 255, 255, 255 }, 0, 0, 1, 1);
-        float inv = 1f / D3D11Context.AtlasSize;
+        float inv = 1f / ctx.AtlasSize;
         var verts = new UiVertex[4];
         for (int i = 0; i < 4; i++) verts[i] = UiVertex.Create(
             new PointF(i % 2 == 0 ? 0f : 64f, i < 2 ? 0f : 64f),
@@ -92,7 +92,7 @@ public class D3D11ContextTests
     {
         using var ctx = D3D11Context.CreateHeadless(64, 64);
         ctx.UpdateAtlasRegion(new byte[] { 255, 255, 255, 255 }, 0, 0, 1, 1);
-        float inv = 1f / D3D11Context.AtlasSize;
+        float inv = 1f / ctx.AtlasSize;
         var verts = new UiVertex[8];
         for (int i = 0; i < 4; i++) verts[i] = UiVertex.Create(          // 段 A:左上 (8..24)² 白
             new PointF(i % 2 == 0 ? 8f : 24f, i < 2 ? 8f : 24f),
@@ -116,6 +116,35 @@ public class D3D11ContextTests
 
     [Fact]
     [Trait("Category", "Gpu")]
+    public void Headless_FreshAtlas_IsAllTransparentZero()
+    {
+        // M3e 契约:图集构造期显式上传全零(字形 padding 依赖透明零;Default 堆纹理初始内容"未定义",
+        // 不得依赖驱动隐式清零)。防御性:仅当驱动残留旧数据且零初始化缺失时才失败。
+        // 白块放图集 (8,8)-(10,10):屏幕像素 (0,0) 中心 UV=(0.5/64)→点采样 texel 恰为 8;
+        // 未写区域(如 (32,32)→texel 520)透明源 (0,0,0,0) 经预乘混合 (One,InvSrcAlpha) → 清屏色。
+        using var ctx = D3D11Context.CreateHeadless(64, 64);
+        ctx.BeginFrame(0, 0, 0, 1f);
+        ctx.UpdateAtlasRegion(new byte[]
+        {
+            255, 255, 255, 255, 255, 255, 255, 255,
+            255, 255, 255, 255, 255, 255, 255, 255,
+        }, 8, 8, 2, 2);
+        var verts = new UiVertex[4];
+        for (int i = 0; i < 4; i++) verts[i] = UiVertex.Create(
+            new PointF(i % 2 == 0 ? 0f : 64f, i < 2 ? 0f : 64f),
+            new PointF(i % 2 == 0 ? 0f : 1f, i < 2 ? 0f : 1f),   // UV 覆盖全图集
+            Color32.White);
+        ushort[] idx = { 0, 1, 2, 2, 1, 3 };
+        ctx.SetScreenSize(64, 64);
+        ctx.SetScissor(0, 0, 64, 64);
+        ctx.Draw(verts, 4, idx, 6, 0);
+        byte[] px = ctx.ReadBackMainFramebuffer();
+        Assert.Equal(new byte[] { 255, 255, 255, 255 }, Pixel(px, 0, 0));   // 白块就位(texel 8)
+        Assert.Equal(new byte[] { 0, 0, 0, 255 }, Pixel(px, 32, 32));       // 未写区域=透明零 → 清屏色黑(BGRA)
+    }
+
+    [Fact]
+    [Trait("Category", "Gpu")]
     public void Headless_Resize_Throws()
     {
         using var ctx = D3D11Context.CreateHeadless(64, 64);
@@ -123,8 +152,10 @@ public class D3D11ContextTests
     }
 
     [Fact]
-    public void AtlasSize_Is1024()
+    [Trait("Category", "Gpu")]
+    public void AtlasSize_Is1024()   // M3e:const→接口实例属性,须建上下文;经 IRenderContext 断言契约
     {
-        Assert.Equal(1024u, D3D11Context.AtlasSize);
+        using IRenderContext ctx = D3D11Context.CreateHeadless(64, 64);
+        Assert.Equal(1024u, ctx.AtlasSize);
     }
 }
