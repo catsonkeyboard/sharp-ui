@@ -10,3 +10,9 @@
      CPU 管线主导,后端中立;绘制路径零新分配:GCHandle 钉数组 + UpdateSubresource,Draw 内无 new)。
      注意:本文件由 Release PerfTests 全文重写,本注记随下次复测被覆盖。 -->
 
+
+<!-- 2026-10-26 GL 后端可比测注记(M3e T4,Release,GlPerfTests.CounterScene_GlHeadless):
+     5944 B / 0.04 ms —— 与 D3D11 基线(5948 B / 0.05 ms,上文 M3d-ii 复测)持平:
+     稳态分配/CPU 由 build→layout→tessellate 后端中立管线主导(Frame() 不触渲染上下文),
+     后端中立性实证;GL 绘制路径零分配(直钉调用者数组 + BufferSubData 显式长度,
+     行序翻转仅在测试读回路径)。断言同预算(≤8192B / <8ms)。 -->

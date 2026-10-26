@@ -42,10 +42,19 @@ public sealed class App
     {
         SdlTextInput.EnableImeUi();                       // 裁定#34:窗口创建前
         SdlNative.EnsureVideoInit();                      // 裁定#38:Init 落点与 Veldrid 建窗模块可分裂(T4 实证),不可假设;见 SdlNative 类注
-        var window = new Sdl2Window(title, 100, 100, width, height, SDL_WindowFlags.Resizable | SDL_WindowFlags.Shown, false);
-        var ctx = D3D11Context.CreateForWindow(SdlNative.GetWin32Hwnd(window.SdlWindowHandle),
-            (uint)window.Width, (uint)window.Height);   // 交换链 Present(1,0) 即 VSync(spec §7,每窗)
-        // 0 尺寸 = 最小化边缘,D3D11Context.ValidateSize 对 0 抛 ArgumentException,异常从 SDL 事件处理器
+        // 后端选择(裁定#41):SHARPUI_BACKEND 显式指定优先;"default" 平台默认 —— Windows=D3D11、
+        // 非 Windows=GL(后者本轮仅编译保证,本机无环境验证;D3D11 亦仅 Windows 可用)。
+        string backend = NormalizeBackendName(Environment.GetEnvironmentVariable("SHARPUI_BACKEND"));
+        bool useGl = backend == "gl" || (backend == "default" && !OperatingSystem.IsWindows());
+        if (useGl)
+            GLContext.SetCoreProfileAttributes();   // 时序:EnsureVideoInit 后、建窗前(3.3 core + 双缓冲;见其注释)
+        var window = new Sdl2Window(title, 100, 100, width, height,
+            SDL_WindowFlags.Resizable | SDL_WindowFlags.Shown | (useGl ? SDL_WindowFlags.OpenGL : 0), false);
+        IRenderContext ctx = useGl
+            ? GLContext.CreateForWindow(window.SdlWindowHandle, (uint)window.Width, (uint)window.Height)   // SwapWindow 节奏=构造期 SetSwapInterval(1)
+            : D3D11Context.CreateForWindow(SdlNative.GetWin32Hwnd(window.SdlWindowHandle),
+                (uint)window.Width, (uint)window.Height);   // 交换链 Present(1,0) 即 VSync(spec §7,每窗)
+        // 0 尺寸 = 最小化边缘,两后端 ValidateSize 对 0 抛 ArgumentException,异常从 SDL 事件处理器
         // 冒出会击穿 Run 循环整窗崩溃(旧栈 ResizeMainWindow(0,0) 容忍 0)——忽略本帧 resize。
         window.Resized += () => { if (window.Width > 0 && window.Height > 0) ctx.Resize((uint)window.Width, (uint)window.Height); };
         float scale = Math.Clamp(window.ScaleFactor.X, 0.5f, 4f);
@@ -61,6 +70,15 @@ public sealed class App
         window.FocusLost += () => Interaction.CancelPress(w.Session);   // D15:失焦取消该窗按压
         return w;
     }
+
+    /// <summary>后端名归一(SHARPUI_BACKEND):trim + 小写;"gl"/"opengl"→gl、"d3d11"/"d3d"→d3d11;
+    /// 空/未识别 → "default"(平台默认:Windows=d3d11,其余=gl)。</summary>
+    internal static string NormalizeBackendName(string? raw) => raw?.Trim().ToLowerInvariant() switch
+    {
+        "gl" or "opengl" => "gl",
+        "d3d11" or "d3d" => "d3d11",
+        _ => "default",
+    };
 
     public int Run(int maxFrames = 0)
     {

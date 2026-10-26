@@ -209,8 +209,8 @@ sharp-ui/
 | M3a 文本输入 | 字符通道、TextField(光标/选区/编辑语义)、shaping LRU 缓存 | M2 ✅ |
 | M3b 动画与性能 | 动画系统、池化与 LRU 收紧至 ≤8KB/帧(规格 §9 M2 目标) | M3a |
 | M3c 多窗口与集成 | 多窗口、剪贴板(原生 P/Invoke,已探明 Sdl2Window 无封装)、对话框/托盘/菜单 | M3a |
-| M3d 自研薄后端 ✅(D3D11,2026-10-26;Metal/OpenGL 待排期) | D3D11 → Metal → OpenGL 逐平台替换 Veldrid(渲染器窄接口既备) | M2 ✅ 可并行 |
-| M3e 无障碍 | UIA/AX/AT-SPI 逐步接入 | M3b |
+| M3d 自研薄后端 ✅(D3D11 2026-10-26;GL 2026-10-26 见 M3e 前半;Metal 待环境) | D3D11 → Metal → OpenGL 逐平台替换 Veldrid(渲染器窄接口既备) | M2 ✅ 可并行 |
+| M3e 无障碍 + 后端收官 | 前半=GL 后端 ✅(Windows 实证,2026-10-26,`SHARPUI_BACKEND`,裁定#41;Metal/CI 待环境另立计划);后半=UIA/AX/AT-SPI 逐步接入 | M3b |
 
 IME 定位:SDL2 `KeyCharPresses`(已验证 `IReadOnlyList<char>`)承载 IME 提交文本,Windows 下中文输入可过;组合窗口定位属"深水区"(需原生平台层),M3c 评估。
 - D23(M3b 动画):时间源 `Anim.TimeSource : Func<double>`(可注入,默认 Stopwatch 秒);`Anim.Get(id, target, duration=0.2s, easing) → float`(目标变化时从当前值重启补间;内部字典无逐出,上限 4096 全清——与 shaped 缓存同款粗策略);`Anim.Blink(period=1.06s, duty=0.5) → bool` 无状态(墙钟取模)。**动画态不入 StateStore**(Sweep 单帧未触即清,冲突);TextField 光标闪烁与按钮悬停过渡为首批消费者。性能:布局数组按**深度 ThreadStatic 池化**(ComputeLines 进出深度计数,数组按深度增长复用——嵌套递归安全);TextField 静态 Empty/缓存键;若仍超 8KB 则元素自由列表(条件步骤)。
@@ -219,7 +219,8 @@ IME 定位:SDL2 `KeyCharPresses`(已验证 `IReadOnlyList<char>`)承载 IME 提�
 - D26(M3c 范围调整):原生对话框/托盘/菜单移 M3e——每项均为逐平台数周级原生工程(comdlg32/IFileDialog/NotifyIcon/Win32 菜单),与"多窗口+剪贴板"无共享基建;本轮以 IME 组合窗定位评估文档收口。
 - D27(M3d 分期):M3d-i = 渲染后端窄接口抽取(现 GraphicsContext 公开面收为 `IRenderContext`,Renderer 仅依赖之)+ **D3D11 直连探针**(P/Invoke d3d11/dxgi/d3dcompiler_47,均已探针存在;交付"自建设备+交换链+清屏呈现"最小闭环证明互操作模式);M3d-ii = 完整替换 Veldrid(管线/缓冲/图集/剪裁批次),依赖逐平台硬件,M3e CI 后执行;Metal/OpenGL 仅在接口证明后排期。**(2026-10-26 收官:M3d-i/ii ✅ —— GraphicsContext 退役为 D3D11Context + IRenderContext v2,Veldrid/Veldrid.SPIRV/Veldrid.StartupUtilities 移除(Veldrid.SDL2 保留),"M3e CI 后执行"提前为本机真实设备全量 GPU 测试;裁定#40。)**
 - 裁定#40(M3d-ii 定稿,2026-10-26):D3D11 直连后端定稿——COM 槽位纪律内化于 `D3D11Native` 声明层(逐槽标注本机 SDK d3d11.h/dxgi.h 声明序推导,锚点校验和:设备 CreateRTV=9、上下文 DrawIndexed=12/OM=33/ClearRTV=50、SwapChain GetBuffer=9,spike 60 帧闭环实证);SdlNative 双 SDL2 模块教训二次实证(裁定#38 复燃):模块落点不可假设,活模块 WMInfo 多候选探测是正确性依赖、不可"简化"掉;Veldrid.SDL2 保留为窗口/输入层(范围界定见 D27)。附带收账:AOT 裁定#35 关闭(Vortice 随图形包移除,见 docs/notes/m1-aot.md),性能基线持平(5948B/0.05ms,docs/notes/perf-baselines.md)。
-- 接口耦合债(M3d-ii 终审背记,2026-10-26):TextAtlas 与 AppWindow 仍以具体类型 D3D11Context 声明(消费面实为 IRenderContext 成员 UpdateAtlasRegion/Present/Resize/Dispose),M3e 多后端落地前须接口化;决策点:AtlasSize 常量归属(接口成员 vs 常量类)。
+- 接口耦合债(M3d-ii 终审背记,2026-10-26):TextAtlas 与 AppWindow 仍以具体类型 D3D11Context 声明(消费面实为 IRenderContext 成员 UpdateAtlasRegion/Present/Resize/Dispose),M3e 多后端落地前须接口化;决策点:AtlasSize 常量归属(接口成员 vs 常量类)。**(已清偿:M3e T1,2026-10-26 —— TextAtlas/AppWindow 均改持 IRenderContext,AtlasSize 落接口实例属性并携"构造期显式全零上传"契约;Renderer 自 M3d-ii 起仅依赖接口。)**
+- 裁定#41(M3e 前半定稿,2026-10-26):GL 后端路线定稿(OpenGL 3.3 core,SDL 原生 GL 路线)—— **SDL GL 属主模块**纪律(裁定#38 延伸三次实证:窗口参 GL 调用严格 OwnerModule;建窗前 EnsureVideoInit/SetGlAttribute 全候选,属主副本未收属性即静默回落兼容上下文且仍过版本下限断言,T3 实证);**Y 差异三处收敛**(顶点着色器不翻 Y,与 HLSL 同式 `1.0 - y/h*2`;glScissor Y 翻转 `fbH-y-h`;glReadPixels 读回行序翻转——两段方向锁定像素测试防双翻转);**DrawElements 原生索引字节偏移直绘**(glBufferSubData 显式长度上传,无 D3D11 整块 scratch 重定基之需,IRenderContext.Draw 契约注两可语义);**BeginFrame scissor 复位对齐 D3D11 清屏语义**(glClear 受 scissor test 作用,帧末残留剪裁会把清屏裁成子矩形拖影)。后端选择:`SHARPUI_BACKEND`(`d3d11`/`gl`;Windows 默认 d3d11,非 Windows 默认 gl——后者仅编译保证,本机无环境)。冒烟:Counter 双后端各 7s 存活 + GL 进程 opengl32.dll 加载/默认进程不加载(路由实证)+ 可见窗 90 帧 harness 读回像素断言。附带收账:测试主机禁并行(assembly `CollectionBehavior`,GPU 类并行 0xC0000005 崩主机 T4 实证,IdResolver 静态同因);GL perf 可比测持平(5944B/0.04ms,docs/notes/perf-baselines.md)。Metal/CI 待 Mac 环境/GitHub remote 另立计划(preflight 裁定)。
 
 ## 8. 测试策略
 

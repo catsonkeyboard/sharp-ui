@@ -6,7 +6,8 @@ namespace SharpUI.Tests;
 /// <summary>GL 后端像素验证(M3e T3):镜像 D3D11ContextTests 七项 + 图集零初始 + core profile 判别。
 /// 期望值按 GL 语义换算:glReadPixels 字节序 RGBA(D3D11 为 BGRA)——纯红 [255,0,0,255] 表红、
 /// 清屏 (0.07,0.07,0.08,1) 为 [18,18,20,255](D3D11 同色 BGRA [20,18,18,255]);行序已由
-/// ReadBackMainFramebuffer 翻转到左上原点,Pixel helper 与 D3D11 同款同向。</summary>
+/// ReadBackMainFramebuffer 翻转到左上原点,Pixel helper 与 D3D11 同款同向。
+/// 测试主机并行禁用见 AssemblyInfo.cs(T4 实证:GPU 类并行 0xC0000005 崩主机)。</summary>
 public class GLContextTests
 {
     static byte[] Pixel(byte[] px, uint x, uint y, uint w = 64) =>

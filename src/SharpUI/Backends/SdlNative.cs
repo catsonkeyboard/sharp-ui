@@ -16,8 +16,9 @@ namespace SharpUI.Backends;
 ///    裁定#38 二次实证),不可"简化"为单句柄调用——去掉即复现 T4 冒烟崩溃。
 /// 裁定#39:WMInfo 结构给足 SDL 2.24+ Windows 联合体尺寸(4 指针)+ 余量,防原生越界写。
 /// GL 面(M3e T2)模块纪律:SDL_GL_* 窗口相关调用(CreateGlContext/MakeCurrent/SwapWindow)必须落在
-/// 窗口属主模块(= WMInfo 应答模块,经 OwnerModule 探测);无窗口参的调用(SetGlAttribute 建窗前 /
-/// SetSwapInterval / GetGlProcAddress 上下文级)属主未知,全候选设置/解析、任一成功即止。</summary>
+/// 窗口属主模块(= WMInfo 应答模块,经 OwnerModule 探测);无窗口参的调用属主未知 —— SetGlAttribute
+/// (时序:EnsureVideoInit 之后、建窗之前,须先全候选 SDL_Init,属性才能到达属主副本)/ SetSwapInterval /
+/// GetGlProcAddress(上下文级)全候选设置/解析、任一成功即止。</summary>
 internal static class SdlNative
 {
     const string SdlLib = "SDL2.dll";
@@ -86,11 +87,12 @@ internal static class SdlNative
 
     // ---- GL 面(M3e T2):属主模块纪律见类头 ----
 
-    /// <summary>设置 GL 建窗/建上下文属性(必须建窗前调用)。属主未知(窗口尚不存在)→ 全候选设置
-    /// (评审裁定 T2 Important#1 ①:不去 early-return —— 漏设副本会在窗口落在该副本时丢失 3.3 core/
-    /// 双缓冲属性,GLBaseTests 实证风险:兼容上下文也过"版本≥3.3"下限断言)。返回聚合结果:
-    /// 任一候选拒收即非 0(向调用方暴露;建窗前各副本均已 EnsureVideoInit 时 SDL_GL_SetAttribute
-    /// 对合法 attr 恒 0,拒收属异常布局,宁可显式失败——评审 Minor#2:聚合而非末候选遮蔽)。</summary>
+    /// <summary>设置 GL 建窗/建上下文属性。时序:调用方须已 EnsureVideoInit(全候选 SDL_Init VIDEO)且
+    /// 尚未建窗 —— 某副本视频未初始化即拒收属性,窗口(Veldrid 建窗落点不定)恰落在该副本时上下文即
+    /// 非 3.3 core(T3 实证:修复前属主副本未收属性,建的是兼容上下文,亦过版本下限断言)。属主未知
+    /// (窗口尚不存在)→ 全候选设置(评审裁定 T2 Important#1 ①:不去 early-return)。返回聚合结果:
+    /// 任一候选拒收即非 0(向调用方暴露;上述时序下 SDL_GL_SetAttribute 对合法 attr 恒 0,拒收属异常
+    /// 布局,宁可显式失败——评审 Minor#2:聚合而非末候选遮蔽)。</summary>
     internal static int SetGlAttribute(int attr, int value)
     {
         int result = 0;

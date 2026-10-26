@@ -89,8 +89,9 @@ public sealed class GLContext : IRenderContext
         catch { win.Close(); throw; }
     }
 
-    /// <summary>窗口渲染上下文:调用方 SDL 窗口(须带 OpenGL flag,且 GL 属性已建窗前设置 —— T4 接线责任,
-    /// 见 SdlNative.SetGlAttribute 注释)上自建 GL 上下文并持有;窗口本身不持有(Dispose 不关调用方窗)。
+    /// <summary>窗口渲染上下文:调用方 SDL 窗口上自建 GL 上下文并持有;窗口本身不持有(Dispose 不关调用方窗)。
+    /// 调用方接线时序(App.CreateWindow 同款):EnsureVideoInit → SetCoreProfileAttributes → 带 OpenGL
+    /// flag 建窗 → 本工厂 —— 本工厂不自设属性(建窗后 SDL_GL_SetAttribute 已迟,属性须建窗时点就位)。
     /// 上下文独立于调用方可能已有的上下文(wglCreateContextAttribs 无共享参数,两上下文对象命名空间隔离)。</summary>
     public static GLContext CreateForWindow(IntPtr sdlWindow, uint width, uint height)
     {
@@ -105,7 +106,12 @@ public sealed class GLContext : IRenderContext
             throw new ArgumentException($"目标尺寸必须为正(width={width}, height={height})");
     }
 
-    static void SetCoreProfileAttributes()
+    /// <summary>建窗前设置 3.3 core + 双缓冲 GL 属性(T4 提为 internal:App 接线与 CreateHeadless
+    /// 共用,单一真相)。时序硬约束:① 先 SdlNative.EnsureVideoInit(全候选 SDL_Init VIDEO)——
+    /// SDL_GL_SetAttribute 须全候选可达,某副本视频未初始化即拒收属性,窗口(Veldrid 建窗落点不定)
+    /// 恰落在该副本时上下文即非 3.3 core(T3 已实证该保证,兼容上下文亦过版本下限断言);
+    /// ② 建窗前(属性须在建窗时点已就位);③ 建窗须带 OpenGL flag。</summary>
+    internal static void SetCoreProfileAttributes()
     {
         SetAttr(SdlNative.GlAttrContextMajorVersion, 3, "CONTEXT_MAJOR_VERSION");
         SetAttr(SdlNative.GlAttrContextMinorVersion, 3, "CONTEXT_MINOR_VERSION");
