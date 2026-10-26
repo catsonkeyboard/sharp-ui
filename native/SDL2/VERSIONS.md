@@ -41,3 +41,16 @@ citations live in the code comments).
   按下态 `SDL_events.h` L49-50(RELEASED=0/PRESSED=1)。
 - 导出名大小写:`SDL_GetDisplayDPI`(SDL_video.h L473,大写 DPI;vendored DLL
   导出表实测含 `SDL_GetDisplayDPI` 不含 `SDL_GetDisplayDpi`)。
+
+### Header 核数记录(2026-10-26,Task 2)
+
+- `SDL_Scancode` 全表(`SDL_scancode.h`,T2 泵键路径 `SdlEvents.KeyFromScancode`):USB HID
+  usage 值序 A=4..Z=29、1=30..0=39、RETURN=40..SLASH=56、CAPSLOCK=57、F1=58..F12=69、
+  PRINTSCREEN=70..UP=82、NUMLOCKCLEAR=83、KP_DIVIDE=84..KP_PERIOD=99、NONUSBACKSLASH=100、
+  KP_EQUALS=103、F13=104..F24=115、MENU=118、LCTRL=224..RGUI=231;
+  NONUSHASH=50/APPLICATION=101/POWER=102/EXECUTE=116/HELP=117/CLEAR=156/SLEEP=282 不映射。
+- 新增导出绑定(窗口生命周期):`SDL_CreateWindow`/`SDL_DestroyWindow`(SDL_video.h;标题
+  const char* 为 UTF-8)/`SDL_GetError`(SDL_error.h)。
+- 映射基线互证:Veldrid.Sdl2Window `MapKey`(switch on `keysym.scancode`,private 实例方法,
+  nuspec 钉版提交 a121087)反射直调全值域 0..511 比对 —— 守卫测试
+  `SdlEventsTests.KeyFromScancode_MirrorsVeldridMapKey_AllScancodes`(源码下载 + 反射双证)。

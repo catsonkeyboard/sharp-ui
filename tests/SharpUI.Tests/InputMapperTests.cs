@@ -62,7 +62,9 @@ public class InputMapperTests
         Assert.Null(InputMapper.Map(new FakeSnapshot(Array.Empty<char>())).Chars);
     }
 
-    sealed class FakeSnapshot(IReadOnlyList<char> chars) : InputSnapshot
+    // T2 注:SharpUI.InputSnapshot(根命名空间)遮蔽 using 引入的同名 Veldrid 接口,显式全限定钉住
+    // Veldrid 面;T3 InputMapper 迁移到自有快照后本 Fake 随旧契约退役。
+    sealed class FakeSnapshot(IReadOnlyList<char> chars) : Veldrid.InputSnapshot
     {
         public System.Numerics.Vector2 MousePosition => default;
         public IReadOnlyList<MouseEvent> MouseEvents => Array.Empty<MouseEvent>();

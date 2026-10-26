@@ -57,13 +57,82 @@ public class SdlEventsTests
     }
 
     [Fact]
-    public void MouseButton_MapsIds()      // SDL_mouse.h L445-449:Left=1/Middle=2/Right=3
+    public void MouseButton_MapsIds()      // SDL_mouse.h L445-449:Left=1/Middle=2/Right=3/X1=4/X2=5
     {
         Assert.Equal(MouseButton.Left, SdlEvents.MouseButtonFromId(1));
         Assert.Equal(MouseButton.Middle, SdlEvents.MouseButtonFromId(2));
         Assert.Equal(MouseButton.Right, SdlEvents.MouseButtonFromId(3));
-        Assert.Equal(MouseButton.Left, SdlEvents.MouseButtonFromId(0));   // 契约:其余 → Left
-        Assert.Equal(MouseButton.Left, SdlEvents.MouseButtonFromId(4));   // X1(Veldrid 映 Button1,T2 泵语义裁定)
+        Assert.Equal(MouseButton.Button1, SdlEvents.MouseButtonFromId(4));  // X1(Veldrid MapMouseButton 源码实证)
+        Assert.Equal(MouseButton.Button2, SdlEvents.MouseButtonFromId(5));  // X2(同上)
+        Assert.Equal(MouseButton.Left, SdlEvents.MouseButtonFromId(0));     // 未知 → Left(Veldrid default 分支)
+    }
+
+    [Theory]
+    // SDL_Scancode 实数(SDL_scancode.h release-2.30.8,USB HID usage 序:A=4..Z=29、1=30..0=39)
+    [InlineData(4u, Key.A)]                 // SDL_SCANCODE_A
+    [InlineData(29u, Key.Z)]                // SDL_SCANCODE_Z
+    [InlineData(30u, Key.Number1)]          // SDL_SCANCODE_1
+    [InlineData(39u, Key.Number0)]          // SDL_SCANCODE_0
+    [InlineData(40u, Key.Enter)]            // SDL_SCANCODE_RETURN
+    [InlineData(44u, Key.Space)]            // SDL_SCANCODE_SPACE
+    [InlineData(45u, Key.Minus)]            // SDL_SCANCODE_MINUS
+    [InlineData(46u, Key.Plus)]             // SDL_SCANCODE_EQUALS
+    [InlineData(53u, Key.Tilde)]            // SDL_SCANCODE_GRAVE(Veldrid 返回别名 Grave)
+    [InlineData(57u, Key.CapsLock)]         // SDL_SCANCODE_CAPSLOCK
+    [InlineData(58u, Key.F1)]               // SDL_SCANCODE_F1
+    [InlineData(69u, Key.F12)]              // SDL_SCANCODE_F12
+    [InlineData(76u, Key.Delete)]           // SDL_SCANCODE_DELETE
+    [InlineData(79u, Key.Right)]            // SDL_SCANCODE_RIGHT
+    [InlineData(82u, Key.Up)]               // SDL_SCANCODE_UP
+    [InlineData(83u, Key.NumLock)]          // SDL_SCANCODE_NUMLOCKCLEAR
+    [InlineData(87u, Key.KeypadPlus)]       // SDL_SCANCODE_KP_PLUS
+    [InlineData(98u, Key.Keypad0)]          // SDL_SCANCODE_KP_0
+    [InlineData(99u, Key.KeypadPeriod)]     // SDL_SCANCODE_KP_PERIOD
+    [InlineData(100u, Key.NonUSBackSlash)]  // SDL_SCANCODE_NONUSBACKSLASH
+    [InlineData(103u, Key.KeypadPlus)]      // SDL_SCANCODE_KP_EQUALS —— Veldrid 怪quirk:映 KeypadPlus(无 KeypadEquals 成员)
+    [InlineData(115u, Key.F24)]             // SDL_SCANCODE_F24
+    [InlineData(118u, Key.Menu)]            // SDL_SCANCODE_MENU
+    [InlineData(224u, Key.ControlLeft)]     // SDL_SCANCODE_LCTRL
+    [InlineData(231u, Key.RWin)]            // SDL_SCANCODE_RGUI
+    // 未映射(Veldrid MapKey 无分支 → Unknown)
+    [InlineData(0u, Key.Unknown)]
+    [InlineData(50u, Key.Unknown)]          // SDL_SCANCODE_NONUSHASH(Veldrid 未映射)
+    [InlineData(101u, Key.Unknown)]         // SDL_SCANCODE_APPLICATION
+    [InlineData(102u, Key.Unknown)]         // SDL_SCANCODE_POWER
+    [InlineData(156u, Key.Unknown)]         // SDL_SCANCODE_CLEAR(携带项:Veldrid 不映射)
+    [InlineData(282u, Key.Unknown)]         // SDL_SCANCODE_SLEEP(携带项:Veldrid 不映射)
+    public void KeyFromScancode_MapsSdlScancodes(uint scancode, Key expected) =>
+        Assert.Equal(expected, SdlEvents.KeyFromScancode(scancode));
+
+    /// <summary>泵键路径(scancode)与 Veldrid.Sdl2Window.MapKey 全值域锁定:反射直调其私有<b>实例</b>方法
+    /// (SDL_Keysym→Key,switch on keysym.scancode;静态误记已按源码校正 —— 提交 a121087 实为 private
+    /// instance),宿主对象取 GetUninitializedObject(零字段实例,不跑构造即不建原生窗;MapKey 不触实例态,
+    /// 且 Sdl2Window 无终结器,零原生副作用),0..511 全扫,非 Unknown 者按成员名比对。镜像守卫,
+    /// 包删(T3)时随使命完成退役(同 KeyEnum 守卫)。</summary>
+    [Fact]
+    public void KeyFromScancode_MirrorsVeldridMapKey_AllScancodes()
+    {
+        System.Reflection.MethodInfo mapKey = typeof(Veldrid.Sdl2.Sdl2Window).GetMethod("MapKey",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+            ?? throw new InvalidOperationException("Veldrid MapKey 反射失败(包结构变更?)");
+        object host = System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(Veldrid.Sdl2.Sdl2Window));
+        object keysym = Activator.CreateInstance(typeof(Veldrid.Sdl2.SDL_Keysym))!;
+        System.Reflection.FieldInfo scancodeField = typeof(Veldrid.Sdl2.SDL_Keysym).GetField("scancode")!;
+        int mapped = 0;
+        for (int sc = 0; sc <= 511; sc++)
+        {
+            scancodeField.SetValue(keysym, Enum.ToObject(scancodeField.FieldType, sc));
+            var veldridKey = (Veldrid.Key)mapKey.Invoke(host, new[] { keysym })!;
+            Key ours = SdlEvents.KeyFromScancode((uint)sc);
+            if (veldridKey == Veldrid.Key.Unknown)
+            {
+                Assert.Equal(Key.Unknown, ours);   // Veldrid 不映射者,我们亦不映射
+                continue;
+            }
+            mapped++;
+            Assert.Equal(Enum.Parse<Key>(veldridKey.ToString()), ours);   // 成员名比对(镜像枚举同名同值)
+        }
+        Assert.True(mapped >= 110, $"Veldrid 映射键数异常少:{mapped}(字母26+数字10+标点17+功能键24+导航13+小键盘16+修饰8)");   // 实测 117
     }
 
     // ---- 镜像守卫(包删前有效;T3 删 Veldrid.SDL2 时随使命完成退役)----
