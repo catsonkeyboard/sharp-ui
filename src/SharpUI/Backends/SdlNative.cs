@@ -88,15 +88,18 @@ internal static class SdlNative
 
     /// <summary>设置 GL 建窗/建上下文属性(必须建窗前调用)。属主未知(窗口尚不存在)→ 全候选设置
     /// (评审裁定 T2 Important#1 ①:不去 early-return —— 漏设副本会在窗口落在该副本时丢失 3.3 core/
-    /// 双缓冲属性,GLBaseTests 实证风险:兼容上下文也过"版本≥3.3"下限断言)。返回末候选结果:
-    /// 全部候选收下(0)才为 0 —— 任一拒收即向调用方暴露(建窗前各副本均已 EnsureVideoInit 时
-    /// SDL_GL_SetAttribute 对合法 attr 恒 0,拒收属异常布局,宁可显式失败)。</summary>
+    /// 双缓冲属性,GLBaseTests 实证风险:兼容上下文也过"版本≥3.3"下限断言)。返回聚合结果:
+    /// 任一候选拒收即非 0(向调用方暴露;建窗前各副本均已 EnsureVideoInit 时 SDL_GL_SetAttribute
+    /// 对合法 attr 恒 0,拒收属异常布局,宁可显式失败——评审 Minor#2:聚合而非末候选遮蔽)。</summary>
     internal static int SetGlAttribute(int attr, int value)
     {
-        int last = -1;
+        int result = 0;
         foreach (IntPtr h in Candidates())
-            last = Fn<GlSetAttributeFn>(h, "SDL_GL_SetAttribute")(attr, value);
-        return last;
+        {
+            int r = Fn<GlSetAttributeFn>(h, "SDL_GL_SetAttribute")(attr, value);
+            if (r != 0) result = r;   // 聚合任意非零
+        }
+        return result;
     }
 
     /// <summary>在属主模块创建 GL 上下文(失败返回 Zero,SDL 语义)。</summary>

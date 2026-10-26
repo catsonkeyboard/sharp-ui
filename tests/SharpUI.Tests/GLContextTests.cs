@@ -83,11 +83,38 @@ public class GLContextTests
         ushort[] idx = { 0, 1, 2, 2, 1, 3 };
         ctx.SetScreenSize(64, 64);
         ctx.BeginFrame(0.07f, 0.07f, 0.08f, 1f);
-        ctx.SetScissor(0, 0, 32, 64);   // 左半(GL 路径:Y 翻转后全高矩形纵向对称)
+        ctx.SetScissor(0, 0, 64, 32);   // 上半(评审 Minor#1:纵向不对称方锁 GL 特有 Y 翻转方向,全高矩形漏检)
         ctx.Draw(verts, 4, idx, 6, 0);
         byte[] px = ctx.ReadBackMainFramebuffer();
-        Assert.Equal(new byte[] { 255, 255, 255, 255 }, Pixel(px, 4, 32));
-        Assert.Equal(new byte[] { 18, 18, 20, 255 }, Pixel(px, 40, 32));
+        Assert.Equal(new byte[] { 255, 255, 255, 255 }, Pixel(px, 32, 4));   // 上半可见
+        Assert.Equal(new byte[] { 18, 18, 20, 255 }, Pixel(px, 32, 40));     // 下半被裁(Y 翻转错则两断言对调失败)
+    }
+
+    [Fact]
+    [Trait("Category", "Gpu")]
+    public void Headless_BeginFrame_ResetsScissorForClear()   // 评审 Important#1:glClear 受残留 scissor 作用
+    {
+        using var ctx = GLContext.CreateHeadless(64, 64);
+        ctx.UpdateAtlasRegion(new byte[] { 255, 255, 255, 255 }, 0, 0, 1, 1);
+        float inv = 1f / ctx.AtlasSize;
+        var verts = new UiVertex[4];
+        for (int i = 0; i < 4; i++) verts[i] = UiVertex.Create(
+            new PointF(i % 2 == 0 ? 0f : 64f, i < 2 ? 0f : 64f),
+            new PointF(i % 2 == 0 ? 0f : inv, i < 2 ? 0f : inv),
+            Color32.White);
+        ushort[] idx = { 0, 1, 2, 2, 1, 3 };
+        ctx.SetScreenSize(64, 64);
+        // 帧 1:部分剪裁 + 全屏四边形 —— 帧末 SCISSOR_TEST 残留于 (16,16,32,32)
+        ctx.BeginFrame(0.07f, 0.07f, 0.08f, 1f);
+        ctx.SetScissor(16, 16, 32, 32);
+        ctx.Draw(verts, 4, idx, 6, 0);
+        // 帧 2:不同清屏色(0.2,0.4,0.6 → [51,102,153] 精确无舍入)—— 若 Clear 被残留 scissor 作用,
+        // 仅中心 32×32 为新色,其余为帧 1 残留(旧清屏色/白);全帧逐一断言新清屏色。
+        ctx.BeginFrame(0.2f, 0.4f, 0.6f, 1f);
+        byte[] px = ctx.ReadBackMainFramebuffer();
+        for (int i = 0; i < px.Length; i += 4)
+            if (px[i] != 51 || px[i + 1] != 102 || px[i + 2] != 153 || px[i + 3] != 255)
+                Assert.Fail($"帧 2 清屏后像素 {i / 4} = [{px[i]},{px[i + 1]},{px[i + 2]},{px[i + 3]}] 非新清屏色(残留 scissor 裁了 glClear)");
     }
 
     [Fact]

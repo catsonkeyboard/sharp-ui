@@ -155,14 +155,18 @@ public sealed class GLContext : IRenderContext
         finally { pin.Free(); }
     }
 
-    /// <summary>帧起始:MakeCurrent(多窗切换)+ Viewport(0,0,w,h)+ ClearColor+Clear +
+    /// <summary>帧起始:MakeCurrent(多窗切换)+ Viewport(0,0,w,h)+ Disable(SCISSOR)+ ClearColor+Clear +
     /// Enable(BLEND)+BlendFunc(ONE, ONE_MINUS_SRC_ALPHA)(预乘,对应 D3D11 BlendOne/InvSrcAlpha)。
+    /// 帧边界 scissor 复位(评审 Important#1):GL 规范 glClear 受 scissor test 作用,上一帧末残留的
+    /// 部分剪裁(滚动面板内被裁文本最后绘制)会把本帧清屏裁成子矩形 → 拖影;D3D11
+    /// ClearRenderTargetView 不受 scissor 影响,此处 Disable 对齐镜像后端的无 scissor 清屏语义。
     /// 双缓冲默认读写缓冲均 BACK:清/绘/读同一后备缓冲,headless Present no-op 保读回有效。</summary>
     public void BeginFrame(float r, float g, float b, float a)
     {
         ThrowIfDisposed();
         MakeCurrent();
         GL.Viewport(0, 0, (int)TargetWidth, (int)TargetHeight);
+        GL.Disable(GL.ScissorTest);   // 必须先于 Clear:glClear 受 scissor test 作用(GL 规范)
         GL.ClearColor(r, g, b, a);
         GL.Clear(GL.ColorBufferBit);
         GL.Enable(GL.Blend);
