@@ -1,25 +1,30 @@
-using SkiaSharp;
-using SkiaSharp.HarfBuzz;
+using SharpUI.Text;
 
 namespace SharpUI;
 
-/// <summary>文本图集 v2(D21):回退链分 run + HarfBuzz shaping 定位;shaping 结果快照缓存(T4,Measure/DrawRun 共用);字形位图 per-char 缓存(键含槽位)。</summary>
+/// <summary>
+/// 文本图集 v3(D3 T4):内部全量自研 FreeType/HarfBuzz(T2 FontLibrary/T3 Shaper+GlyphRasterizer),
+/// 零 Skia 依赖;公共 API(Measure/DrawRun/WhiteUv/Dispose)与 v2 不变。快照缓存语义承袭 D21/D22:
+/// 回退链分 run、shaping 结果快照缓存(LRU 512 粗粒度逐出,Measure/DrawRun 共用)、字形位图缓存
+/// (键 (slot, glyphId, size, bold)——按**字形 ID** 而非码点:hb 默认开 liga,连字经 GlyphIds 出
+/// 真实字形而无码点可反查;亦修复 v2 连字按簇首字符渲染的潜在瑕疵)。坐标约定:Shaper/Rasterizer
+/// 快照物理 px ÷ scale 得逻辑(同 v2);行度量 = FT hinted Á/g 墨迹并集(v2 "Ág" 语义的 FT 复刻,
+/// 逐值零漂移——T-3 原 FT_SizeMetrics 方案会整体下移基线 ~4px@20px,实证修正,见 GetLineMetrics)。
+/// 落位复刻 v2 怪癖:ink-tight 位图 quad 左缘 = 笔位(见 DrawRun 注)。金样本 6/6 平价验证
+/// (tests/golden/text)。单线程 UI 模型;绘制路径命中缓存零原生调用。
+/// </summary>
 public sealed class TextAtlas : IDisposable
 {
     readonly IRenderContext _ctx;   // M3e 接口化:后端中立消费面(UpdateAtlasRegion/AtlasSize);GLContext 同契约
     readonly float _scale;
-    readonly SKTypeface[] _typefaces;                    // 槽 0 = 主字体,1.. = 回退
-    readonly SKShaper[] _shapers;
-    readonly SKPaint _paint = new() { Color = SKColors.White, IsAntialias = true };
-    readonly SKFont[] _probeFonts;                       // ContainsGlyph 探针(槽级,字号无关)
-    readonly Dictionary<int, SKFont> _fonts = new();     // ((slot<<12)|size)<<1|bold,size<4096
-    readonly Dictionary<(string Unit, int Size, bool Bold, int Slot), Glyph> _glyphs = new();   // Unit=单 BMP 字符或代理对(emoji)
+    readonly FontLibrary _fonts;                        // T2:槽位脸表(0=Segoe UI,1..=回退)
+    readonly Shaper _shaper;                            // T3:hb shaping → 托管快照
+    readonly GlyphRasterizer _rasterizer;               // T3:FT 光栅化(按字形 ID 入口)
+    readonly Dictionary<(int Slot, uint GlyphId, int Size, bool Bold), Glyph> _glyphs = new();
     readonly Dictionary<(string Text, int Size, bool Bold), ShapedLayout> _shapedCache = new();   // shaping 快照 LRU(D22 粗粒度逐出)
     const int ShapedCacheCapacity = 512;
-    readonly Dictionary<int, (float Ascent, float Descent)> _lineMetrics = new();
+    readonly Dictionary<int, (float Ascent, float Descent)> _lineMetrics = new();   // (size<<1)|bold
     readonly ShelfPacker _packer;
-    readonly SKBitmap _bitmap;
-    readonly SKCanvas _canvas;
 
     public RectF WhiteUv { get; private set; }
 
@@ -27,27 +32,10 @@ public sealed class TextAtlas : IDisposable
     {
         _ctx = ctx;
         _scale = scale;
-        string[] families = fallbackFamilies ?? new[] { "Microsoft YaHei", "Segoe UI Emoji" };
-        _typefaces = new SKTypeface[1 + families.Length];
-        _shapers = new SKShaper[_typefaces.Length];
-        _probeFonts = new SKFont[_typefaces.Length];
-        _typefaces[0] = SKTypeface.FromFamilyName("Segoe UI") ?? SKTypeface.Default;
-        for (int i = 0; i < families.Length; i++)
-        {
-            SKTypeface? tf = SKTypeface.FromFamilyName(families[i]);
-            _typefaces[1 + i] = tf ?? _typefaces[0];
-        }
-        for (int i = 0; i < _typefaces.Length; i++)
-        {
-            _shapers[i] = new SKShaper(_typefaces[i]);
-            _probeFonts[i] = new SKFont(_typefaces[i], 16f);
-        }
+        _fonts = new FontLibrary(fallbackFamilies ?? new[] { "Microsoft YaHei", "Segoe UI Emoji" });
+        _shaper = new Shaper(_fonts);
+        _rasterizer = new GlyphRasterizer(_fonts);
         _packer = new ShelfPacker((int)_ctx.AtlasSize, (int)_ctx.AtlasSize);
-        _bitmap = new SKBitmap(new SKImageInfo(
-            (int)_ctx.AtlasSize, (int)_ctx.AtlasSize, SKColorType.Rgba8888, SKAlphaType.Premul));
-        _canvas = new SKCanvas(_bitmap);
-        _canvas.Clear(SKColors.Transparent);
-        _canvas.Flush();
         SeedWhitePixel();
     }
 
@@ -62,51 +50,33 @@ public sealed class TextAtlas : IDisposable
 
     int SlotFor(uint codepoint)
     {
-        for (int i = 0; i < _probeFonts.Length; i++)
-            if (_probeFonts[i].ContainsGlyph((int)codepoint))
-                return i;
-        return 0;
+        for (int i = 0; i < _fonts.SlotCount; i++)
+            if (_fonts.ContainsGlyph(i, codepoint)) return i;
+        return 0;   // 链上皆缺(如未注册码点)→ 槽 0 出 .notdef(v2 同现状)
     }
 
     static int UnitLen(string s, int i) =>
         char.IsHighSurrogate(s, i) && i + 1 < s.Length && char.IsLowSurrogate(s, i + 1) ? 2 : 1;
 
-    SKFont GetFont(int slot, int size, bool bold)
-    {
-        int key = ((slot << 12 | size) << 1) | (bold ? 1 : 0);
-        if (!_fonts.TryGetValue(key, out SKFont? font))
-        {
-            font = new SKFont(bold ? BoldOf(slot) : _typefaces[slot], size)
-            {
-                Edging = SKFontEdging.Antialias,
-                Subpixel = false,
-            };
-            _fonts[key] = font;
-        }
-        return font;
-    }
+    static uint CodePoint(string s, int i) =>
+        UnitLen(s, i) == 2 ? (uint)char.ConvertToUtf32(s, i) : s[i];
 
-    SKTypeface BoldOf(int slot)
-    {
-        // 主字体粗体取既有路径;回退槽粗体简化为同型face(粗体回退为可接受折衷,D21)
-        return slot == 0 ? (_boldTf ??= SKTypeface.FromFamilyName("Segoe UI", SKFontStyle.Bold) ?? _typefaces[0]) : _typefaces[slot];
-    }
-
-    SKTypeface? _boldTf;
-
+    /// <summary>行度量(物理 px):FT hinted Á/g 墨迹并集(GlyphRasterizer.InkLineMetrics)——
+    /// 与 v2 Skia MeasureText("Ág") bounds 逐值相等(12/18/20/24px+bold 实证),基线与 Measure 高
+    /// 零漂移;FT_SizeMetrics(hhea)会下移基线 ~4px@20px 致金样本溢阈(T-3 决策落地时的实证修正)。
+    /// Descent 存正(= v2 bounds.Bottom 语义),Measure/DrawRun 消费一致。</summary>
     (float Ascent, float Descent) GetLineMetrics(int size, bool bold)
     {
         int key = (size << 1) | (bold ? 1 : 0);
         if (!_lineMetrics.TryGetValue(key, out var lm))
         {
-            GetFont(0, size, bold).MeasureText("Ág", out SKRect bounds, _paint);
-            lm = (-bounds.Top, bounds.Bottom);
+            lm = _rasterizer.InkLineMetrics(0, size, bold);
             _lineMetrics[key] = lm;
         }
         return lm;
     }
 
-    /// <summary>按槽位分 run(连续同槽字符一段)。</summary>
+    /// <summary>按槽位分 run(连续同槽字符一段;槽解析 = FontLibrary.ContainsGlyph 链查)。</summary>
     List<(int Slot, int Start, int Len)> SplitRuns(string text)
     {
         var runs = new List<(int, int, int)>();
@@ -128,23 +98,6 @@ public sealed class TextAtlas : IDisposable
         return runs;
     }
 
-    static uint CodePoint(string s, int i) =>
-        UnitLen(s, i) == 2 ? (uint)char.ConvertToUtf32(s, i) : s[i];
-
-    /// <summary>HarfBuzz cluster 是 run 内 UTF-8 字节偏移;转 UTF-16 单位起点下标。</summary>
-    static int ClusterToCharIndex(string run, uint cluster)
-    {
-        int b = 0;
-        for (int i = 0; i < run.Length; i += UnitLen(run, i))
-        {
-            if (b >= cluster) return i;
-            b += Utf8Len(CodePoint(run, i));
-        }
-        return run.Length - 1;
-    }
-
-    static int Utf8Len(uint cp) => cp < 0x80u ? 1 : cp < 0x800u ? 2 : cp < 0x10000u ? 3 : 4;
-
     public SizeF Measure(string text, float fontSize, bool bold = false)
     {
         if (text.Length == 0) return SizeF.Zero;
@@ -160,27 +113,27 @@ public sealed class TextAtlas : IDisposable
         (float ascent, _) = GetLineMetrics(size, bold);
         float xLogical = topLeft.X;
         float baselineY = topLeft.Y + ascent / _scale;
-        ShapedLayout layout = GetShaped(text, size, bold);   // 命中缓存即不再调 shaper
-        foreach (ShapedRun r in layout.Runs)
+        ShapedLayout layout = GetShaped(text, size, bold);   // 命中缓存即不再进原生
+        foreach (ShapedLayoutRun run in layout.Runs)
         {
-            string run = r.Text;
-            for (int gi = 0; gi < r.Codepoints.Length; gi++)
+            ShapedRun r = run.Run;
+            for (int gi = 0; gi < r.GlyphIds.Length; gi++)
             {
-                int ci = ClusterToCharIndex(run, r.Clusters[gi]);   // cluster=run 内 UTF-8 字节偏移,非字符下标(ASCII 时两者重合)
-                int ul = UnitLen(run, ci);
-                if (run[ci] != ' ')
-                {
-                    Glyph g = GetGlyph(run.Substring(ci, ul), size, bold, r.Slot);
-                    float gx = xLogical + r.Points[gi].X;   // 快照已存逻辑坐标(物理/_scale)
-                    float top = baselineY - g.BearingY / _scale;
-                    mesh.AddQuad(new RectF(gx, top, g.Width / _scale, g.Height / _scale), g.Uv, color);
-                }
+                Glyph g = GetGlyph(run.Slot, r.GlyphIds[gi], size, bold);
+                if (g.Width == 0f || g.Height == 0f) continue;   // 空格类无位图,由 Shaper advance 推进
+                // 落位(v2 平价,T4 实证修正):v2 把 ink-tight 位图 quad 左缘置于**笔位**(未加 bounds.Left,
+                // DrawText(-bounds.Left) 烘的位图 ink 恒在本地 0 列)——j(left=-2)因此右置 2px、e/h(left=1)
+                // 左置 1px。FT 位图同 ink-tight,quad 左缘=笔位逐字形复刻该落位;若按"笔位+bitmap_left"
+                // 排版正解放,几乎全部小写整体偏 1px,金样本溢阈(实码为准,非简报理想式)。
+                float gx = xLogical + r.Points[gi].X;               // Points.X 已含 hb x_offset(逻辑)
+                float top = baselineY - g.BearingTop / _scale;      // bitmap_top 基线向上为正
+                mesh.AddQuad(new RectF(gx, top, g.Width / _scale, g.Height / _scale), g.Uv, color);
             }
-            xLogical += r.Width;
+            xLogical += r.TotalWidth;
         }
     }
 
-    /// <summary>shaping 结果缓存(T4):Measure/DrawRun 共用;未命中才 SplitRuns+Shape+快照。</summary>
+    /// <summary>shaping 结果缓存(D21/D22):Measure/DrawRun 共用;未命中才 SplitRuns+Shape+快照。</summary>
     ShapedLayout GetShaped(string text, int size, bool bold)
     {
         var key = (text, size, bold);
@@ -196,102 +149,77 @@ public sealed class TextAtlas : IDisposable
 
     ShapedLayout ShapeLayout(string text, int size, bool bold)
     {
-        var runs = new List<ShapedRun>();
+        var runs = new List<ShapedLayoutRun>();
         float total = 0f;
         foreach ((int slot, int start, int len) in SplitRuns(text))
         {
-            string run = text.Substring(start, len);
-            SKShaper.Result r = _shapers[slot].Shape(run, 0f, 0f, GetFont(slot, size, bold));   // 逻辑→物理:x*scale
-            var points = new SKPoint[r.Codepoints.Length];   // Points 快照转逻辑坐标(物理/_scale),DrawRun 直接消费
-            for (int i = 0; i < points.Length; i++)
-                points[i] = new SKPoint(r.Points[i].X / _scale, r.Points[i].Y / _scale);
-            float width = r.Width / _scale;
-            total += width;
-            runs.Add(new ShapedRun(run, slot, (uint[])r.Codepoints.Clone(), points, (uint[])r.Clusters.Clone(), width));
+            // size=物理 px(SizeKey),Shaper 内 26.6→px→逻辑(/scale)一次换算
+            ShapedRun shaped = _shaper.Shape(slot, text.Substring(start, len), size, bold, _scale);
+            runs.Add(new ShapedLayoutRun(slot, shaped));
+            total += shaped.TotalWidth;
         }
         return new ShapedLayout(runs.ToArray(), total);
     }
 
     static int SizeKey(float fontSize, float scale = 1f) => Math.Max(4, (int)MathF.Ceiling(fontSize * scale));
 
-    Glyph GetGlyph(string unit, int size, bool bold, int slot)
+    Glyph GetGlyph(int slot, uint glyphId, int size, bool bold)
     {
-        if (_glyphs.TryGetValue((unit, size, bold, slot), out Glyph glyph)) return glyph;
-        glyph = Rasterize(unit, size, bold, slot);
-        _glyphs[(unit, size, bold, slot)] = glyph;
+        var key = (slot, glyphId, size, bold);
+        if (_glyphs.TryGetValue(key, out Glyph glyph)) return glyph;
+        glyph = Rasterize(slot, glyphId, size, bold);
+        _glyphs[key] = glyph;
         return glyph;
     }
 
-    Glyph Rasterize(string unit, int size, bool bold, int slot)
+    Glyph Rasterize(int slot, uint glyphId, int size, bool bold)
     {
-        SKFont font = GetFont(slot, size, bold);
-        string s = unit;
-        float advance = font.MeasureText(s, out SKRect bounds, _paint);
-        int width = Math.Max(1, (int)MathF.Ceiling(bounds.Right - bounds.Left));
-        int height = Math.Max(1, (int)MathF.Ceiling(bounds.Bottom - bounds.Top));
-        (int X, int Y)? slotPx = _packer.TryAlloc(width + 1, height + 1);
+        RasterGlyph g = _rasterizer.RasterizeGlyphId(slot, glyphId, size, bold);
+        if (g.Width == 0 || g.Height == 0)
+            return Glyph.Empty;   // 空字形(空格类):不占图集、不出 quad(推进量已在 shaping 快照)
+        (int X, int Y)? slotPx = _packer.TryAlloc(g.Width + 1, g.Height + 1);   // +1 padding:缩放采样防邻字形渗色(v2 同)
         if (slotPx is null)
         {
             _packer.Reset();
             _glyphs.Clear();
             SeedWhitePixel();
-            slotPx = _packer.TryAlloc(width + 1, height + 1)
-                ?? throw new InvalidOperationException($"字形 {unit}@{size} 放不进图集");
+            slotPx = _packer.TryAlloc(g.Width + 1, g.Height + 1)
+                ?? throw new InvalidOperationException($"字形 gi={glyphId}@{size} 放不进图集");
         }
-        using var gb = new SKBitmap(new SKImageInfo(width, height, SKColorType.Rgba8888, SKAlphaType.Premul));
-        using var gc = new SKCanvas(gb);
-        gc.Clear(SKColors.Transparent);
-        gc.DrawText(s, -bounds.Left, -bounds.Top, SKTextAlign.Left, font, _paint);   // 非废弃重载,CS0618 清偿
-        gc.Flush();
-        _ctx.UpdateAtlasRegion(gb.GetPixelSpan().ToArray(), (uint)slotPx.Value.X, (uint)slotPx.Value.Y, (uint)width, (uint)height);
+        _ctx.UpdateAtlasRegion(g.Rgba, (uint)slotPx.Value.X, (uint)slotPx.Value.Y, (uint)g.Width, (uint)g.Height);
         return new Glyph(
             new RectF(slotPx.Value.X / (float)_ctx.AtlasSize,
                       slotPx.Value.Y / (float)_ctx.AtlasSize,
-                      width / (float)_ctx.AtlasSize,
-                      height / (float)_ctx.AtlasSize),
-            width, height, -bounds.Top, advance);
+                      g.Width / (float)_ctx.AtlasSize,
+                      g.Height / (float)_ctx.AtlasSize),
+            g.Width, g.Height, g.BearingTop);
     }
 
     public void Dispose()
     {
-        _canvas.Dispose();
-        _bitmap.Dispose();
-        foreach (SKFont f in _fonts.Values) f.Dispose();
-        foreach (SKFont f in _probeFonts) f.Dispose();
-        foreach (SKShaper s in _shapers) s.Dispose();
-        _paint.Dispose();
-        // 粗体 face 单独持有,BoldOf 可能回落到槽 0
-        if (_boldTf is not null && !ReferenceEquals(_boldTf, _typefaces[0])) _boldTf.Dispose();
-        for (int i = _typefaces.Length - 1; i >= 1; i--)
-            if (!ReferenceEquals(_typefaces[i], _typefaces[0])) _typefaces[i].Dispose();
-        _typefaces[0].Dispose();
+        _shaper.Dispose();
+        _rasterizer.Dispose();   // 无自有原生句柄(接口对称;FT 资源归 FontLibrary)
+        _fonts.Dispose();
     }
 
-    readonly record struct Glyph(RectF Uv, float Width, float Height, float BearingY, float Advance);
-
-    /// <summary>单 run 的 shaping 快照(T4):坐标已转逻辑(物理/_scale);含 glyph 循环所需全部数据,DrawRun 命中缓存后不再调 shaper。</summary>
-    sealed class ShapedRun
+    /// <summary>图集字形快照:Width/Height/BearingTop 均物理 px(光栅化同单位),DrawRun 落位时 ÷scale;
+    /// 空字形哨兵 W=H=0(advance 不缓存——布局推进由 shaping 快照持有)。无 left bearing:位图 ink-tight,
+    /// v2 平价落位 quad 左缘=笔位(见 DrawRun 注),RasterGlyph.BearingLeft(T3)在此路径不消费。</summary>
+    readonly record struct Glyph(RectF Uv, float Width, float Height, float BearingTop)
     {
-        public readonly string Text;            // run 原文(ClusterToCharIndex/UnitLen/GetGlyph 键)
-        public readonly int Slot;
-        public readonly uint[] Codepoints;
-        public readonly SKPoint[] Points;       // 逻辑坐标(快照时已除 _scale)
-        public readonly uint[] Clusters;        // run 内 UTF-8 字节偏移
-        public readonly float Width;            // 逻辑宽
-
-        public ShapedRun(string text, int slot, uint[] codepoints, SKPoint[] points, uint[] clusters, float width)
-        {
-            Text = text; Slot = slot; Codepoints = codepoints; Points = points; Clusters = clusters; Width = width;
-        }
+        public static readonly Glyph Empty = new(new RectF(0f, 0f, 0f, 0f), 0f, 0f, 0f);
     }
 
-    /// <summary>整行 shaping 快照(T4):逻辑总宽 + 各 run;条目不可变,缓存命中直接复用。</summary>
+    /// <summary>单 run 的布局快照:槽位 + T3 Shaper 快照(字形 ID/原点/簇,逻辑坐标);缓存命中直接复用。</summary>
+    sealed record ShapedLayoutRun(int Slot, ShapedRun Run);
+
+    /// <summary>整行 shaping 快照(D21):逻辑总宽 + 各 run;条目不可变,缓存命中直接复用。</summary>
     sealed class ShapedLayout
     {
-        public readonly ShapedRun[] Runs;
+        public readonly ShapedLayoutRun[] Runs;
         public readonly float TotalWidth;       // 逻辑
 
-        public ShapedLayout(ShapedRun[] runs, float totalWidth)
+        public ShapedLayout(ShapedLayoutRun[] runs, float totalWidth)
         {
             Runs = runs; TotalWidth = totalWidth;
         }

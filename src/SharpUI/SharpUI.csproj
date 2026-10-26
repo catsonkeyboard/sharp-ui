@@ -15,8 +15,7 @@
     <PackageReference Include="Veldrid.SDL2" Version="4.9.0" />
     <!-- 钉版压制 Veldrid.SDL2→NativeLibraryLoader→9.0.1 (GHSA-5crp-9r3c-p9vr) NU1903;M3e 移除 Veldrid.SDL2 后可删 -->
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-    <PackageReference Include="SkiaSharp" Version="4.153.1" />
-    <PackageReference Include="SkiaSharp.HarfBuzz" Version="4.153.1" />
+    <!-- D3 T4:SkiaSharp/SkiaSharp.HarfBuzz 已随 TextAtlas 重写移除(文本层全自研 FT/HB) -->
   </ItemGroup>
 
   <!-- D3 文本层:native/freetype + native/harfbuzz(来源/sha256 见 native/VERSIONS.md)。
