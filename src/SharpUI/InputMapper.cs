@@ -10,7 +10,7 @@ public static class InputMapper
         new PointF(snapshot.MousePosition.X / scale, snapshot.MousePosition.Y / scale),
         LeftEvents(snapshot.MouseEvents),
         MapKeys(snapshot.KeyEvents),
-        snapshot.IsMouseDown(MouseButton.Left),
+        snapshot.IsMouseDown(Veldrid.MouseButton.Left),
         snapshot.WheelDelta,
         snapshot.KeyCharPresses.Count == 0 ? null : snapshot.KeyCharPresses.ToArray());
 
@@ -18,12 +18,12 @@ public static class InputMapper
     {
         int n = 0;
         foreach (MouseEvent me in mouseEvents)
-            if (me.MouseButton == MouseButton.Left) n++;
+            if (me.MouseButton == Veldrid.MouseButton.Left) n++;
         if (n == 0) return Array.Empty<bool>();
         var events = new bool[n];
         int i = 0;
         foreach (MouseEvent me in mouseEvents)
-            if (me.MouseButton == MouseButton.Left)
+            if (me.MouseButton == Veldrid.MouseButton.Left)
                 events[i++] = me.Down;
         return events;
     }
@@ -36,7 +36,7 @@ public static class InputMapper
         {
             KeyEvent ke = keyEvents[i];
             keys[i] = new KeyEventData(ke.Key, ke.Down,
-                ke.Modifiers.HasFlag(ModifierKeys.Shift), ke.Modifiers.HasFlag(ModifierKeys.Control));
+                ke.Modifiers.HasFlag(Veldrid.ModifierKeys.Shift), ke.Modifiers.HasFlag(Veldrid.ModifierKeys.Control));
         }
         return keys;
     }

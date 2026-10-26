@@ -2,8 +2,10 @@ using Veldrid;
 
 namespace SharpUI;
 
-/// <summary>键盘事件(按时间序)。Key 为 Veldrid.Key(公开面技术债,规格书 D12);Ctrl 位供 TextEditing 编辑语义(D22)。</summary>
-public readonly record struct KeyEventData(Key Key, bool Down, bool Shift, bool Ctrl = false);
+/// <summary>键盘事件(按时间序)。Key 暂为 Veldrid.Key(公开面技术债,规格书 D12;T1 起自有 SharpUI.Key
+/// 镜像就位,T3 删包时签名平移 —— 本文件及 Focus/TextEditing 的 Veldrid. 前缀即消歧:SharpUI.Key 同名
+/// 遮蔽 using Veldrid 的导入,C# 规则下内层命名空间成员优先);Ctrl 位供 TextEditing 编辑语义(D22)。</summary>
+public readonly record struct KeyEventData(Veldrid.Key Key, bool Down, bool Shift, bool Ctrl = false);
 
 /// <summary>App 从 SDL InputSnapshot 经 InputMapper 映射;LeftHeld 为持久按键态(D15);WheelDelta 为滚轮增量(D19)。
 /// Chars 为字符通道(D22):源自 KeyCharPresses 的当帧文本输入,空则 null。</summary>

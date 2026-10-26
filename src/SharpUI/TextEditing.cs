@@ -54,24 +54,24 @@ public static class TextEditing
             {
                 if (!k.Down) continue;
                 (int start, int len) = Selection(new TextState(text, cursor, anchor));
-                if (k.Ctrl && k.Key == Key.A)
+                if (k.Ctrl && k.Key == Veldrid.Key.A)
                 {
                     cursor = text.Length; anchor = 0;
                 }
-                else if (k.Key == Key.BackSpace)
+                else if (k.Key == Veldrid.Key.BackSpace)
                 {
                     if (len > 0) { text = text.Remove(start, len); cursor = anchor = start; }
                     else if (cursor > 0) { text = text.Remove(cursor - 1, 1); cursor = anchor = cursor - 1; }
                 }
-                else if (k.Key == Key.Delete)
+                else if (k.Key == Veldrid.Key.Delete)
                 {
                     if (len > 0) { text = text.Remove(start, len); cursor = anchor = start; }
                     else if (cursor < text.Length) text = text.Remove(cursor, 1);
                 }
-                else if (k.Key == Key.Left) { int t = Math.Max(0, cursor - 1); cursor = t; if (!k.Shift) anchor = t; }
-                else if (k.Key == Key.Right) { int t = Math.Min(text.Length, cursor + 1); cursor = t; if (!k.Shift) anchor = t; }
-                else if (k.Key == Key.Home) { cursor = 0; if (!k.Shift) anchor = 0; }
-                else if (k.Key == Key.End) { cursor = text.Length; if (!k.Shift) anchor = text.Length; }
+                else if (k.Key == Veldrid.Key.Left) { int t = Math.Max(0, cursor - 1); cursor = t; if (!k.Shift) anchor = t; }
+                else if (k.Key == Veldrid.Key.Right) { int t = Math.Min(text.Length, cursor + 1); cursor = t; if (!k.Shift) anchor = t; }
+                else if (k.Key == Veldrid.Key.Home) { cursor = 0; if (!k.Shift) anchor = 0; }
+                else if (k.Key == Veldrid.Key.End) { cursor = text.Length; if (!k.Shift) anchor = text.Length; }
             }
         cursor = Math.Clamp(cursor, 0, text.Length);
         anchor = Math.Clamp(anchor, 0, text.Length);

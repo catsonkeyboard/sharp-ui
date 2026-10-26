@@ -178,7 +178,8 @@ internal static class SdlNative
     static readonly Dictionary<IntPtr, IntPtr> _ownerByWindow = new();
     static readonly object _ownerLock = new();
 
-    static IEnumerable<IntPtr> Candidates()
+    // T1:SdlEvents 声明层复用(活模块候选序 + 按名取导出),可见性升 internal
+    internal static IEnumerable<IntPtr> Candidates()
     {
         IntPtr p = Primary(), n = ByName(), r = Runtimes();
         if (p != IntPtr.Zero) yield return p;
@@ -234,9 +235,9 @@ internal static class SdlNative
         return _runtimes;
     }
 
-    // ---- 函数指针解析(每候选按名 GetExport;失败抛,候选句柄非零时导出必在) ----
+    // ---- 函数指针解析(每候选按名 GetExport;失败抛,候选句柄非零时导出必在;T1 起 SdlEvents 亦用) ----
 
-    static T Fn<T>(IntPtr module, string export) where T : class
+    internal static T Fn<T>(IntPtr module, string export) where T : class
     {
         IntPtr p = NativeLibrary.GetExport(module, export);
         return Marshal.GetDelegateForFunctionPointer<T>(p);

@@ -41,15 +41,15 @@ public sealed class FocusManager
             if (!ke.Down) continue;
             switch (ke.Key)
             {
-                case Key.Tab:
+                case Veldrid.Key.Tab:
                     Cycle(ke.Shift);
                     break;
-                case Key.Escape:
+                case Veldrid.Key.Escape:
                     _focusedId = null;
                     break;
-                case Key.Enter:
-                case Key.KeypadEnter:
-                case Key.Space:
+                case Veldrid.Key.Enter:
+                case Veldrid.Key.KeypadEnter:
+                case Veldrid.Key.Space:
                     if (_focusedId is not null
                         && _byId.TryGetValue(_focusedId, out Element? e)
                         && e is ButtonElement button)

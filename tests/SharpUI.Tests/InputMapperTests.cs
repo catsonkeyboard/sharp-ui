@@ -10,9 +10,9 @@ public class InputMapperTests
     {
         bool[] events = InputMapper.LeftEvents(new MouseEvent[]
         {
-            new(MouseButton.Right, true),
-            new(MouseButton.Left, true),
-            new(MouseButton.Left, false),
+            new(Veldrid.MouseButton.Right, true),
+            new(Veldrid.MouseButton.Left, true),
+            new(Veldrid.MouseButton.Left, false),
         });
         Assert.Equal(new[] { true, false }, events);
     }
@@ -28,8 +28,8 @@ public class InputMapperTests
     {
         KeyEventData[] keys = InputMapper.MapKeys(new[]
         {
-            new KeyEvent(Key.Tab, true, ModifierKeys.Shift),
-            new KeyEvent(Key.Enter, true, ModifierKeys.None),
+            new KeyEvent(Veldrid.Key.Tab, true, Veldrid.ModifierKeys.Shift),
+            new KeyEvent(Veldrid.Key.Enter, true, Veldrid.ModifierKeys.None),
         });
         Assert.Equal(Veldrid.Key.Tab, keys[0].Key);
         Assert.True(keys[0].Shift);
@@ -47,8 +47,8 @@ public class InputMapperTests
     {
         KeyEventData[] keys = InputMapper.MapKeys(new[]
         {
-            new KeyEvent(Key.A, true, ModifierKeys.Control),
-            new KeyEvent(Key.B, true, ModifierKeys.Control | ModifierKeys.Shift),
+            new KeyEvent(Veldrid.Key.A, true, Veldrid.ModifierKeys.Control),
+            new KeyEvent(Veldrid.Key.B, true, Veldrid.ModifierKeys.Control | Veldrid.ModifierKeys.Shift),
         });
         Assert.True(keys[0].Ctrl);
         Assert.True(keys[1].Shift && keys[1].Ctrl);
@@ -68,7 +68,7 @@ public class InputMapperTests
         public IReadOnlyList<MouseEvent> MouseEvents => Array.Empty<MouseEvent>();
         public IReadOnlyList<KeyEvent> KeyEvents => Array.Empty<KeyEvent>();
         public IReadOnlyList<char> KeyCharPresses => chars;
-        public bool IsMouseDown(MouseButton button) => false;
+        public bool IsMouseDown(Veldrid.MouseButton button) => false;
         public bool IsAnyMouseDown { get; }
         public float WheelDelta => 0f;
     }
