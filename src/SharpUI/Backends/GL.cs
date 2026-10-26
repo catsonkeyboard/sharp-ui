@@ -62,6 +62,12 @@ internal static class GL
         _getUniformLocation = R<GetUniformLocationFn>("glGetUniformLocation");
         _uniform1i = R<Uniform1iFn>("glUniform1i");
         _readPixels = R<ReadPixelsFn>("glReadPixels");
+        // M3e T3 增补(T2 清单外,均为 GL 2.0/3.0/3.1 core 入口,签名出处 GLES3/gl3.h):
+        // UBO 显式绑定点(330 core 无 layout(binding),不得假设默认 0)+ Dispose 对象卫生
+        _getUniformBlockIndex = R<GetUniformBlockIndexFn>("glGetUniformBlockIndex");
+        _uniformBlockBinding = R<UniformBlockBindingFn>("glUniformBlockBinding");
+        _deleteProgram = R<DeleteProgramFn>("glDeleteProgram");
+        _deleteVertexArrays = R<DeleteVertexArraysFn>("glDeleteVertexArrays");
         _loaded = true;
     }
 
@@ -92,6 +98,8 @@ internal static class GL
     internal const uint TextureMinFilter = 0x2801; // GL_TEXTURE_MIN_FILTER
     internal const uint TextureWrapS = 0x2802;     // GL_TEXTURE_WRAP_S
     internal const uint TextureWrapT = 0x2803;     // GL_TEXTURE_WRAP_T
+    internal const uint One = 0x1;                 // GL_ONE(M3e T3:BlendFunc 预乘源因子;SDK GL.h "#define GL_ONE 1")
+    internal const uint OneMinusSrcAlpha = 0x0303; // GL_ONE_MINUS_SRC_ALPHA(M3e T3:预乘目标因子,对应 D3D11 BlendInvSrcAlpha;SDK GL.h 实数;0x0302=GL_SRC_ALPHA 非 INV)
 
     // 3.x 世代:Khronos OpenGL-Registry GLES3/gl3.h(枚举值与桌面 GL 统一)
     internal const uint Texture0 = 0x84C0;              // GL_TEXTURE0
@@ -105,6 +113,8 @@ internal static class GL
     internal const uint CompileStatus = 0x8B81;         // GL_COMPILE_STATUS
     internal const uint LinkStatus = 0x8B82;            // GL_LINK_STATUS
     internal const uint ClampToEdge = 0x812F;           // GL_CLAMP_TO_EDGE
+    internal const uint Rgba8 = 0x8058;                 // GL_RGBA8(M3e T3:图集内部格式,sized 显式;gl3.h 实数)
+    internal const uint InvalidIndex = 0xFFFFFFFF;      // GL_INVALID_INDEX(gl3.h;glGetUniformBlockIndex 未命中返回值)
 
     // 打包格式:Khronos GL/glext.h GL_VERSION_1_2 块(桌面 GL)
     internal const uint UnsignedInt8888Rev = 0x8367;    // GL_UNSIGNED_INT_8_8_8_8_REV
@@ -224,6 +234,20 @@ internal static class GL
         finally { pin.Free(); }
     }
 
+    // ---- M3e T3 增补(签名出处 GLES3/gl3.h;UBO 显式绑定 + Dispose 对象卫生) ----
+
+    /// <summary>取 uniform 块索引(name 以 ANSI 零终止串封送);GL_INVALID_INDEX(0xFFFFFFFF)= 未命中。</summary>
+    internal static uint GetUniformBlockIndex(uint program, string uniformBlockName) =>
+        _getUniformBlockIndex(program, uniformBlockName);
+
+    /// <summary>程序级 uniform 块绑定点赋值(330 core 无 layout(binding),默认 0 属驱动层状态、不作假设)。</summary>
+    internal static void UniformBlockBinding(uint program, uint uniformBlockIndex, uint uniformBlockBinding) =>
+        _uniformBlockBinding(program, uniformBlockIndex, uniformBlockBinding);
+
+    internal static void DeleteProgram(uint program) => _deleteProgram(program);
+
+    internal static void DeleteVertexArrays(int n, uint[] arrays) => _deleteVertexArrays(n, arrays);
+
     // ---- 委托字段(EnsureLoaded 赋值;类型即原生签名,GLboolean→U1 bool、指针宽度→IntPtr) ----
 
     static GetStringFn _getString = null!;
@@ -268,6 +292,10 @@ internal static class GL
     static GetUniformLocationFn _getUniformLocation = null!;
     static Uniform1iFn _uniform1i = null!;
     static ReadPixelsFn _readPixels = null!;
+    static GetUniformBlockIndexFn _getUniformBlockIndex = null!;
+    static UniformBlockBindingFn _uniformBlockBinding = null!;
+    static DeleteProgramFn _deleteProgram = null!;
+    static DeleteVertexArraysFn _deleteVertexArrays = null!;
 
     [UnmanagedFunctionPointer(CallingConvention.Winapi)]
     private delegate IntPtr GetStringFn(uint name);
@@ -357,4 +385,14 @@ internal static class GL
     private delegate void Uniform1iFn(int location, int v0);
     [UnmanagedFunctionPointer(CallingConvention.Winapi)]
     private delegate void ReadPixelsFn(int x, int y, int width, int height, uint format, uint type, IntPtr data);
+
+    // M3e T3 增补委托(GLES3/gl3.h 原型:name 类参数按 LPStr/Ansi 封送,同 GetUniformLocation 先例)
+    [UnmanagedFunctionPointer(CallingConvention.Winapi, CharSet = CharSet.Ansi)]
+    private delegate uint GetUniformBlockIndexFn(uint program, [MarshalAs(UnmanagedType.LPStr)] string uniformBlockName);
+    [UnmanagedFunctionPointer(CallingConvention.Winapi)]
+    private delegate void UniformBlockBindingFn(uint program, uint uniformBlockIndex, uint uniformBlockBinding);
+    [UnmanagedFunctionPointer(CallingConvention.Winapi)]
+    private delegate void DeleteProgramFn(uint program);
+    [UnmanagedFunctionPointer(CallingConvention.Winapi)]
+    private delegate void DeleteVertexArraysFn(int n, uint[] arrays);
 }

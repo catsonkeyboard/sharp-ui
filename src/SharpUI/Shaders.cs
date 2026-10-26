@@ -86,4 +86,44 @@ public static class Shaders
             return i.color * atlas.Sample(atlasSampler, i.texCoord);
         }
         """;
+
+    /// <summary>M3e T3:OpenGL 3.3 core 顶点源。Y 映射与 D3D11 HLSL 版完全一致(1.0 - y/h*2),不做
+    /// "相对 D3D 翻转"——简报原稿片段(y/h*2-1)系方向性笔误:两 API 的 NDC 同为 +1=窗口上沿,
+    /// GL "原点左下"只影响窗口坐标系(viewport/scissor/readpixels 行序),不影响 NDC→窗口映射的方向;
+    /// 若在着色器里翻转 Y,内容在帧缓冲内垂直镜像,可见窗口上整个 UI 上下颠倒,且与读回行序翻转叠加
+    /// 后双翻转。GL 的自底向上差异统一吸收在三处:本源不翻 Y、glScissor Y 翻转(fbH-y-h)、
+    /// glReadPixels 行序翻转(见 GLContext)——像素测试(两段 startIndex 的左上/右下就位)锁定方向。
+    /// UBO 未加 layout(binding=)(420pack 特性,330 core 无):绑定点经 glGetUniformBlockIndex+
+    /// glUniformBlockBinding 显式落 0(GLContext 构造期)。</summary>
+    public const string Glsl330VertexSource = """
+        #version 330 core
+        layout(location = 0) in vec2 aPosition;
+        layout(location = 1) in vec2 aTexCoord;
+        layout(location = 2) in vec4 aColor;   // UNSIGNED_BYTE normalized:内存 R,G,B,A 顺序直读
+        layout(std140) uniform ScreenSize { vec2 uSize; };   // 单 vec2 成员占 16 字节槽(std140)
+        out vec2 vTexCoord;
+        out vec4 vColor;
+        void main()
+        {
+            gl_Position = vec4(aPosition.x / uSize.x * 2.0 - 1.0,
+                               1.0 - aPosition.y / uSize.y * 2.0, 0.0, 1.0);
+            vTexCoord = aTexCoord;
+            vColor = aColor;
+        }
+        """;
+
+    /// <summary>M3e T3:OpenGL 3.3 core 片段源。采样器绑定纹理单元 0(GLContext 构造期
+    /// glGetUniformLocation("uAtlas")+glUniform1i(loc,0)+ActiveTexture(TEXTURE0));预乘顶点色 × 纹理,
+    /// 混合 (ONE, ONE_MINUS_SRC_ALPHA) 由 GLContext.BeginFrame 落地。</summary>
+    public const string Glsl330FragmentSource = """
+        #version 330 core
+        in vec2 vTexCoord;
+        in vec4 vColor;
+        uniform sampler2D uAtlas;   // 纹理单元 0
+        out vec4 outColor;
+        void main()
+        {
+            outColor = vColor * texture(uAtlas, vTexCoord);
+        }
+        """;
 }

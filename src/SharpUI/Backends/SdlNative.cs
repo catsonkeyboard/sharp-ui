@@ -45,11 +45,19 @@ internal static class SdlNative
 
     internal static void EnsureVideoInit()
     {
-        IntPtr h = Primary();
-        if (h == IntPtr.Zero)
+        // 评审裁定(T2 Important#1 ②,M3e T3 落地):全部候选句柄逐一 SDL_Init(VIDEO) ——
+        // SDL_GL_SetAttribute 须全候选可达(建窗前属主未知);某副本视频未初始化则其拒收 GL 属性,
+        // 窗口(Veldrid 建窗落点不定)恰落在该副本时上下文即非 3.3 core(兼容上下文亦过版本下限断言)。
+        // 各候选独立尽力(幂等引用计数,失败值忽略,同 StartupUtilities 先例);全无候选才抛。
+        bool any = false;
+        foreach (IntPtr h in Candidates())
+        {
+            _ = Fn<SdlInitFn>(h, "SDL_Init")(SdlInitVideo);
+            any = true;
+        }
+        if (!any)
             throw new DllNotFoundException(
                 $"{SdlLib} 不可用:基目录、runtimes/<rid>/native 与程序集探测均未命中");
-        _ = Fn<SdlInitFn>(h, "SDL_Init")(SdlInitVideo);   // 幂等引用计数;失败值忽略(与 Veldrid.StartupUtilities 先例一致)
     }
 
     internal static IntPtr GetWin32Hwnd(IntPtr sdlWindow)
@@ -78,16 +86,16 @@ internal static class SdlNative
 
     // ---- GL 面(M3e T2):属主模块纪律见类头 ----
 
-    /// <summary>设置 GL 建窗/建上下文属性(必须建窗前调用)。属主未知(窗口尚不存在)→ 全候选设置,
-    /// 任一副本接受即成(属主必在候选中;非属主副本视频未初始化时报 -1,忽略)。</summary>
+    /// <summary>设置 GL 建窗/建上下文属性(必须建窗前调用)。属主未知(窗口尚不存在)→ 全候选设置
+    /// (评审裁定 T2 Important#1 ①:不去 early-return —— 漏设副本会在窗口落在该副本时丢失 3.3 core/
+    /// 双缓冲属性,GLBaseTests 实证风险:兼容上下文也过"版本≥3.3"下限断言)。返回末候选结果:
+    /// 全部候选收下(0)才为 0 —— 任一拒收即向调用方暴露(建窗前各副本均已 EnsureVideoInit 时
+    /// SDL_GL_SetAttribute 对合法 attr 恒 0,拒收属异常布局,宁可显式失败)。</summary>
     internal static int SetGlAttribute(int attr, int value)
     {
         int last = -1;
         foreach (IntPtr h in Candidates())
-        {
             last = Fn<GlSetAttributeFn>(h, "SDL_GL_SetAttribute")(attr, value);
-            if (last == 0) return 0;
-        }
         return last;
     }
 
@@ -127,6 +135,12 @@ internal static class SdlNative
         }
         return IntPtr.Zero;
     }
+
+    /// <summary>销毁 GL 上下文(M3e T3:属主模块 —— 上下文须落其创建模块销毁;sdlWindow 仅作属主
+    /// 解析键,OwnerModule 已于 CreateGlContext 时缓存,窗口此后关闭亦不失效)。SDL 2.x 的
+    /// WIN_GL_DeleteContext 自带"当前上下文解绑再删"语义,删除当前上下文安全。</summary>
+    internal static void DeleteGlContext(IntPtr sdlWindow, IntPtr ctx) =>
+        Fn<GlDeleteContextFn>(OwnerModule(sdlWindow), "SDL_GL_DeleteContext")(ctx);
 
     // ---- 候选探测辅助 ----
 
@@ -241,6 +255,9 @@ internal static class SdlNative
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate IntPtr GlCreateContextFn(IntPtr window);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void GlDeleteContextFn(IntPtr ctx);
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate int GlMakeCurrentFn(IntPtr window, IntPtr ctx);

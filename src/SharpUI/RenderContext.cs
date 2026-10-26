@@ -29,7 +29,13 @@ public interface IRenderContext : IDisposable
     /// <summary>剪裁矩形(目标像素坐标;全开=目标尺寸)。</summary>
     void SetScissor(uint x, uint y, uint w, uint h);
 
-    /// <summary>绘制一段索引几何(拷贝语义:实现须将传入分段拷入自有常驻 scratch——其字节容量恒等于 GPU 缓冲 ByteWidth——后整块上传;禁止直接钉调用者数组,整块上传语义下越界读,M3d-ii 实证;内存布局与 UiVertex 20 字节一致)。</summary>
+    /// <summary>绘制一段索引几何(M3e 修订:上传语义两可,由后端按其缓冲更新 API 取舍并注释)——
+    /// D3D11:UpdateSubresource(box=NULL) 整块 ByteWidth 读取语义,须将传入分段拷入自有常驻
+    /// scratch(字节容量恒等于 GPU ByteWidth,直接钉调用者数组会在缓冲容量(×2 增长)大于当帧
+    /// 数组时越界读,M3d-ii 实证),分段重定基到缓冲头,DrawIndexed 偏移恒 0;
+    /// GL:glBufferSubData 显式长度语义,直接钉调用者数组按当帧实际长度上传(无越界面),
+    /// 分段经 DrawElements 原生索引字节偏移(startIndex×2)绘制,要素缓冲整段上传 [0..总需求)。
+    /// 两路取舍依据与均摊成本分析见各自实现注释;内存布局与 UiVertex 20 字节一致。</summary>
     void Draw(UiVertex[] vertices, int vertexCount, ushort[] indices, uint indexCount, uint startIndex);
 
     /// <summary>呈现(窗口路径 Present(1,0) VSync;headless no-op)。</summary>

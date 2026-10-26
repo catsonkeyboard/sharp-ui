@@ -389,3 +389,7 @@ git commit -m "feat(m3e): backend selection wiring, gl window harness verified, 
 - **Spec 覆盖**:接口债背记(spec M3d-ii 终审)→ T1;GL 后端(D27 后半)→ T2-T4;图集零初始契约 → T1;Metal/CI 明示不在本计划(spec 标注待环境)。
 - **占位符**:GL 函数清单以显式枚举+签名规格给出(机械展开由实现者按模式完成,非 TBD);GLSL/Y 翻转/测试期望值均给出确定内容。
 - **类型一致性**:IRenderContext.AtlasSize 在 T1 定义、T3 GLContext/T4 消费一致;GL 像素期望(RGBA/行序翻转)在 T3/T4 测试中一致区分于 D3D11 的 BGRA。
+
+> **勘误(T2 实现裁定,后续任务以实码为准):** GL_VERSION=0x1F02(0x1F00=VENDOR);SDL_GLattr:DOUBLEBUFFER=5(14=MULTISAMPLESAMPLES)、CONTEXT_PROFILE_MASK CORE=0x0001(0x0002=COMPATIBILITY)、MAJOR=17/MINOR=18/MASK=21 不变;RGB=0x1907/RGBA=0x1908;TexImage2D 九参。VertexAttribPointer 末参 IntPtr(第 6 参指针);建窗前 SetGlAttribute 全候选设置(属主不可知),窗口参 GL 函数严格 OwnerModule。
+
+> **勘误(T3 实现裁定,后续任务以实码为准):** ① GLSL 330 VS 的 Y 映射与 HLSL 版相同(1.0 - y/h*2),简报片段(y/h*2-1)系方向性笔误 —— 两 API 的 NDC 同向(+1=窗口上沿),着色器翻 Y 会使帧缓冲内容垂直镜像(可见窗 UI 上下颠倒)且与读回行序翻转叠加双翻转;GL 自底向上差异吸收于读回行序翻转 + glScissor Y 翻转两处(像素测试两段 startIndex 锁定方向)。② T2 加载器清单外增 4 函数(glGetUniformBlockIndex/glUniformBlockBinding/glDeleteProgram/glDeleteVertexArrays)与 3 常量(GL_ONE=1/GL_ONE_MINUS_SRC_ALPHA=0x0303/GL_RGBA8=0x8058,SDK GL.h + gl3.h 实数):UBO 绑定点 330 core 无 layout(binding) 不得假设默认 0;Dispose 对象卫生。③ 评审 Important#1 ①②(SetGlAttribute 去 early-return 全候选收 + EnsureVideoInit 全候选 SDL_Init)提前于 T3 落地 —— CreateHeadless 自建窗口即需之;实证:修复后 GL_VERSION="3.3.0 Core Profile Context"(修复前属主副本未收属性,建的是兼容上下文,亦过版本下限断言);T4 仅余交接提示修正。④ IRenderContext.Draw 契约注释落 M3e 修订版(上传语义两可:D3D11 scratch 整块 / GL 直钉显式长度 + DrawElements 原生偏移)。
