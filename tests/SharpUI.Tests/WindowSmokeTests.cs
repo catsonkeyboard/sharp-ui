@@ -32,22 +32,26 @@ public class WindowSmokeTests
                 // d3d11 → GetWin32Hwnd + D3D11Context.CreateForWindow;gl → OpenGL flag 窗 + GLContext。
                 if (backend == "gl") Assert.IsType<GLContext>(w.Ctx);
                 else Assert.IsType<D3D11Context>(w.Ctx);
-                Assert.InRange(w.Scale, 0.5f, 4f);   // DPI/96 创建定格(本机实测 ~1.588)
+                Assert.InRange(w.Scale, 0.5f, 4f);   // DPI/96 创建定格(多屏/虚拟屏下 1.0~1.59 浮动)
 
+                // 环境自适应(2026-10-27 裁定):Windows 最小窗宽钳制(SM_CXMIN)与虚拟屏驱动
+                // (网易UU远程 GameViewer Virtual Display Adapter 残留,新窗落虚拟屏被最大化钳制)
+                // 会改写请求尺寸 —— 期望值一律按实际 TargetWidth/Height 派生,不写死 200×150。
                 // 帧核 = GlWindowHarness 同款:白图集像素 + 清屏 + 居中白四边形;末帧不交换(读回目标=本帧结果)。
                 IRenderContext ctx = w.Ctx;
+                uint W = ctx.TargetWidth, H = ctx.TargetHeight;   // ≥1;中心/角落坐标按实际派生
                 ctx.UpdateAtlasRegion(new byte[] { 255, 255, 255, 255 }, 0, 0, 1, 1);
                 float inv = 1f / ctx.AtlasSize;
                 var verts = new UiVertex[4];
                 for (int i = 0; i < 4; i++) verts[i] = UiVertex.Create(
-                    new PointF(i % 2 == 0 ? 70f : 130f, i < 2 ? 45f : 105f),
+                    new PointF(i % 2 == 0 ? W * 0.35f : W * 0.65f, i < 2 ? H * 0.30f : H * 0.70f),
                     new PointF(i % 2 == 0 ? 0f : inv, i < 2 ? 0f : inv), Color32.White);
                 ushort[] idx = { 0, 1, 2, 2, 1, 3 };
                 for (int f = 0; f < 90; f++)
                 {
-                    ctx.SetScreenSize(200, 150);
+                    ctx.SetScreenSize(W, H);
                     ctx.BeginFrame(0.07f, 0.07f, 0.08f, 1f);
-                    ctx.SetScissor(0, 0, 200, 150);
+                    ctx.SetScissor(0, 0, W, H);
                     ctx.Draw(verts, 4, idx, 6, 0);
                     if (f < 89) ctx.Present();   // 前 89 次 Present 证持续稳定(VSync 节奏构造期已设)
                 }
@@ -57,7 +61,8 @@ public class WindowSmokeTests
                     D3D11Context d3d => d3d.ReadBackMainFramebuffer(),
                     _ => throw new InvalidOperationException("unreachable: 路由断言已限定两后端"),
                 };
-                int wc = (75 * 200 + 100) * 4, cc = (4 * 200 + 4) * 4;   // 中心=四边形,角落=清屏
+                int wc = ((int)(H / 2) * (int)W + (int)(W / 2)) * 4;   // 画面中心 = 四边形
+                int cc = (2 * (int)W + 2) * 4;                          // (2,2) = 角落清屏(避开图集白点区)
                 Assert.Equal(255, px[wc]); Assert.Equal(255, px[wc + 1]);
                 Assert.Equal(255, px[wc + 2]); Assert.Equal(255, px[wc + 3]);
                 if (backend == "gl")
