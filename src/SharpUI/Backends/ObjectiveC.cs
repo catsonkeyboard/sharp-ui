@@ -27,6 +27,13 @@ namespace SharpUI.Backends;
 ///     v0-v1)、x86_64 归 SSE eightbytes(xmm0-3/xmm0-1),与等数量独立 double 标量参数的
 ///     寄存器落位逐位一致 → 用 double 标量委托表达(MsgSendVoidDouble4/2),免结构体。
 ///   i386 旧 Mac 的 stret/fpret 陷阱不在支持范围(目标宿主 x86_64/arm64 Mac)。
+/// **对象所有权交接(T3 注意,评审 Minor#3)**:new* 族(newCommandQueue/newBuffer…/
+/// newLibraryWithSource:/newRenderPipelineStateWithDescriptor:/newFunctionWithName:/new)
+/// 按 objc 内存管理规约 +1 返回(调用方持有,须 release 配对释放 —— 见 MetalNative.SelRelease);
+/// 描述符等建库期一次性对象可容忍泄漏(进程级常驻),但属言明而非默认。commandBuffer/
+/// nextDrawable/属性 getter 族 +0 autorelease 返回:无本地 NSAutoreleasePool 的线程上
+/// 逐帧调用会累积待释放对象 —— CI macOS 实测若内存随帧增长,后续修法对位 SDL metal 后端
+/// 的 @autoreleasepool 包裹策略。
 /// Windows/Linux:Ensure 即抛(守卫在原生加载之前,可被本机测试真断言);测试仅做编译结构
 /// 断言(ObjectiveCTests),真实消息收发待 CI macOS 实机验证。
 /// </summary>
@@ -52,6 +59,7 @@ internal static class ObjectiveC
     static DMsgSendVoidPtr _msgSendVoidPtr = null!;
     static DMsgSendVoidNUInt _msgSendVoidNUInt = null!;
     static DMsgSendPtrNUInt _msgSendPtrNUInt = null!;
+    static DMsgSendNUInt _msgSendNUInt = null!;
     static DMsgSendVoidPtrNUInt _msgSendVoidPtrNUInt = null!;
     static DMsgSendVoidPtrNUIntNUInt _msgSendVoidPtrNUIntNUInt = null!;
     static DMsgSendNUIntNUInt _msgSendNUIntNUInt = null!;
@@ -98,6 +106,7 @@ internal static class ObjectiveC
             _msgSendVoidPtr = Bind<DMsgSendVoidPtr>("objc_msgSend");
             _msgSendVoidNUInt = Bind<DMsgSendVoidNUInt>("objc_msgSend");
             _msgSendPtrNUInt = Bind<DMsgSendPtrNUInt>("objc_msgSend");
+            _msgSendNUInt = Bind<DMsgSendNUInt>("objc_msgSend");
             _msgSendVoidPtrNUInt = Bind<DMsgSendVoidPtrNUInt>("objc_msgSend");
             _msgSendVoidPtrNUIntNUInt = Bind<DMsgSendVoidPtrNUIntNUInt>("objc_msgSend");
             _msgSendNUIntNUInt = Bind<DMsgSendNUIntNUInt>("objc_msgSend");
@@ -137,7 +146,8 @@ internal static class ObjectiveC
     internal static IntPtr MsgSend(IntPtr rcv, IntPtr sel) { Ensure(); return _msgSend(rcv, sel); }
 
     /// <summary>1×对象参 id 返回:newTextureWithDescriptor: / newFunctionWithName:(NSString 参) /
-    /// renderCommandEncoderWithDescriptor: / objectAtIndexedSubscript: 等。</summary>
+    /// renderCommandEncoderWithDescriptor: 等(objectAtIndexedSubscript: 是单 nuint 参,
+    /// 归 MsgSendNUInt)。</summary>
     internal static IntPtr MsgSendPtr(IntPtr rcv, IntPtr sel, IntPtr a0) { Ensure(); return _msgSendPtr(rcv, sel, a0); }
 
     /// <summary>2×对象参 id 返回(通用形态;注意不可用于带 error:** 尾参的方法 ——
@@ -155,19 +165,32 @@ internal static class ObjectiveC
 
     /// <summary>(对象参, NSError** out)→ id:newRenderPipelineStateWithDescriptor:error:
     /// —— MTLDevice.h:`newRenderPipelineStateWithDescriptor:(MTLRenderPipelineDescriptor *)descriptor
-    /// error:(__autoreleasing NSError **)error`(error 为 +0 引用,调用方不释放)。</summary>
+    /// error:(__autoreleasing NSError **)error`(error 为 +0 引用,调用方不释放)。
+    /// **error 槽有效性(评审 Minor#4)**:仅当返回 IntPtr.Zero(失败)时 error 槽才被 callee
+    /// 写入;成功路径 callee 不写该槽、内容为陈旧垃圾 —— 判定失败只看返回值,勿断言 error==Zero。</summary>
     internal static IntPtr MsgSendNSError(IntPtr rcv, IntPtr sel, IntPtr a0, out IntPtr error)
     { Ensure(); return _msgSendNSError(rcv, sel, a0, out error); }
 
     /// <summary>1×对象参 void:setRenderPipelineState: / setVertexFunction: / setFragmentFunction: /
-    /// setVertexDescriptor: / setTexture: / setDevice: / setObject:atIndexedSubscript:(与 nuint 参版区分)。</summary>
+    /// setVertexDescriptor: / setTexture: / setDevice:(setObject:atIndexedSubscript: 系 (对象,下标)
+    /// 双参 void,归 MsgSendVoidPtrNUInt —— 评审 Minor#2 勘正归属)。</summary>
     internal static void MsgSendVoidPtr(IntPtr rcv, IntPtr sel, IntPtr a0) { Ensure(); _msgSendVoidPtr(rcv, sel, a0); }
 
     /// <summary>1×NSUInteger 参 void:全部描述符属性 setter —— setPixelFormat:/setWidth:/setHeight:/
     /// setUsage:/setStorageMode:/setLoadAction:/setStoreAction:(Metal.h 属性均 NSUInteger/其枚举)。</summary>
     internal static void MsgSendVoidNUInt(IntPtr rcv, IntPtr sel, nuint a0) { Ensure(); _msgSendVoidNUInt(rcv, sel, a0); }
 
-    /// <summary>(对象参, NSUInteger 参)→ id:objectAtIndexedSubscript:(attachmentIndex)。</summary>
+    /// <summary>1×NSUInteger 参 → id:objectAtIndexedSubscript:(接收者=附件数组对象,单下标参)——
+    /// MTLRenderPipeline.h / MTLRenderPass.h:`- (MTL…AttachmentDescriptor *)
+    /// objectAtIndexedSubscript:(NSUInteger)attachmentIndex;`。评审 Important#1 勘正:该 selector
+    /// 无对象前参 —— 误用 (对象参, nuint) 形态会把下标放入 a1 槽,IMP 从 x2/rdx 读到对象指针当下标,
+    /// macOS 上必错;本形态 (rcv, sel, nuint) 才是正确对位。</summary>
+    internal static IntPtr MsgSendNUInt(IntPtr rcv, IntPtr sel, nuint index)
+    { Ensure(); return _msgSendNUInt(rcv, sel, index); }
+
+    /// <summary>(对象参, NSUInteger 参)→ id:通用形态 —— 现表内无消费方(objectAtIndexedSubscript:
+    /// 是单 nuint 参,须用 MsgSendNUInt,见上;评审 Important#1 勘正原注释错配)。保留供 T3
+    /// 扩展(对象+索引且 id 返回的消息)。</summary>
     internal static IntPtr MsgSendPtrNUInt(IntPtr rcv, IntPtr sel, IntPtr a0, nuint a1)
     { Ensure(); return _msgSendPtrNUInt(rcv, sel, a0, a1); }
 
@@ -194,7 +217,8 @@ internal static class ObjectiveC
     /// —— MTLDevice.h:`newLibraryWithSource:(NSString *)source options:(nullable MTLCompileOptions
     /// *)options error:(__autoreleasing NSError **)error`。简报原稿 MsgSendNSError 单对象参形态
     /// 与本方法不匹配(options 参夹在 source 与 error 之间,缺槽会把 error 指针错读入 options 槽),
-    /// 故立本扩展形态;MsgSendNSError 保留给 newRenderPipelineStateWithDescriptor:error:(恰为单对象参)。</summary>
+    /// 故立本扩展形态;MsgSendNSError 保留给 newRenderPipelineStateWithDescriptor:error:(恰为单对象参)。
+    /// error 槽有效性同 MsgSendNSError(评审 Minor#4):仅失败(返回 Zero)时有效,成功路径为陈旧垃圾。</summary>
     internal static IntPtr MsgSendNSErrorWithOptions(IntPtr rcv, IntPtr sel, IntPtr source, IntPtr options, out IntPtr error)
     { Ensure(); return _msgSendNSErrorWithOptions(rcv, sel, source, options, out error); }
 
@@ -234,6 +258,9 @@ internal static class ObjectiveC
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate IntPtr DMsgSendPtr(IntPtr rcv, IntPtr sel, IntPtr a0);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate IntPtr DMsgSendNUInt(IntPtr rcv, IntPtr sel, nuint index);
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate IntPtr DMsgSendPtrPtr(IntPtr rcv, IntPtr sel, IntPtr a0, IntPtr a1);

@@ -19,6 +19,12 @@ namespace SharpUI.Backends;
 /// 静态成员访问时运行(precise 语义),非 macOS 宿主直接返回、字段保持 Zero —— Windows
 /// 测试经反射断言字段集合/命名规约而不触发注册(ObjectiveCTests);macOS 宿主上 Ensure()
 /// 触发全量 sel_registerName 注册并抽查非 Zero。注册路径经 ObjectiveC.RegisterSel(缓存字典)。
+/// **对象所有权交接(T3 注意,评审 Minor#3)**:new* 族(newCommandQueue/newBuffer…/
+/// newLibraryWithSource:/newRenderPipelineStateWithDescriptor:/newFunctionWithName:/new)
+/// +1 返回,调用方持有须 release(见 SelRelease)——描述符等建库期一次性对象可容忍泄漏
+/// (进程级常驻),但属言明而非默认;commandBuffer/nextDrawable/属性 getter 族 +0
+/// autorelease,无本地 NSAutoreleasePool 的线程上逐帧调用会累积待释放对象 —— CI macOS
+/// 实测若内存随帧增长,后续修法对位 SDL metal 后端的 @autoreleasepool 包裹策略。
 /// 全部消息收发待 CI macOS 实机验证(本机无 Metal 运行时)。
 /// </summary>
 internal static class MetalNative
@@ -93,6 +99,9 @@ internal static class MetalNative
     // Texture/Pipeline/Pass 均经此类方法实例化,alloc/init 语义等价):
     //   `+ (instancetype)new;`
     internal static readonly IntPtr SelNew;
+    // NSObject 协议 retain/release/autorelease 三件套之 release(Foundation/NSObject.h:
+    //   `- (void)release;`):new* 族 +1 返回对象的配对释放(见类头所有权交接注)
+    internal static readonly IntPtr SelRelease;
 
     // MTLTextureDescriptor 属性(MTLTexture.h;NSUInteger 及其枚举基底,setter 单 nuint):
     //   `@property(nonatomic) MTLPixelFormat pixelFormat;` —— setPixelFormat: 共享三处:
@@ -158,7 +167,7 @@ internal static class MetalNative
     }
 
     /// <summary>MTLRegion(MTLTypes.h):`typedef struct { MTLOrigin origin; MTLSize size; }
-    /// MTLRegion;`(MTLOrIGIN={NSUInteger x,y,z}、MTLSize={NSUInteger width,height,depth})
+    /// MTLRegion;`(MTLOrigin={NSUInteger x,y,z}、MTLSize={NSUInteger width,height,depth})
     /// 展平为 6×8 = 48(x64),布局与 origin+size 嵌套等价(Sequential 同序)。</summary>
     [StructLayout(LayoutKind.Sequential)]
     internal struct Region
@@ -191,6 +200,7 @@ internal static class MetalNative
         SelEndEncoding = ObjectiveC.RegisterSel("endEncoding");
         SelGetBytes = ObjectiveC.RegisterSel("getBytes:bytesPerRow:fromRegion:mipmapLevel:");
         SelNew = ObjectiveC.RegisterSel("new");
+        SelRelease = ObjectiveC.RegisterSel("release");
         SelSetPixelFormat = ObjectiveC.RegisterSel("setPixelFormat:");
         SelSetWidth = ObjectiveC.RegisterSel("setWidth:");
         SelSetHeight = ObjectiveC.RegisterSel("setHeight:");

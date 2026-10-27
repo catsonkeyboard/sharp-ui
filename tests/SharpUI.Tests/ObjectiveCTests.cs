@@ -31,8 +31,10 @@ public class ObjectiveCTests
         "SelSetRenderPipelineState", "SelSetScissorRect", "SelDrawPrimitives", "SelEndEncoding",
         // MTLTexture(MTLTexture.h)
         "SelGetBytes",
-        // MTLTextureDescriptor 属性(MTLTexture.h)+ NSObject 类方法 new(简报:MTLTextureDescriptor.new)
-        "SelNew", "SelSetPixelFormat", "SelSetWidth", "SelSetHeight", "SelSetUsage", "SelSetStorageMode",
+        // NSObject 类方法 + 协议方法(简报:MTLTextureDescriptor.new;release 为评审 Minor#3 增)
+        "SelNew", "SelRelease",
+        // MTLTextureDescriptor 属性(MTLTexture.h)
+        "SelSetPixelFormat", "SelSetWidth", "SelSetHeight", "SelSetUsage", "SelSetStorageMode",
         // MTLRenderPipelineDescriptor(MTLRenderPipeline.h;colorAttachments 只读 getter —— setColorAttachments: 不存在,头文件实证)
         "SelSetVertexFunction", "SelSetFragmentFunction", "SelSetVertexDescriptor", "SelColorAttachments",
         "SelObjectAtIndexedSubscript", "SelSetObjectAtIndexedSubscript",
@@ -125,6 +127,7 @@ public class ObjectiveCTests
         // 自然扩展(按 Metal.h 签名逐参对位;命名=返回+参数形态)
         AssertSig("MsgSendVoidPtr", new[] { typeof(IntPtr), typeof(IntPtr), typeof(IntPtr) }, typeof(void));
         AssertSig("MsgSendVoidNUInt", new[] { typeof(IntPtr), typeof(IntPtr), typeof(UIntPtr) }, typeof(void));
+        AssertSig("MsgSendNUInt", new[] { typeof(IntPtr), typeof(IntPtr), typeof(UIntPtr) }, typeof(IntPtr));
         AssertSig("MsgSendPtrNUInt", new[] { typeof(IntPtr), typeof(IntPtr), typeof(IntPtr), typeof(UIntPtr) }, typeof(IntPtr));
         AssertSig("MsgSendVoidPtrNUInt",
             new[] { typeof(IntPtr), typeof(IntPtr), typeof(IntPtr), typeof(UIntPtr) }, typeof(void));
@@ -148,6 +151,18 @@ public class ObjectiveCTests
         AssertSig("MsgSendVoidGetBytes",
             new[] { typeof(IntPtr), typeof(IntPtr), typeof(IntPtr), typeof(UIntPtr), typeof(MetalNative.Region), typeof(UIntPtr) },
             typeof(void));   // getBytes:bytesPerRow:fromRegion:mipmapLevel:
+    }
+
+    /// <summary>评审 Important#1 回归锁:objectAtIndexedSubscript: 是单 NSUInteger 参
+    /// (接收者=附件数组对象),包装形态必须 (rcv, sel, nuint)→IntPtr;误用
+    /// (对象参, nuint) 形态(MsgSendPtrNUInt)会把下标放入 a1 槽、IMP 从 x2/rdx 读到
+    /// 对象指针当下标 —— macOS 上必错。两形态并存且各自签名不漂移。</summary>
+    [Fact]
+    public void ObjectiveC_MsgSendNUInt_IsSingleIndexShape_ForObjectAtIndexedSubscript()
+    {
+        AssertSig("MsgSendNUInt", new[] { typeof(IntPtr), typeof(IntPtr), typeof(UIntPtr) }, typeof(IntPtr));
+        AssertSig("MsgSendPtrNUInt",
+            new[] { typeof(IntPtr), typeof(IntPtr), typeof(IntPtr), typeof(UIntPtr) }, typeof(IntPtr));
     }
 
     // ---- 平台守卫行为(Windows 宿主可真断言:守卫在原生加载之前) ----
