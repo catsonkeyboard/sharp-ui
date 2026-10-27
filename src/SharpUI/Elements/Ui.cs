@@ -52,16 +52,20 @@ public static class Ui
     public static VirtualListElement VirtualList(string key, int count, float itemHeight, Action<int, PanelElement> render) => new(key, count, itemHeight, render);
 
     /// <summary>在锚定矩形处弹出菜单(命令式:按钮点击回调内调用;锚=触发元素 Frame,菜单左上对齐锚底缘)。
-    /// items 为 MenuItem/MenuSeparator 混排(params object?[]);方向键上下移动高亮(禁用项跳过)、
+    /// items 为 MenuItem/MenuSeparator/MenuSub 混排(params object?[]);方向键上下移动高亮(禁用项跳过)、
     /// Enter 激活+关闭、Esc/外点关闭、焦点围栏(打开 Push/关闭归还)。sdlWindow 须为 App 建窗接线的句柄
-    /// (FocusManager 窗注册表);AppWindow 扩展 <see cref="MenuExtensions.ShowMenu"/> 免句柄直调。</summary>
-    public static void ShowMenu(IntPtr sdlWindow, RectF anchorRect, params object?[] items)
+    /// (FocusManager 窗注册表);AppWindow 扩展 <see cref="MenuExtensions.ShowMenu(AppWindow, RectF, object?[])"/> 免句柄直调。</summary>
+    public static void ShowMenu(IntPtr sdlWindow, RectF anchorRect, params object?[] items) =>
+        ShowMenu(sdlWindow, anchorRect, null, items);
+
+    /// <summary>在锚定矩形处弹出菜单并按指定逻辑屏幕尺寸翻转钳制(底部溢出上翻,右侧溢出左钳)。</summary>
+    public static void ShowMenu(IntPtr sdlWindow, RectF anchorRect, SizeF? screenSize, params object?[] items)
     {
         FocusManager? focus = FocusManager.ForWindow(sdlWindow);
         if (focus is null)
             throw new InvalidOperationException(
                 "ShowMenu: 该句柄未绑定 FocusManager(App.CreateWindow 接线;合成测试经 FocusManager.BindWindow)。");
-        MenuExtensions.Show(sdlWindow, focus, anchorRect, items);
+        MenuExtensions.Show(sdlWindow, focus, anchorRect, items, screenSize: screenSize);
     }
 
     static PanelElement Container(Axis axis, Element?[] children)

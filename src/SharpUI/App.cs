@@ -72,6 +72,7 @@ public sealed class App
         window.FocusLost += () => Interaction.CancelPress(w.Session);   // D15:失焦取消该窗按压
         w.Session.SdlWindow = window.SdlWindowHandle;   // D5:浮层命中优先/外点消费按窗接线(PopupHost 服务定位)
         w.Focus.SdlWindow = window.SdlWindowHandle;     // D5:Esc 浮层优先路由(栈空回归清焦点语义)
+        w.Focus.ScreenSize = new SizeF(window.Width / scale, window.Height / scale);   // D6 T1:菜单默认翻转钳制基准
         FocusManager.BindWindow(window.SdlWindowHandle, w.Focus);   // D5 T3:Ui.ShowMenu(IntPtr) 围栏服务定位
         return w;
     }
@@ -127,6 +128,7 @@ public sealed class App
                     w.Focus.SetFocus(af);
 
                 SizeF screen = new(w.Window.Width / w.Scale, w.Window.Height / w.Scale);
+                w.Focus.ScreenSize = screen;
                 RectF screenRect = new(0, 0, screen.Width, screen.Height);
                 LayoutEngine.Arrange(root, screenRect);
                 // D5 T2(已知项 B 裁定):Dialog 类浮层根随帧重排 —— 居中随 resize 重算(App.Run 已有

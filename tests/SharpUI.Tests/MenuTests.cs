@@ -286,6 +286,8 @@ public class MenuTests
                 new MenuItem("Edit", () => { }),
                 new MenuSeparator(),
                 new MenuItem("Cut", () => { }) { Enabled = false },
+                new MenuSub("More", new MenuItem("Sub", () => { })),
+                new MenuSub("DisSub", new MenuItem("Sub", () => { })) { Enabled = false },
             });
             menu.Key = "m";                                    // 稳定 id 同 PopupHost.Push 指派式
             menu.ResolvedId = "/m";
@@ -329,6 +331,19 @@ public class MenuTests
             Assert.Equal(36, px[dis]);
             Assert.Equal(30, px[dis + 1]);
             Assert.Equal(30, px[dis + 2]);
+
+            // MenuSub 尾绘 ▶ 右向箭头:启用态白色(255,255,255),禁用态 0x3A3A42(BGR [0x42,0x3A,0x3A]=[66,58,58])
+            Element subEnabled = menu.Items[2];
+            int subArrow = ((int)(subEnabled.Frame.Y + subEnabled.Frame.Height / 2f) * 128 + (int)(subEnabled.Frame.Right - 12f)) * 4;
+            Assert.Equal(255, px[subArrow]);
+            Assert.Equal(255, px[subArrow + 1]);
+            Assert.Equal(255, px[subArrow + 2]);
+
+            Element subDisabled = menu.Items[3];
+            int subDisArrow = ((int)(subDisabled.Frame.Y + subDisabled.Frame.Height / 2f) * 128 + (int)(subDisabled.Frame.Right - 12f)) * 4;
+            Assert.Equal(66, px[subDisArrow]);
+            Assert.Equal(58, px[subDisArrow + 1]);
+            Assert.Equal(58, px[subDisArrow + 2]);
         }
         finally
         {
@@ -343,5 +358,265 @@ public class MenuTests
             foreach (Element c in e.Children)
                 if (FindSeparator(c) is { } hit) return hit;
         return null!;
+    }
+
+    // ---- D6 跟进 Task 1: 翻转钳制 + SubMenu 子菜单 ----
+
+    [Fact]
+    public void FlipClamp_BottomOverflowFlipsUp_RightOverflowClampsLeft_DefaultUnclamped()
+    {
+        (AppWindow w, IntPtr h) = Window(10);
+        (PanelElement root, ButtonElement opener) = Declared(() => { });
+        OpenerFrame(w, root, opener);
+
+        // 1) 传入 screenSize=(200,100), anchor 在底缘 (10,80,40,15) → 底部溢出向上翻(y < 80)
+        var bottomAnchor = new RectF(10, 80, 40, 15);
+        var screen = new SizeF(200, 100);
+        Ui.ShowMenu(h, bottomAnchor, screen,
+            new MenuItem("剪切", () => { }),
+            new MenuItem("复制", () => { }),
+            new MenuItem("粘贴", () => { }));
+        MenuElement flipped = (MenuElement)PopupHost.StackOf(h)[0].Root;
+        Assert.True(flipped.Frame.Y < 80f);
+        Assert.Equal(Math.Max(0f, bottomAnchor.Y - flipped.Frame.Height), flipped.Frame.Y);
+        PopupHost.Clear(h);
+
+        // 2) 右侧溢出: anchor 在右缘 (185,10,10,15) → x 钳制到 screen.Width - menuW
+        var rightAnchor = new RectF(185, 10, 10, 15);
+        w.ShowMenu(rightAnchor, screen,
+            new MenuItem("较长菜单项文本", () => { }));
+        MenuElement clamped = (MenuElement)PopupHost.StackOf(h)[0].Root;
+        Assert.Equal(Math.Max(0f, screen.Width - clamped.Frame.Width), clamped.Frame.X);
+        Assert.True(clamped.Frame.Right <= screen.Width);
+        PopupHost.Clear(h);
+
+        // 3) 无 screenSize(假句柄默认): 不翻转, 保持既有 anchor.Bottom
+        Ui.ShowMenu(h, bottomAnchor,
+            new MenuItem("剪切", () => { }),
+            new MenuItem("复制", () => { }),
+            new MenuItem("粘贴", () => { }));
+        MenuElement unclamped = (MenuElement)PopupHost.StackOf(h)[0].Root;
+        Assert.Equal(bottomAnchor.Bottom, unclamped.Frame.Y);
+        Assert.Equal(bottomAnchor.X, unclamped.Frame.X);
+        Cleanup(h);
+    }
+
+    [Fact]
+    public void SubMenu_RightAndEnterExpand_LeftAndEscCloseSubOnly_RestoresParentItemFocus()
+    {
+        (AppWindow w, IntPtr h) = Window(11);
+        (PanelElement root, ButtonElement opener) = Declared(() => { });
+        OpenerFrame(w, root, opener);
+
+        Ui.ShowMenu(h, opener.Frame,
+            new MenuItem("新建", () => { }),
+            new MenuSub("导出",
+                new MenuItem("PDF", () => { }),
+                new MenuItem("PNG", () => { })));
+        ComposeFrame(w, root);
+        MenuElement mainMenu = (MenuElement)PopupHost.StackOf(h)[0].Root;
+        w.Focus.SetFocus(mainMenu.Items[1]);                   // 聚焦父项"导出"
+
+        // 按 Right 展开子菜单: Count==2, 焦点入子首项
+        w.Focus.HandleKeys(new[] { new KeyEventData(Key.Right, true, false) });
+        Assert.Equal(2, PopupHost.Count(h));
+        MenuElement subMenu = (MenuElement)PopupHost.StackOf(h)[1].Root;
+        Assert.Equal(mainMenu.Items[1].Frame.Right, subMenu.Frame.X);
+        Assert.Equal(mainMenu.Items[1].Frame.Y, subMenu.Frame.Y);
+        Assert.True(w.Focus.IsFocused(subMenu.Items[0]));
+
+        // 子菜单内按 Left: 仅关子菜单(Count==1), 焦点归还父菜单的 MenuSub 项
+        ComposeFrame(w, root);
+        w.Focus.HandleKeys(new[] { new KeyEventData(Key.Left, true, false) });
+        Assert.Equal(1, PopupHost.Count(h));
+        Assert.True(w.Focus.IsFocused(mainMenu.Items[1]));
+
+        // 父项聚焦按 Enter: 再次展开子菜单
+        ComposeFrame(w, root);
+        w.Focus.HandleKeys(new[] { new KeyEventData(Key.Enter, true, false) });
+        Assert.Equal(2, PopupHost.Count(h));
+        subMenu = (MenuElement)PopupHost.StackOf(h)[1].Root;
+        Assert.True(w.Focus.IsFocused(subMenu.Items[0]));
+
+        // 子菜单内按 Esc: 仅关子菜单(Count==1), 焦点归还父项
+        ComposeFrame(w, root);
+        w.Focus.HandleKeys(new[] { new KeyEventData(Key.Escape, true, false) });
+        Assert.Equal(1, PopupHost.Count(h));
+        Assert.True(w.Focus.IsFocused(mainMenu.Items[1]));
+        Cleanup(h);
+    }
+
+    [Fact]
+    public void SubMenu_ChildItemActivate_FiresCallback_ClosesEntireTree_RestoresOpenerFocus()
+    {
+        (AppWindow w, IntPtr h) = Window(12);
+        (PanelElement root, ButtonElement opener) = Declared(() => { });
+        OpenerFrame(w, root, opener);
+        int pdfClicks = 0, pngClicks = 0;
+
+        Ui.ShowMenu(h, opener.Frame,
+            new MenuSub("导出",
+                new MenuItem("PDF", () => pdfClicks++),
+                new MenuItem("PNG", () => pngClicks++)));
+        ComposeFrame(w, root);
+
+        // 1) 键盘路径: Enter 展开 → Down 到 PNG → Enter 激活 → 整棵收起(Count==0)
+        w.Focus.HandleKeys(new[] { new KeyEventData(Key.Enter, true, false) });
+        Assert.Equal(2, PopupHost.Count(h));
+        ComposeFrame(w, root);
+        w.Focus.HandleKeys(new[] { new KeyEventData(Key.Down, true, false) });
+        w.Focus.HandleKeys(new[] { new KeyEventData(Key.Enter, true, false) });
+        Assert.Equal(0, pdfClicks);
+        Assert.Equal(1, pngClicks);
+        Assert.Equal(0, PopupHost.Count(h));
+        Assert.True(w.Focus.IsFocused(opener));
+
+        // 2) 鼠标路径: 点击父项展开 → 点击子项 PDF → 回调+整棵收起(Count==0)
+        OpenerFrame(w, root, opener);
+        Ui.ShowMenu(h, opener.Frame,
+            new MenuSub("导出",
+                new MenuItem("PDF", () => pdfClicks++),
+                new MenuItem("PNG", () => pngClicks++)));
+        MenuElement mainMenu = (MenuElement)PopupHost.StackOf(h)[0].Root;
+        PointF parentPt = Center(mainMenu.Items[0]);
+        Interaction.Update(w.Session, root, new RawInput(parentPt, new[] { true }), w.Focus);
+        Interaction.Update(w.Session, root, new RawInput(parentPt, new[] { false }), w.Focus);
+        Assert.Equal(2, PopupHost.Count(h));
+
+        MenuElement subMenu = (MenuElement)PopupHost.StackOf(h)[1].Root;
+        PointF childPt = Center(subMenu.Items[0]);
+        Interaction.Update(w.Session, root, new RawInput(childPt, new[] { true }), w.Focus);
+        Interaction.Update(w.Session, root, new RawInput(childPt, new[] { false }), w.Focus);
+        Assert.Equal(1, pdfClicks);
+        Assert.Equal(0, PopupHost.Count(h));
+        Assert.True(w.Focus.IsFocused(opener));
+        Cleanup(h);
+    }
+
+    [Fact]
+    public void SubMenu_Hover02s_Expands_SwitchingSiblingParent_ReplacesOldSubMenu()
+    {
+        double t = 0;
+        Anim.TimeSource = () => t;
+        (AppWindow w, IntPtr h) = Window(13);
+        try
+        {
+            (PanelElement root, ButtonElement opener) = Declared(() => { });
+            OpenerFrame(w, root, opener);
+
+            Ui.ShowMenu(h, opener.Frame,
+                new MenuSub("最近", new MenuItem("a.txt", () => { })),
+                new MenuSub("导出", new MenuItem("PDF", () => { })));
+            MenuElement mainMenu = (MenuElement)PopupHost.StackOf(h)[0].Root;
+            PointF hoverA = Center(mainMenu.Items[0]);
+            PointF hoverB = Center(mainMenu.Items[1]);
+
+            // t=0: 起表, <0.2s 不展开
+            Interaction.Update(w.Session, root, new RawInput(hoverA, Array.Empty<bool>()), w.Focus);
+            t = 0.15;
+            Interaction.Update(w.Session, root, new RawInput(hoverA, Array.Empty<bool>()), w.Focus);
+            Assert.Equal(1, PopupHost.Count(h));
+
+            // t=0.20: 达 0.2s 展开"最近"子菜单
+            t = 0.20;
+            Interaction.Update(w.Session, root, new RawInput(hoverA, Array.Empty<bool>()), w.Focus);
+            Assert.Equal(2, PopupHost.Count(h));
+            Popup subPopupA = PopupHost.StackOf(h)[1];
+
+            // 移到兄弟父项"导出": 先起表, 满 0.2s 后替换旧子菜单
+            t = 0.30;
+            Interaction.Update(w.Session, root, new RawInput(hoverB, Array.Empty<bool>()), w.Focus);
+            t = 0.40;
+            Interaction.Update(w.Session, root, new RawInput(hoverB, Array.Empty<bool>()), w.Focus);
+            Assert.Equal(2, PopupHost.Count(h));
+            Assert.Same(subPopupA, PopupHost.StackOf(h)[1]);   // 未满 0.2s 仍为旧子菜单
+
+            t = 0.51;
+            Interaction.Update(w.Session, root, new RawInput(hoverB, Array.Empty<bool>()), w.Focus);
+            Assert.Equal(2, PopupHost.Count(h));               // 旧子菜单已按身份 Remove, 新子菜单在栈
+            Popup subPopupB = PopupHost.StackOf(h)[1];
+            Assert.NotSame(subPopupA, subPopupB);
+            Assert.Equal(mainMenu.Items[1].Frame.Y, subPopupB.Root.Frame.Y);
+        }
+        finally
+        {
+            Anim.TimeSource = null;
+            Cleanup(h);
+        }
+    }
+
+    [Fact]
+    public void SubMenu_ThreeLevels_ThrowsInvalidOperationException()
+    {
+        (AppWindow w, IntPtr h) = Window(14);
+        (PanelElement root, ButtonElement opener) = Declared(() => { });
+        OpenerFrame(w, root, opener);
+
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            Ui.ShowMenu(h, opener.Frame,
+                new MenuSub("一级",
+                    new MenuSub("二级",
+                        new MenuItem("三级", () => { })))));
+        Assert.Contains("SubMenu 最多 2 层", ex.Message);
+        Cleanup(h);
+    }
+
+    [Fact]
+    public void SubMenu_Disabled_SkippedInNavigation_IgnoresExpand()
+    {
+        double t = 0;
+        Anim.TimeSource = () => t;
+        (AppWindow w, IntPtr h) = Window(15);
+        try
+        {
+            (PanelElement root, ButtonElement opener) = Declared(() => { });
+            OpenerFrame(w, root, opener);
+
+            Ui.ShowMenu(h, opener.Frame,
+                new MenuItem("首项", () => { }),
+                new MenuSub("禁用子菜单", new MenuItem("子项", () => { })) { Enabled = false },
+                new MenuItem("末项", () => { }));
+            ComposeFrame(w, root);
+            MenuElement mainMenu = (MenuElement)PopupHost.StackOf(h)[0].Root;
+            Assert.True(w.Focus.IsFocused(mainMenu.Items[0]));
+
+            // Down 跳过禁用 MenuSub 直达"末项"
+            w.Focus.HandleKeys(new[] { new KeyEventData(Key.Down, true, false) });
+            Assert.True(w.Focus.IsFocused(mainMenu.Items[2]));
+
+            // 点击与悬停禁用 MenuSub 均不展开
+            PointF disPt = Center(mainMenu.Items[1]);
+            Interaction.Update(w.Session, root, new RawInput(disPt, new[] { true }), w.Focus);
+            Interaction.Update(w.Session, root, new RawInput(disPt, new[] { false }), w.Focus);
+            t = 0.5;
+            Interaction.Update(w.Session, root, new RawInput(disPt, Array.Empty<bool>()), w.Focus);
+            Assert.Equal(1, PopupHost.Count(h));
+        }
+        finally
+        {
+            Anim.TimeSource = null;
+            Cleanup(h);
+        }
+    }
+
+    [Fact]
+    public void SubMenu_RightOverflow_FlipsToLeftOfParentItem()
+    {
+        (AppWindow w, IntPtr h) = Window(16);
+        (PanelElement root, ButtonElement opener) = Declared(() => { });
+        OpenerFrame(w, root, opener);
+
+        var screen = new SizeF(140, 120);
+        Ui.ShowMenu(h, new RectF(80, 10, 50, 20), screen,
+            new MenuSub("导出格式",
+                new MenuItem("导出为 PDF 文档", () => { })));
+        ComposeFrame(w, root);
+        MenuElement mainMenu = (MenuElement)PopupHost.StackOf(h)[0].Root;
+        w.Focus.HandleKeys(new[] { new KeyEventData(Key.Right, true, false) });
+
+        Assert.Equal(2, PopupHost.Count(h));
+        MenuElement subMenu = (MenuElement)PopupHost.StackOf(h)[1].Root;
+        Assert.Equal(Math.Max(0f, mainMenu.Items[0].Frame.X - subMenu.Frame.Width), subMenu.Frame.X);
+        Cleanup(h);
     }
 }

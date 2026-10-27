@@ -40,6 +40,7 @@ internal static class TooltipService
     {
         if (window == IntPtr.Zero) return;
         double now = Anim.Now;
+        MenuElement.UpdateWindowHover(window, input.HoveredId, input.Mouse, input.LeftPressed);
 
         // 收集期只读栈(处理期才变更 —— 栈顶浮层内的菜单项提示同样可达)
         _carriers.Clear();

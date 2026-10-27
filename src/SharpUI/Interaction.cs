@@ -91,7 +91,10 @@ public static class Interaction
         // D5 浮层命中优先:栈顶浮层独占命中 —— 命中浮层元素即浮层元素;未命中即 null(声明树与下层浮层
         // 整体屏蔽,模态语义)。top 为帧首快照:帧内外点 Pop 后本帧语义不变(弹层当帧不"复活")。
         Popup? top = session.SdlWindow != IntPtr.Zero ? PopupHost.TopOf(session.SdlWindow) : null;
-        Element? hovered = top is not null ? top.Root.HitTest(raw.Mouse) : root.HitTest(raw.Mouse);
+        Element? hovered = top is not null
+            ? top.Root.HitTest(raw.Mouse)
+                ?? (top.Root is MenuElement { ParentMenu: { } parentMenu } ? parentMenu.HitTest(raw.Mouse) : null)
+            : root.HitTest(raw.Mouse);
         string? capturedAtFrameStart = session.CapturedId;   // 上帧遗留捕获(跨帧拖拽)
         session.Clicks.Clear();
         if (session.Queued.Count > 0)   // 键盘激活(裁定#18):先清当帧再并入上一帧队列
@@ -110,7 +113,13 @@ public static class Interaction
                     // 可-dismiss 浮层即 Pop(OnClosed 收尾);不 dismiss 的浮层(模态 Dialog)仅吞按压。
                     session.PressedOn = null;
                     session.CapturedId = null;
-                    if (top.DismissOnOutsideClick) PopupHost.Pop(session.SdlWindow);
+                    if (top.DismissOnOutsideClick)
+                    {
+                        if (top.Root is MenuElement { ParentMenu: { } parent })
+                            parent.CloseTree();
+                        else
+                            PopupHost.Pop(session.SdlWindow);
+                    }
                     continue;
                 }
                 session.PressedOn = hovered?.ResolvedId;
@@ -150,6 +159,8 @@ public static class Interaction
         Element? hoverEffective = captureLock is not null
             ? FindIn(root, top, captureLock) ?? hovered
             : hovered;
+        if (session.SdlWindow != IntPtr.Zero && !pressed && !released)
+            MenuElement.UpdateWindowHover(session.SdlWindow, hoverEffective?.ResolvedId, raw.Mouse, pressed);
         return new InputState(
             raw.Mouse, leftDown, pressed, released, hoverEffective,
             HoveredId: hoverEffective?.ResolvedId,
@@ -161,5 +172,9 @@ public static class Interaction
     /// <summary>id 定位:声明树优先,栈顶浮层树兜底(D5 —— 浮层内捕获/悬停锁定的 Find 路径;
     /// top 为 null 时即既有 TreeWalk.Find 单树语义)。</summary>
     static Element? FindIn(Element root, Popup? top, string? id) =>
-        TreeWalk.Find(root, id) ?? (top is not null ? TreeWalk.Find(top.Root, id) : null);
+        TreeWalk.Find(root, id)
+        ?? (top is not null
+            ? TreeWalk.Find(top.Root, id)
+                ?? (top.Root is MenuElement { ParentMenu: { } pm } ? TreeWalk.Find(pm, id) : null)
+            : null);
 }
