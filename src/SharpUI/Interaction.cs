@@ -55,9 +55,12 @@ public readonly record struct InputState(
     public static readonly InputState Empty = new(new PointF(-1f, -1f), false, false, false, null);
 }
 
-/// <summary>每窗输入会话(T6 多窗):按下目标/捕获者/点击账本/键盘激活队列按窗口隔离,取代 Interaction 静态字段。</summary>
+/// <summary>每窗输入会话(T6 多窗):按下目标/捕获者/点击账本/键盘激活队列按窗口隔离,取代 Interaction 静态字段。
+/// D5:SdlWindow 为该窗 SDL 句柄(App.CreateWindow 接线)—— Update 据此接 PopupHost 浮层命中优先与
+/// 外点消费;缺省 IntPtr.Zero = 无浮层耦合(纯单测模式,既有语义不变)。</summary>
 public sealed class InputSession
 {
+    internal IntPtr SdlWindow;
     internal string? PressedOn;   // 按下瞬间的命中元素稳定 id;点击 = 按下与松开同 id(规格书 D10)
     internal string? CapturedId;  // 捕获中的元素稳定 id(T2 捕获原语);null=无 —— LeftUp 释放,新 LeftDown 覆盖
     internal readonly List<string> Clicks = new();
@@ -85,7 +88,10 @@ public static class Interaction
         // App.Run 恒以上帧树(构建时已 Assign)调 Update,生产路径此行零命中。
         if (root.ResolvedId is null) IdResolver.Assign(root);
         bool pressed = false, released = false;
-        Element? hovered = root.HitTest(raw.Mouse);
+        // D5 浮层命中优先:栈顶浮层独占命中 —— 命中浮层元素即浮层元素;未命中即 null(声明树与下层浮层
+        // 整体屏蔽,模态语义)。top 为帧首快照:帧内外点 Pop 后本帧语义不变(弹层当帧不"复活")。
+        Popup? top = session.SdlWindow != IntPtr.Zero ? PopupHost.TopOf(session.SdlWindow) : null;
+        Element? hovered = top is not null ? top.Root.HitTest(raw.Mouse) : root.HitTest(raw.Mouse);
         string? capturedAtFrameStart = session.CapturedId;   // 上帧遗留捕获(跨帧拖拽)
         session.Clicks.Clear();
         if (session.Queued.Count > 0)   // 键盘激活(裁定#18):先清当帧再并入上一帧队列
@@ -98,6 +104,15 @@ public static class Interaction
             if (down)
             {
                 pressed = true;
+                if (top is not null && hovered is null)
+                {
+                    // D5 浮层外按压:按压被消费(无激活目标、不清焦点 —— 模态陷阱语义,焦点留守浮层围栏内),
+                    // 可-dismiss 浮层即 Pop(OnClosed 收尾);不 dismiss 的浮层(模态 Dialog)仅吞按压。
+                    session.PressedOn = null;
+                    session.CapturedId = null;
+                    if (top.DismissOnOutsideClick) PopupHost.Pop(session.SdlWindow);
+                    continue;
+                }
                 session.PressedOn = hovered?.ResolvedId;
                 // 捕获原语(T2):新 LeftDown 覆盖旧捕获 —— 命中声明可捕获的命中目标即改写,否则清空
                 session.CapturedId = hovered is { CapturesDrag: true, ResolvedId: not null }
@@ -112,9 +127,10 @@ public static class Interaction
             {
                 released = true;
                 // 捕获旁路(T2):松开路由到捕获元素(拖出元素外松开仍属捕获者,HitTest 路径旁路);
-                // 非捕获元素维持空间命中。捕获者若已不在本帧树(重建后移除)则回退空间命中。
+                // 非捕获元素维持空间命中。捕获者若已不在本帧树(重建后移除)则回退空间命中
+                // (D5:浮层内捕获者经栈顶浮层树兜底查找)。
                 Element? routed = session.CapturedId is not null
-                    ? TreeWalk.Find(root, session.CapturedId) ?? hovered
+                    ? FindIn(root, top, session.CapturedId) ?? hovered
                     : hovered;
                 if (session.PressedOn is not null && routed?.ResolvedId == session.PressedOn
                     && routed is IActivatable act && act.CanActivate)
@@ -132,7 +148,7 @@ public static class Interaction
         string? captureLock = session.CapturedId
             ?? (released && !pressed ? capturedAtFrameStart : null);
         Element? hoverEffective = captureLock is not null
-            ? TreeWalk.Find(root, captureLock) ?? hovered
+            ? FindIn(root, top, captureLock) ?? hovered
             : hovered;
         return new InputState(
             raw.Mouse, leftDown, pressed, released, hoverEffective,
@@ -141,4 +157,9 @@ public static class Interaction
             WheelDelta: raw.WheelDelta,
             CapturedId: session.CapturedId);
     }
+
+    /// <summary>id 定位:声明树优先,栈顶浮层树兜底(D5 —— 浮层内捕获/悬停锁定的 Find 路径;
+    /// top 为 null 时即既有 TreeWalk.Find 单树语义)。</summary>
+    static Element? FindIn(Element root, Popup? top, string? id) =>
+        TreeWalk.Find(root, id) ?? (top is not null ? TreeWalk.Find(top.Root, id) : null);
 }

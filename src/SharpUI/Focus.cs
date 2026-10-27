@@ -2,16 +2,39 @@ namespace SharpUI;
 
 /// <summary>焦点管理:焦点以稳定 id 跨帧保持;Tab 序为 DOM 序(父先子后)。
 /// Radio 分组(T2):每帧 Register 时按 groupName 分桶(组表跨帧复用免重分配,列表每帧清空重注册 ——
-/// 组内恒为当帧元素,与 _byId 同帧一致);FocusManager 每窗一份,分组天然按窗隔离(不落 RadioElement 静态注册表)。</summary>
+/// 组内恒为当帧元素,与 _byId 同帧一致);FocusManager 每窗一份,分组天然按窗隔离(不落 RadioElement 静态注册表)。
+/// D5 焦点围栏(F-2):PushScope/PopScope 栈式围栏 —— Tab/方向键导航与激活限制在栈顶 scope 子树内,
+/// 出栈归还 push 时焦点;围栏跨帧存活(BeginFrame 只清当帧注册表,不清围栏栈)。</summary>
 public sealed class FocusManager
 {
     readonly List<string> _tabOrder = new();
     readonly Dictionary<string, Element> _byId = new();
     readonly Dictionary<string, List<RadioElement>> _radioGroups = new();
+    readonly List<(string ScopeId, string? SavedFocusId)> _scopes = new();
     string? _focusedId;
+
+    /// <summary>本窗 SDL 句柄(D5):Esc 优先路由该窗浮层栈(PopupHost 按窗服务定位);
+    /// App.CreateWindow 接线,缺省 IntPtr.Zero = 无浮层耦合(纯单测模式,既有语义不变)。</summary>
+    internal IntPtr SdlWindow;
 
     public string? FocusedId => _focusedId;
     public Element? FocusedThisFrame { get; private set; }
+
+    /// <summary>栈顶围栏 scope(null=无围栏;D5 F-2)。</summary>
+    public string? ActiveScopeId => _scopes.Count > 0 ? _scopes[^1].ScopeId : null;
+
+    /// <summary>围栏入栈(D5 F-2):此后 Tab/方向键导航与激活限制在 scopeId 子树内(scopeId 须为该子树根的
+    /// 稳定 id —— 浮层根经 PopupHost.Push 指派 "/键" 形态,子树 id 天然带 scopeId+"/" 前缀);
+    /// push 时 FocusedId 记账,PopScope 归还。打开浮层的控件在 Push 后自行 SetFocus 入圈。</summary>
+    public void PushScope(string scopeId) => _scopes.Add((scopeId, _focusedId));
+
+    /// <summary>围栏出栈:焦点归还 push 时的 FocusedId(打开者);空栈为无操作。</summary>
+    public void PopScope()
+    {
+        if (_scopes.Count == 0) return;
+        _focusedId = _scopes[^1].SavedFocusId;
+        _scopes.RemoveAt(_scopes.Count - 1);
+    }
 
     public void BeginFrame()
     {
@@ -53,12 +76,18 @@ public sealed class FocusManager
                     Cycle(ke.Shift);
                     break;
                 case Key.Escape:
-                    _focusedId = null;
+                    // D5:浮层栈非空时 Esc 先服务浮层 —— 弹自顶向下首个非 Tooltip;不落清焦点
+                    //(焦点归还由浮层 OnClosed 内的 PopScope 收尾,T2/T3 接线)。栈空保持既有语义:
+                    // 清焦点。Esc 无其他消费者(TextEditing/TextField 无 Esc 分支,已核实无冲突)。
+                    if (SdlWindow != IntPtr.Zero && PopupHost.Count(SdlWindow) > 0)
+                        PopupHost.PopTopNonTooltip(SdlWindow);
+                    else
+                        _focusedId = null;
                     break;
                 case Key.Enter:
                 case Key.KeypadEnter:
                 case Key.Space:
-                    if (_focusedId is not null
+                    if (_focusedId is not null && InsideActiveScope(_focusedId)
                         && _byId.TryGetValue(_focusedId, out Element? e)
                         && e is IActivatable act && act.CanActivate)
                     {
@@ -88,21 +117,63 @@ public sealed class FocusManager
 
     /// <summary>方向键/Home/End 微调路由(T3):聚焦元素实现 IKeySteerable(SliderElement)则先予消费,
     /// 返回 true 即短路 —— Slider 聚焦时方向键调值不移焦;非 Steerable(Radio/Button/Checkbox)保持
-    /// 原语义(Radio 组内环移 / 无操作)。禁用元素由 HandleKey 自行拒消费(返回 false)。</summary>
+    /// 原语义(Radio 组内环移 / 无操作)。禁用元素由 HandleKey 自行拒消费(返回 false)。
+    /// D5:聚焦元素在围栏外时拒微调(围栏外交互整体屏蔽,返回 false 落到同样被栅的 CycleRadio)。</summary>
     bool SteerFocused(Key key)
     {
-        if (_focusedId is null || !_byId.TryGetValue(_focusedId, out Element? e)) return false;
+        if (_focusedId is null || !InsideActiveScope(_focusedId)
+            || !_byId.TryGetValue(_focusedId, out Element? e)) return false;
         return e is IKeySteerable steerable && steerable.HandleKey(key);
     }
 
     void Cycle(bool backward)
     {
         if (_tabOrder.Count == 0) return;
+        if (_scopes.Count > 0) { CycleScoped(backward); return; }
         int index = _focusedId is null ? -1 : _tabOrder.IndexOf(_focusedId);
         index = backward
             ? (index <= 0 ? _tabOrder.Count - 1 : index - 1)
             : (index + 1) % _tabOrder.Count;
         _focusedId = _tabOrder[index];
+    }
+
+    /// <summary>围栏内 Tab(D5 F-2):焦点只在栈顶 scope 子树的 Tab 序内环形移动;圈外/无焦时入圈
+    /// (正向=圈首,反向=圈末);圈内无可聚焦元素为无操作。两遍扫描零分配(同帧 Tab 序条目数有限)。</summary>
+    void CycleScoped(bool backward)
+    {
+        string? first = null, last = null;
+        int n = 0, k = -1;
+        for (int i = 0; i < _tabOrder.Count; i++)
+        {
+            string id = _tabOrder[i];
+            if (!InsideActiveScope(id)) continue;
+            first ??= id;
+            last = id;
+            if (id == _focusedId) k = n;
+            n++;
+        }
+        if (n == 0) return;
+        if (k < 0) { _focusedId = backward ? last : first; return; }   // 圈外/无焦 → 入圈
+        if (n == 1) return;                                            // 单项原地
+        int target = backward ? (k == 0 ? n - 1 : k - 1) : (k == n - 1 ? 0 : k + 1);
+        int seen = 0;
+        for (int i = 0; i < _tabOrder.Count; i++)
+        {
+            string id = _tabOrder[i];
+            if (!InsideActiveScope(id)) continue;
+            if (seen++ == target) { _focusedId = id; return; }
+        }
+    }
+
+    /// <summary>id 是否在栈顶围栏 scope 内(无围栏恒 true;scope 根自身=圈):前缀匹配带 "/" 分隔判断,
+    /// 防 "/scope" 误吞 "/scopeX" 形邻;StartsWith+下标查零分配。</summary>
+    bool InsideActiveScope(string? id)
+    {
+        if (_scopes.Count == 0) return true;
+        if (id is null) return false;
+        string scope = _scopes[^1].ScopeId;
+        return id.StartsWith(scope, StringComparison.Ordinal)
+            && (id.Length == scope.Length || id[scope.Length] == '/');
     }
 
     /// <summary>Radio 方向键组内循环(T2):仅聚焦元素为 RadioElement 时消费方向键,焦点在同 groupName 内
@@ -111,7 +182,8 @@ public sealed class FocusManager
     /// 与本库"激活显式化"的 Button 键盘语义一致)。</summary>
     void CycleRadio(bool backward)
     {
-        if (_focusedId is null || !_byId.TryGetValue(_focusedId, out Element? e)
+        if (_focusedId is null || !InsideActiveScope(_focusedId)
+            || !_byId.TryGetValue(_focusedId, out Element? e)
             || e is not RadioElement radio
             || !_radioGroups.TryGetValue(radio.GroupName, out List<RadioElement>? group)
             || group.Count < 2)
