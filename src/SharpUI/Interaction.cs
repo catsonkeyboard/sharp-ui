@@ -29,6 +29,16 @@ internal interface IActivatable
     void InvokeClick();
 }
 
+/// <summary>方向键微调控件(T3 Slider):聚焦元素经 FocusManager.HandleKeys 消费 Left/Right/Up/Down/Home/End。
+/// 方向/Home/End 是值微调而非激活语义,不经 IActivatable;接口形状同 IActivatable(ITextFeedable 式内部接口,
+/// 消费点 = FocusManager.HandleKeys 方向/Home/End 分支)。返回 true = 已消费(短路 Radio 组内移焦等
+/// 既有方向键语义)。</summary>
+internal interface IKeySteerable
+{
+    /// <summary>处理一个导航键;返回是否消费(未消费则回落既有路由)。</summary>
+    bool HandleKey(Key key);
+}
+
 public readonly record struct InputState(
     PointF Mouse, bool LeftDown, bool LeftPressed, bool LeftReleased,
     Element? Hovered, Element? Focused = null,

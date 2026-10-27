@@ -41,7 +41,7 @@ public sealed class FocusManager
     public bool IsFocused(Element e) =>
         e.ResolvedId is not null && e.ResolvedId == _focusedId;
 
-    /// <summary>键路由(Tab/Escape/激活/Radio 方向键)。session 为 null 时激活仍触发 InvokeClick,但跳过 QueueClick(纯焦点单测免会话)。</summary>
+    /// <summary>键路由(Tab/Escape/激活/Radio 方向键/Slider 方向微调)。session 为 null 时激活仍触发 InvokeClick,但跳过 QueueClick(纯焦点单测免会话)。</summary>
     public void HandleKeys(ReadOnlySpan<KeyEventData> keys, InputSession? session = null)
     {
         foreach (KeyEventData ke in keys)
@@ -69,17 +69,30 @@ public sealed class FocusManager
                     break;
                 case Key.Left:
                 case Key.Up:
-                    CycleRadio(backward: true);
+                    if (!SteerFocused(ke.Key)) CycleRadio(backward: true);
                     break;
                 case Key.Right:
                 case Key.Down:
-                    CycleRadio(backward: false);
+                    if (!SteerFocused(ke.Key)) CycleRadio(backward: false);
+                    break;
+                case Key.Home:
+                case Key.End:
+                    SteerFocused(ke.Key);   // 方向微调(T3 Slider);非 IKeySteerable 元素无 Home/End 语义(原未处理)
                     break;
             }
         }
         FocusedThisFrame = _focusedId is not null && _byId.TryGetValue(_focusedId, out Element? cur)
             ? cur
             : null;
+    }
+
+    /// <summary>方向键/Home/End 微调路由(T3):聚焦元素实现 IKeySteerable(SliderElement)则先予消费,
+    /// 返回 true 即短路 —— Slider 聚焦时方向键调值不移焦;非 Steerable(Radio/Button/Checkbox)保持
+    /// 原语义(Radio 组内环移 / 无操作)。禁用元素由 HandleKey 自行拒消费(返回 false)。</summary>
+    bool SteerFocused(Key key)
+    {
+        if (_focusedId is null || !_byId.TryGetValue(_focusedId, out Element? e)) return false;
+        return e is IKeySteerable steerable && steerable.HandleKey(key);
     }
 
     void Cycle(bool backward)

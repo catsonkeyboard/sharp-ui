@@ -28,6 +28,11 @@ public static class Ui
     public static RadioElement Radio(string label, string groupName, bool isSelected, Action? onSelected) =>
         new(label, groupName, isSelected, onSelected);
 
+    /// <summary>滑块(T3):拖拽捕获/轨道点击就位续拖/键盘微调(±step、Home/End);.Range 链式启用双 thumb
+    /// 区间,.Vertical 纵向(上=大);值态由调用方持有,回调报钳制+吸附后的新值(仅变化触发)。</summary>
+    public static SliderElement Slider(float min, float max, float value, Action<float> onChanged) =>
+        new(min, max, value, onChanged);
+
     /// <summary>竖向滚动容器(D19);与 Container 同构,但 new ScrollElement(默认 Vertical)。</summary>
     public static ScrollElement Scroll(params Element?[] children)
     {
