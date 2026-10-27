@@ -87,9 +87,13 @@ public class SliderTests
     [Fact]
     public void UiDsl_Slider_ConstructsElement()
     {
-        SliderElement s = Ui.Slider(0f, 100f, 50f, null);
+        SliderElement s = Ui.Slider(0f, 10f, 5f);             // M-a: 省略 onChanged 默认 null
         Assert.IsType<SliderElement>(s);
         Assert.True(s.Focusable);                             // 默认入焦点序
+
+        var rig = new Rig(() => Ui.Slider(0f, 10f, 5f));      // 无回调拖拽与键盘交互不抛
+        rig.Frame(new PointF(XOf(8f, 0f, 10f), 10f), new[] { true });
+        rig.KeyFrame(Key.Right);
     }
 
     // ---- 拖拽(捕获消费面)----

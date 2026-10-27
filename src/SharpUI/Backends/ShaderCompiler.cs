@@ -55,7 +55,7 @@ internal static class ShaderCompiler
     static string ReadBlobString(IntPtr blob)
     {
         byte[] bytes = ReadBlobBytes(blob);
-        return bytes.Length == 0 ? "" : Encoding.UTF8.GetString(bytes);
+        return bytes.Length == 0 ? "" : Encoding.Latin1.GetString(bytes);   // M-g: 单字节 1:1 映射,AOT 零引包,非 ASCII 不抛不丢
     }
 
     static void ReleaseBlob(IntPtr blob)

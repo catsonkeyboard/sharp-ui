@@ -91,40 +91,52 @@ public class SelectTests
     public void Click_OpensMenu_AnchoredAtFrame_CurrentItemHighlighted()
     {
         (AppWindow w, IntPtr h) = Window(1);
-        (PanelElement root, SelectElement sel) = Declared(w);
+        try
+        {
+            (PanelElement root, SelectElement sel) = Declared(w);
 
-        Click(w, root, Center(sel));
+            Click(w, root, Center(sel));
 
-        Assert.Equal(1, PopupHost.Count(h));
-        Popup p = PopupHost.StackOf(h)[0];
-        Assert.Equal(PopupKind.Menu, p.Kind);
-        Assert.Equal(sel.Frame, p.AnchorRect);                     // 锚=自身 Frame(菜单贴底缘弹出)
-        Assert.Equal(p.Root.ResolvedId, w.Focus.ActiveScopeId);    // 焦点围栏=菜单子树
-        MenuElement menu = (MenuElement)p.Root;
-        Assert.True(w.Focus.IsFocused(menu.Items[1]));             // 当前项高亮(初始焦点=selectedIndex,非首项)
-        Assert.False(w.Focus.IsFocused(menu.Items[0]));
-        Cleanup(h);
+            Assert.Equal(1, PopupHost.Count(h));
+            Popup p = PopupHost.StackOf(h)[0];
+            Assert.Equal(PopupKind.Menu, p.Kind);
+            Assert.Equal(sel.Frame, p.AnchorRect);                     // 锚=自身 Frame(菜单贴底缘弹出)
+            Assert.Equal(p.Root.ResolvedId, w.Focus.ActiveScopeId);    // 焦点围栏=菜单子树
+            MenuElement menu = (MenuElement)p.Root;
+            Assert.True(w.Focus.IsFocused(menu.Items[1]));             // 当前项高亮(初始焦点=selectedIndex,非首项)
+            Assert.False(w.Focus.IsFocused(menu.Items[0]));
+        }
+        finally
+        {
+            Cleanup(h);
+        }
     }
 
     [Fact]
     public void Keyboard_EnterAndSpace_OpenMenu_FocusOnCurrentItem()
     {
         (AppWindow w, IntPtr h) = Window(2);
-        (PanelElement root, SelectElement sel) = Declared(w);
+        try
+        {
+            (PanelElement root, SelectElement sel) = Declared(w);
 
-        w.Focus.HandleKeys(new[] { new KeyEventData(Key.Enter, true, false) }, w.Session);
-        Assert.Equal(1, PopupHost.Count(h));                       // Enter 打开
-        MenuElement menu = (MenuElement)PopupHost.StackOf(h)[0].Root;
-        Assert.True(w.Focus.IsFocused(menu.Items[1]));
+            w.Focus.HandleKeys(new[] { new KeyEventData(Key.Enter, true, false) }, w.Session);
+            Assert.Equal(1, PopupHost.Count(h));                       // Enter 打开
+            MenuElement menu = (MenuElement)PopupHost.StackOf(h)[0].Root;
+            Assert.True(w.Focus.IsFocused(menu.Items[1]));
 
-        w.Focus.HandleKeys(new[] { new KeyEventData(Key.Escape, true, false) });
-        Assert.Equal(0, PopupHost.Count(h));                       // Esc 关闭
-        Assert.True(w.Focus.IsFocused(sel));                       // 焦点归还 Select
+            w.Focus.HandleKeys(new[] { new KeyEventData(Key.Escape, true, false) });
+            Assert.Equal(0, PopupHost.Count(h));                       // Esc 关闭
+            Assert.True(w.Focus.IsFocused(sel));                       // 焦点归还 Select
 
-        ComposeFrame(w, root);                                     // 关闭后重注册(围栏已出栈)
-        w.Focus.HandleKeys(new[] { new KeyEventData(Key.Space, true, false) }, w.Session);
-        Assert.Equal(1, PopupHost.Count(h));                       // Space 同为打开语义
-        Cleanup(h);
+            ComposeFrame(w, root);                                     // 关闭后重注册(围栏已出栈)
+            w.Focus.HandleKeys(new[] { new KeyEventData(Key.Space, true, false) }, w.Session);
+            Assert.Equal(1, PopupHost.Count(h));                       // Space 同为打开语义
+        }
+        finally
+        {
+            Cleanup(h);
+        }
     }
 
     /// <summary>I-1 终审回归:镜像 App.Run 真实帧序(C-2 每帧重建树)的键盘开菜单 —— 锚必须取 Select
@@ -136,39 +148,45 @@ public class SelectTests
     public void KeyboardOpen_RunFrameOrder_MenuAnchoredAtArrangedFrameBottom()
     {
         (AppWindow w, IntPtr h) = Window(10);
-        PanelElement Frame(out SelectElement sel)
+        try
         {
-            sel = Ui.Select(new[] { "small", "medium", "large" }, 1, static _ => { });
-            sel.Key = "size";                                    // 稳定键:FocusedId 跨帧(C-2 重建)
-            PanelElement root = Ui.Column(new Spacer(new SizeF(0, 40)), sel);   // 前置让位:锚 Y>0 缺陷可判
-            root.Style.CrossAlign = CrossAxisAlignment.Stretch;
-            IdResolver.Assign(root);
-            return root;
+            PanelElement Frame(out SelectElement sel)
+            {
+                sel = Ui.Select(new[] { "small", "medium", "large" }, 1, static _ => { });
+                sel.Key = "size";                                    // 稳定键:FocusedId 跨帧(C-2 重建)
+                PanelElement root = Ui.Column(new Spacer(new SizeF(0, 40)), sel);   // 前置让位:锚 Y>0 缺陷可判
+                root.Style.CrossAlign = CrossAxisAlignment.Stretch;
+                IdResolver.Assign(root);
+                return root;
+            }
+
+            // 帧 N-1(App.Run 序):Arrange 后 Tab 聚焦 Select
+            PanelElement r0 = Frame(out SelectElement s0);
+            w.Focus.BeginFrame();
+            TreeWalk.Register(r0, w.Focus);
+            LayoutEngine.Arrange(r0, new RectF(0, 0, 200, 260));
+            w.Focus.HandleKeys(new[] { new KeyEventData(Key.Tab, true, false) });
+            w.LastTree = r0;
+            Assert.True(w.Focus.IsFocused(s0));                      // 前置:焦点已落 Select
+
+            // 帧 N(App.Run 序):Arrange 后 Enter 键盘开菜单
+            PanelElement root = Frame(out SelectElement sel);
+            w.Focus.BeginFrame();
+            TreeWalk.Register(root, w.Focus);
+            LayoutEngine.Arrange(root, new RectF(0, 0, 200, 260));
+            w.Focus.HandleKeys(new[] { new KeyEventData(Key.Enter, true, false) }, w.Session);
+
+            Assert.Equal(1, PopupHost.Count(h));
+            Popup p = PopupHost.StackOf(h)[0];
+            Assert.Equal(PopupKind.Menu, p.Kind);
+            Assert.Equal(sel.Frame, p.AnchorRect);                   // 锚=排布后 Frame(激活回调当帧几何)
+            Assert.True(p.AnchorRect.Y > 0 && p.AnchorRect.Height > 0);   // 非未排布默认 (0,0,0,0)
+            Assert.Equal(p.AnchorRect.Bottom, p.Root.Frame.Y);       // 菜单定格于锚下缘(Show 时 Arrange)
         }
-
-        // 帧 N-1(App.Run 序):Arrange 后 Tab 聚焦 Select
-        PanelElement r0 = Frame(out SelectElement s0);
-        w.Focus.BeginFrame();
-        TreeWalk.Register(r0, w.Focus);
-        LayoutEngine.Arrange(r0, new RectF(0, 0, 200, 260));
-        w.Focus.HandleKeys(new[] { new KeyEventData(Key.Tab, true, false) });
-        w.LastTree = r0;
-        Assert.True(w.Focus.IsFocused(s0));                      // 前置:焦点已落 Select
-
-        // 帧 N(App.Run 序):Arrange 后 Enter 键盘开菜单
-        PanelElement root = Frame(out SelectElement sel);
-        w.Focus.BeginFrame();
-        TreeWalk.Register(root, w.Focus);
-        LayoutEngine.Arrange(root, new RectF(0, 0, 200, 260));
-        w.Focus.HandleKeys(new[] { new KeyEventData(Key.Enter, true, false) }, w.Session);
-
-        Assert.Equal(1, PopupHost.Count(h));
-        Popup p = PopupHost.StackOf(h)[0];
-        Assert.Equal(PopupKind.Menu, p.Kind);
-        Assert.Equal(sel.Frame, p.AnchorRect);                   // 锚=排布后 Frame(激活回调当帧几何)
-        Assert.True(p.AnchorRect.Y > 0 && p.AnchorRect.Height > 0);   // 非未排布默认 (0,0,0,0)
-        Assert.Equal(p.AnchorRect.Bottom, p.Root.Frame.Y);       // 菜单定格于锚下缘(Show 时 Arrange)
-        Cleanup(h);
+        finally
+        {
+            Cleanup(h);
+        }
     }
 
     // ---- 选择(菜单内指针/键盘)----
@@ -177,17 +195,24 @@ public class SelectTests
     public void MenuItem_Click_FiresChanged_ClosesMenu_RestoresFocus()
     {
         (AppWindow w, IntPtr h) = Window(3);
-        int changed = -1, calls = 0;
-        (PanelElement root, SelectElement sel) = Declared(w, i => { changed = i; calls++; });
-        Click(w, root, Center(sel));
-        MenuElement menu = (MenuElement)PopupHost.StackOf(h)[0].Root;
+        try
+        {
+            int changed = -1, calls = 0;
+            (PanelElement root, SelectElement sel) = Declared(w, i => { changed = i; calls++; });
+            Click(w, root, Center(sel));
+            MenuElement menu = (MenuElement)PopupHost.StackOf(h)[0].Root;
 
-        Click(w, root, Center(menu.Items[2]));                     // 指针点选第 3 项
+            Click(w, root, Center(menu.Items[2]));                     // 指针点选第 3 项
 
-        Assert.Equal(2, changed);                                  // 回调报新下标
-        Assert.Equal(1, calls);
-        Assert.Equal(0, PopupHost.Count(h));                       // 选中即关菜单
-        Assert.True(w.Focus.IsFocused(sel));                       // 围栏归还
+            Assert.Equal(2, changed);                                  // 回调报新下标
+            Assert.Equal(1, calls);
+            Assert.Equal(0, PopupHost.Count(h));                       // 选中即关菜单
+            Assert.True(w.Focus.IsFocused(sel));                       // 围栏归还
+        }
+        finally
+        {
+            Cleanup(h);
+        }
     }
 
     /// <summary>I-2 终审:点选"当前项"(selectedIndex=1 点第 1 项)不触发 onChanged —— 无变化即无回调
@@ -196,42 +221,55 @@ public class SelectTests
     public void MenuItem_ClickCurrentItem_NoCallback_MenuCloses()
     {
         (AppWindow w, IntPtr h) = Window(11);
-        int calls = 0;
-        (PanelElement root, SelectElement sel) = Declared(w, _ => calls++);
-        Click(w, root, Center(sel));
-        MenuElement menu = (MenuElement)PopupHost.StackOf(h)[0].Root;
+        try
+        {
+            int calls = 0;
+            (PanelElement root, SelectElement sel) = Declared(w, _ => calls++);
+            Click(w, root, Center(sel));
+            MenuElement menu = (MenuElement)PopupHost.StackOf(h)[0].Root;
 
-        Click(w, root, Center(menu.Items[1]));                     // 点选当前项(无变化)
+            Click(w, root, Center(menu.Items[1]));                     // 点选当前项(无变化)
 
-        Assert.Equal(0, calls);                                    // 不回调
-        Assert.Equal(0, PopupHost.Count(h));                       // 菜单照关
-        Assert.True(w.Focus.IsFocused(sel));                       // 焦点照还
-        Cleanup(h);
+            Assert.Equal(0, calls);                                    // 不回调
+            Assert.Equal(0, PopupHost.Count(h));                       // 菜单照关
+            Assert.True(w.Focus.IsFocused(sel));                       // 焦点照还
+        }
+        finally
+        {
+            Cleanup(h);
+        }
     }
 
     [Fact]
     public void MenuOpen_ArrowsNavigate_EnterConfirms_SelectionChanged()
     {
         (AppWindow w, IntPtr h) = Window(4);
-        int changed = -1, calls = 0;
-        (PanelElement root, SelectElement sel) = Declared(w, i => { changed = i; calls++; }, selected: 0);
-        w.Focus.HandleKeys(new[] { new KeyEventData(Key.Enter, true, false) }, w.Session);
-        ComposeFrame(w, root);
-        MenuElement menu = (MenuElement)PopupHost.StackOf(h)[0].Root;
-        Assert.True(w.Focus.IsFocused(menu.Items[0]));
+        try
+        {
+            int changed = -1, calls = 0;
+            (PanelElement root, SelectElement sel) = Declared(w, i => { changed = i; calls++; }, selected: 0);
+            w.Focus.HandleKeys(new[] { new KeyEventData(Key.Enter, true, false) }, w.Session);
+            ComposeFrame(w, root);
+            MenuElement menu = (MenuElement)PopupHost.StackOf(h)[0].Root;
+            Assert.True(w.Focus.IsFocused(menu.Items[0]));
 
-        w.Focus.HandleKeys(new[] { new KeyEventData(Key.Down, true, false) });   // 开菜单时:菜单内导航
-        Assert.True(w.Focus.IsFocused(menu.Items[1]));
-        w.Focus.HandleKeys(new[] { new KeyEventData(Key.Down, true, false) });
-        Assert.True(w.Focus.IsFocused(menu.Items[2]));
-        w.Focus.HandleKeys(new[] { new KeyEventData(Key.Up, true, false) });
-        Assert.True(w.Focus.IsFocused(menu.Items[1]));
+            w.Focus.HandleKeys(new[] { new KeyEventData(Key.Down, true, false) });   // 开菜单时:菜单内导航
+            Assert.True(w.Focus.IsFocused(menu.Items[1]));
+            w.Focus.HandleKeys(new[] { new KeyEventData(Key.Down, true, false) });
+            Assert.True(w.Focus.IsFocused(menu.Items[2]));
+            w.Focus.HandleKeys(new[] { new KeyEventData(Key.Up, true, false) });
+            Assert.True(w.Focus.IsFocused(menu.Items[1]));
 
-        w.Focus.HandleKeys(new[] { new KeyEventData(Key.Enter, true, false) }, w.Session);
-        Assert.Equal(1, changed);                                  // Enter 确认聚焦项
-        Assert.Equal(1, calls);
-        Assert.Equal(0, PopupHost.Count(h));                       // 确认即关
-        Assert.True(w.Focus.IsFocused(sel));
+            w.Focus.HandleKeys(new[] { new KeyEventData(Key.Enter, true, false) }, w.Session);
+            Assert.Equal(1, changed);                                  // Enter 确认聚焦项
+            Assert.Equal(1, calls);
+            Assert.Equal(0, PopupHost.Count(h));                       // 确认即关
+            Assert.True(w.Focus.IsFocused(sel));
+        }
+        finally
+        {
+            Cleanup(h);
+        }
     }
 
     // ---- 直接换选(菜单未开)----
@@ -240,33 +278,40 @@ public class SelectTests
     public void MenuClosed_Arrows_ChangeSelection_Directly_ClampedNoWrap()
     {
         (AppWindow w, IntPtr h) = Window(5);
-        List<int> changes = new();
-        int current = 1;
-        // 回调式 C-2:选中态存应用侧,App.Run 帧序 = 每键一帧、按新值重建树(同实例重按与
-        // Checkbox/Slider 同为陈旧值语义,框架契约外)——帧循环镜像生产路径。
-        SelectElement Frame()
+        try
         {
-            SelectElement sel = Ui.Select(new[] { "small", "medium", "large" }, current,
-                i => { current = i; changes.Add(i); });
-            PanelElement root = Ui.Column(sel);
-            root.Style.CrossAlign = CrossAxisAlignment.Stretch;
-            LayoutEngine.Arrange(root, new RectF(0, 0, 200, 260));
-            IdResolver.Assign(root);
-            w.Focus.BeginFrame();
-            TreeWalk.Register(root, w.Focus);
-            w.Focus.SetFocus(sel);
-            return sel;
-        }
+            List<int> changes = new();
+            int current = 1;
+            // 回调式 C-2:选中态存应用侧,App.Run 帧序 = 每键一帧、按新值重建树(同实例重按与
+            // Checkbox/Slider 同为陈旧值语义,框架契约外)——帧循环镜像生产路径。
+            SelectElement Frame()
+            {
+                SelectElement sel = Ui.Select(new[] { "small", "medium", "large" }, current,
+                    i => { current = i; changes.Add(i); });
+                PanelElement root = Ui.Column(sel);
+                root.Style.CrossAlign = CrossAxisAlignment.Stretch;
+                LayoutEngine.Arrange(root, new RectF(0, 0, 200, 260));
+                IdResolver.Assign(root);
+                w.Focus.BeginFrame();
+                TreeWalk.Register(root, w.Focus);
+                w.Focus.SetFocus(sel);
+                return sel;
+            }
 
-        foreach (Key k in new[] { Key.Down, Key.Down, Key.Down,   // 1→2;2 钳制;再钳制
-                                  Key.Up, Key.Up, Key.Up, Key.Up })   // 2→1→0;0 钳制;再钳制
+            foreach (Key k in new[] { Key.Down, Key.Down, Key.Down,   // 1→2;2 钳制;再钳制
+                                      Key.Up, Key.Up, Key.Up, Key.Up })   // 2→1→0;0 钳制;再钳制
+            {
+                Frame();
+                w.Focus.HandleKeys(new[] { new KeyEventData(k, true, false) });
+            }
+
+            Assert.Equal(new[] { 2, 1, 0 }, changes);                  // ±1 换选,钳制不环移,仅变化回调
+            Assert.Equal(0, PopupHost.Count(h));                       // 方向键直接换选不开菜单
+        }
+        finally
         {
-            Frame();
-            w.Focus.HandleKeys(new[] { new KeyEventData(k, true, false) });
+            Cleanup(h);
         }
-
-        Assert.Equal(new[] { 2, 1, 0 }, changes);                  // ±1 换选,钳制不环移,仅变化回调
-        Assert.Equal(0, PopupHost.Count(h));                       // 方向键直接换选不开菜单
     }
 
     // ---- Esc 语义 ----
@@ -275,21 +320,28 @@ public class SelectTests
     public void Escape_NeverOpensMenu_ClosesOpenMenuWithoutCallback()
     {
         (AppWindow w, IntPtr h) = Window(6);
-        int calls = 0;
-        (PanelElement root, SelectElement sel) = Declared(w, _ => calls++);
+        try
+        {
+            int calls = 0;
+            (PanelElement root, SelectElement sel) = Declared(w, _ => calls++);
 
-        w.Focus.HandleKeys(new[] { new KeyEventData(Key.Escape, true, false) });
-        Assert.Equal(0, PopupHost.Count(h));                       // 菜单未开:Esc 不开菜单(清焦点既有语义)
-        Assert.Null(w.Focus.FocusedId);
+            w.Focus.HandleKeys(new[] { new KeyEventData(Key.Escape, true, false) });
+            Assert.Equal(0, PopupHost.Count(h));                       // 菜单未开:Esc 不开菜单(清焦点既有语义)
+            Assert.Null(w.Focus.FocusedId);
 
-        ComposeFrame(w, root);
-        w.Focus.SetFocus(sel);
-        w.Focus.HandleKeys(new[] { new KeyEventData(Key.Enter, true, false) }, w.Session);
-        Assert.Equal(1, PopupHost.Count(h));
-        w.Focus.HandleKeys(new[] { new KeyEventData(Key.Escape, true, false) });
-        Assert.Equal(0, PopupHost.Count(h));                       // 菜单开着:Esc 只关菜单
-        Assert.Equal(0, calls);                                    // 不触发选中回调
-        Assert.True(w.Focus.IsFocused(sel));                       // 焦点归还
+            ComposeFrame(w, root);
+            w.Focus.SetFocus(sel);
+            w.Focus.HandleKeys(new[] { new KeyEventData(Key.Enter, true, false) }, w.Session);
+            Assert.Equal(1, PopupHost.Count(h));
+            w.Focus.HandleKeys(new[] { new KeyEventData(Key.Escape, true, false) });
+            Assert.Equal(0, PopupHost.Count(h));                       // 菜单开着:Esc 只关菜单
+            Assert.Equal(0, calls);                                    // 不触发选中回调
+            Assert.True(w.Focus.IsFocused(sel));                       // 焦点归还
+        }
+        finally
+        {
+            Cleanup(h);
+        }
     }
 
     // ---- 禁用 ----
@@ -298,20 +350,27 @@ public class SelectTests
     public void Disabled_RejectsPointer_Click_Enter_Arrows()
     {
         (AppWindow w, IntPtr h) = Window(7);
-        int calls = 0;
-        (PanelElement root, SelectElement sel) = Declared(w, _ => calls++);
-        sel.Enabled = false;
+        try
+        {
+            int calls = 0;
+            (PanelElement root, SelectElement sel) = Declared(w, _ => calls++);
+            sel.Enabled = false;
 
-        Click(w, root, Center(sel));                               // 指针:不激活不打开
-        Assert.Equal(0, PopupHost.Count(h));
+            Click(w, root, Center(sel));                               // 指针:不激活不打开
+            Assert.Equal(0, PopupHost.Count(h));
 
-        w.Focus.SetFocus(sel);                                     // 程序性聚焦下键盘同样拒激活
-        w.Focus.HandleKeys(new[] { new KeyEventData(Key.Enter, true, false) }, w.Session);
-        w.Focus.HandleKeys(new[] { new KeyEventData(Key.Space, true, false) }, w.Session);
-        w.Focus.HandleKeys(new[] { new KeyEventData(Key.Down, true, false) });
-        w.Focus.HandleKeys(new[] { new KeyEventData(Key.Up, true, false) });
-        Assert.Equal(0, PopupHost.Count(h));
-        Assert.Equal(0, calls);                                    // 回调账本一致不记
+            w.Focus.SetFocus(sel);                                     // 程序性聚焦下键盘同样拒激活
+            w.Focus.HandleKeys(new[] { new KeyEventData(Key.Enter, true, false) }, w.Session);
+            w.Focus.HandleKeys(new[] { new KeyEventData(Key.Space, true, false) }, w.Session);
+            w.Focus.HandleKeys(new[] { new KeyEventData(Key.Down, true, false) });
+            w.Focus.HandleKeys(new[] { new KeyEventData(Key.Up, true, false) });
+            Assert.Equal(0, PopupHost.Count(h));
+            Assert.Equal(0, calls);                                    // 回调账本一致不记
+        }
+        finally
+        {
+            Cleanup(h);
+        }
     }
 
     // ---- 接线诚实性 ----
@@ -320,57 +379,95 @@ public class SelectTests
     public void UnregisteredElement_ClickOpen_Throws()
     {
         (AppWindow w, IntPtr h) = Window(8);
-        SelectElement sel = Ui.Select(new[] { "a", "b" }, 0, static _ => { });
-        PanelElement root = Ui.Column(sel);
-        root.Style.CrossAlign = CrossAxisAlignment.Stretch;
-        LayoutEngine.Arrange(root, new RectF(0, 0, 200, 260));
-        IdResolver.Assign(root);                                   // 有 id、未注册(无 OwnerFocus 接线)
+        try
+        {
+            SelectElement sel = Ui.Select(new[] { "a", "b" }, 0, static _ => { });
+            PanelElement root = Ui.Column(sel);
+            root.Style.CrossAlign = CrossAxisAlignment.Stretch;
+            LayoutEngine.Arrange(root, new RectF(0, 0, 200, 260));
+            IdResolver.Assign(root);                                   // 有 id、未注册(无 OwnerFocus 接线)
 
-        Assert.Throws<InvalidOperationException>(() => Click(w, root, Center(sel)));   // 拒绝静默降级
-        Cleanup(h);
+            Assert.Throws<InvalidOperationException>(() => Click(w, root, Center(sel)));   // 拒绝静默降级
+        }
+        finally
+        {
+            Cleanup(h);
+        }
     }
 
-    // ---- demo 段承证(About 弹窗 + Tooltip 载体 + Select 三项回显;状态断言,桌面锁定降级)----
+    // ---- demo 段承证(About 弹窗 + Tooltip 载体 + Select 三项回显 + Menu 一级 SubMenu 回显;状态断言,桌面锁定降级)----
 
     [Fact]
     public void DemoSegment_AboutDialog_TooltipCarrier_SelectRoundtrip()
     {
         (AppWindow w, IntPtr h) = Window(9);
-        int sizeIndex = 1, dialogOpens = 0;
-        string[] sizes = { "small", "medium", "large" };
-        ButtonElement about = new("About", () =>
+        try
         {
-            dialogOpens++;
-            w.ShowDialog("About", p => p.Add(Ui.Text("SharpUI D5: Dialog/Tooltip/Menu/Select").Size(14f)),
-                new DialogButton("OK", () => { }) { IsDefault = true, IsCancel = true });
-        });
-        CheckboxElement cb = Ui.Checkbox("check", false, null).Tooltip("提示文本");
-        SelectElement Select() => Ui.Select(sizes, sizeIndex, i => sizeIndex = i);
-        SelectElement sel = Select();
-        PanelElement root = Ui.Column(about, cb, sel);
-        root.Style.CrossAlign = CrossAxisAlignment.Stretch;
-        LayoutEngine.Arrange(root, new RectF(0, 0, 200, 260));
-        IdResolver.Assign(root);
+            int sizeIndex = 1, dialogOpens = 0, count = 0;
+            string menuPicked = "none";
+            string[] sizes = { "small", "medium", "large" };
+            ButtonElement about = new("About", () =>
+            {
+                dialogOpens++;
+                w.ShowDialog("About", p => p.Add(Ui.Text("SharpUI D5: Dialog/Tooltip/Menu/Select").Size(14f)),
+                    new DialogButton("OK", () => { }) { IsDefault = true, IsCancel = true });
+            });
+            ButtonElement menuBtn = null!;
+            menuBtn = new ButtonElement("Menu", () =>
+                w.ShowMenu(menuBtn.Frame,
+                    new MenuItem("+10", () => { count += 10; menuPicked = "+10"; }),
+                    new MenuSeparator(),
+                    new MenuSub("More",
+                        new MenuItem("+100", () => { count += 100; menuPicked = "+100"; }),
+                        new MenuItem("Zero", () => { count = 0; menuPicked = "Zero"; }))));
+            CheckboxElement cb = Ui.Checkbox("check", false, null).Tooltip("提示文本");
+            SelectElement Select() => Ui.Select(sizes, sizeIndex, i => sizeIndex = i);
+            SelectElement sel = Select();
+            PanelElement root = Ui.Column(about, menuBtn, cb, sel);
+            root.Style.CrossAlign = CrossAxisAlignment.Stretch;
+            LayoutEngine.Arrange(root, new RectF(0, 0, 200, 260));
+            IdResolver.Assign(root);
 
-        ComposeFrame(w, root);
-        Click(w, root, Center(about));                             // About → ShowDialog
-        Assert.Equal(1, dialogOpens);
-        Assert.Equal(1, PopupHost.Count(h));
-        Assert.Equal(PopupKind.Dialog, PopupHost.StackOf(h)[0].Kind);
-        w.Focus.HandleKeys(new[] { new KeyEventData(Key.Escape, true, false) });   // IsCancel/IsDefault OK 按钮可 Esc
-        Assert.Equal(0, PopupHost.Count(h));
+            ComposeFrame(w, root);
+            Click(w, root, Center(about));                             // About → ShowDialog
+            Assert.Equal(1, dialogOpens);
+            Assert.Equal(1, PopupHost.Count(h));
+            Assert.Equal(PopupKind.Dialog, PopupHost.StackOf(h)[0].Kind);
+            w.Focus.HandleKeys(new[] { new KeyEventData(Key.Escape, true, false) });   // IsCancel/IsDefault OK 按钮可 Esc
+            Assert.Equal(0, PopupHost.Count(h));
 
-        ComposeFrame(w, root);
-        Click(w, root, Center(sel));                               // Select 点击 → 菜单
-        Assert.Equal(1, PopupHost.Count(h));
-        MenuElement menu = (MenuElement)PopupHost.StackOf(h)[0].Root;
-        Click(w, root, Center(menu.Items[2]));                     // 选 "large"
-        Assert.Equal(2, sizeIndex);
+            ComposeFrame(w, root);
+            Click(w, root, Center(sel));                               // Select 点击 → 菜单
+            Assert.Equal(1, PopupHost.Count(h));
+            MenuElement menu = (MenuElement)PopupHost.StackOf(h)[0].Root;
+            Click(w, root, Center(menu.Items[2]));                     // 选 "large"
+            Assert.Equal(2, sizeIndex);
 
-        SelectElement rebuilt = Select();                          // 树每帧重建:回显新选中项
-        Assert.Equal("large", ((TextElement)rebuilt.Children![0]).Text);
-        Assert.Equal("提示文本", cb.TooltipText);                  // Tooltip 载体在树内(悬停 0.5s 弹提示)
-        Cleanup(h);
+            SelectElement rebuilt = Select();                          // 树每帧重建:回显新选中项
+            Assert.Equal("large", ((TextElement)rebuilt.Children![0]).Text);
+            Assert.Equal("提示文本", cb.TooltipText);                  // Tooltip 载体在树内(悬停 0.5s 弹提示)
+
+            // D6 SubMenu 演示路径承证:Menu 按钮打开主菜单 → 展开 More 一级子菜单 → 激活 "+100" 连带收起整棵菜单树并回显状态
+            ComposeFrame(w, root);
+            Click(w, root, Center(menuBtn));
+            Assert.Equal(1, PopupHost.Count(h));
+            MenuElement mainMenu = (MenuElement)PopupHost.StackOf(h)[0].Root;
+            Assert.Equal(2, mainMenu.Items.Count);                     // "+10" 与 "More"(MenuSeparator 不入导航项)
+            Assert.True(mainMenu.Items[1].IsSubMenu);
+
+            ComposeFrame(w, root);
+            Click(w, root, Center(mainMenu.Items[1]));                 // 点击 "More" 展开一级子菜单
+            Assert.Equal(2, PopupHost.Count(h));
+            MenuElement subMenu = (MenuElement)PopupHost.StackOf(h)[1].Root;
+            Click(w, root, Center(subMenu.Items[0]));                  // 点击子菜单项 "+100"
+            Assert.Equal(0, PopupHost.Count(h));                       // 子菜单叶子激活连带收起父菜单
+            Assert.Equal(100, count);
+            Assert.Equal("+100", menuPicked);
+        }
+        finally
+        {
+            Cleanup(h);
+        }
     }
 
     // ---- 视觉(headless D3D11 像素读回;真实图集度量)----

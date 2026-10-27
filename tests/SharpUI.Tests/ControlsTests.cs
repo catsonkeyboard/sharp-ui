@@ -94,6 +94,31 @@ public class ControlsTests
     }
 
     [Fact]
+    public void Capture_NewDownOnSecondCapturable_OverridesToSecond()
+    {
+        var a = new SliderProbe { Key = "a", IsHitTarget = true };
+        var b = new SliderProbe { Key = "b", IsHitTarget = true };
+        a.Style.FlexBasis = 40f;
+        b.Style.FlexBasis = 40f;
+        PanelElement root = Ui.Column(a, b);
+        root.Style.CrossAlign = CrossAxisAlignment.Stretch;
+        LayoutEngine.Arrange(root, new RectF(0, 0, 100, 80));
+        IdResolver.Assign(root);
+        var s = new InputSession();
+
+        InputState downA = Interaction.Update(s, root, new RawInput(new PointF(50, 20), new[] { true }));
+        Assert.Equal(a.ResolvedId, downA.CapturedId);         // Down 于 A → CapturedId == A
+
+        InputState downB = Interaction.Update(s, root, new RawInput(new PointF(50, 60), new[] { true }, LeftHeld: true));
+        Assert.Equal(b.ResolvedId, downB.CapturedId);         // 不松开直接新帧 Down 于 B → CapturedId 改写为 B
+
+        InputState up = Interaction.Update(s, root, new RawInput(new PointF(50, 60), new[] { false }));
+        Assert.Equal(0, a.Clicks);
+        Assert.Equal(1, b.Clicks);
+        Assert.Null(up.CapturedId);
+    }
+
+    [Fact]
     public void NonCapturingControl_DoesNotCapture_OffElementUpNoToggle()
     {
         int toggles = 0;
@@ -186,15 +211,27 @@ public class ControlsTests
     public void Radio_ClickAlreadySelected_NoCallback()
     {
         int selected = 0;
-        RadioElement r1 = new("一", "g", true, () => selected++);
+        RadioElement r1 = new("一", "g", true, () => selected++) { Key = "r1" };
+        (PanelElement root, FocusManager focus) = FrameWith(r1);
         LayoutEngine.Arrange(r1, new RectF(0, 0, 100, 40));
-        IdResolver.Assign(r1);
         var s = new InputSession();
 
+        Assert.False(r1.CanActivate);                         // M-b: 已选中 Radio CanActivate=false
         Interaction.Update(s, r1, new RawInput(new PointF(50, 20), new[] { true }));
-        Interaction.Update(s, r1, new RawInput(new PointF(50, 20), new[] { false }));
+        InputState up = Interaction.Update(s, r1, new RawInput(new PointF(50, 20), new[] { false }));
 
         Assert.Equal(0, selected);                            // 已选中再点 = 值未变化,不回调
+        Assert.Null(up.ClickedIds);                           // M-b: ClickedIds 账本与回调一致不记
+
+        focus.SetFocus(r1);
+        focus.HandleKeys(new[]
+        {
+            new KeyEventData(Key.Space, true, false),
+            new KeyEventData(Key.Enter, true, false),
+        }, s);
+        InputState nextFrame = Interaction.Update(s, root, new RawInput(new PointF(-1, -1), Array.Empty<bool>()));
+        Assert.Equal(0, selected);                            // Space/Enter 同样不触发回调
+        Assert.Null(nextFrame.ClickedIds);                    // 键盘队列同样不入 ClickedIds 账本
     }
 
     [Fact]

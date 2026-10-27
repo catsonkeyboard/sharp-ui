@@ -1,3 +1,4 @@
+using System.Reflection;
 using SharpUI;
 using SharpUI.Backends;
 
@@ -317,40 +318,60 @@ public class DialogTests
     public void Close_WithMenuStackedAbove_RemovesOnlyDialog_MenuAndItsFenceIntact()
     {
         (AppWindow w, IntPtr h) = Window(11);
-        (PanelElement root, ButtonElement opener) = Declared(() => { });
-        OpenerFrame(w, root, opener);
+        FocusManager.BindWindow(h, w.Focus);
+        try
+        {
+            (PanelElement root, ButtonElement opener) = Declared(() => { });
+            OpenerFrame(w, root, opener);
 
-        w.ShowDialog("设置", p => { }, new DialogButton("确定", () => { }));
-        ButtonElement firstDialogButton = ButtonsOf(PopupHost.StackOf(h)[0].Root)[0];   // Menu push 时的记账焦点
-        // Menu 叠于 Dialog(T3 前替身:Menu 类裸浮层 + 自持围栏;真 MenuElement 见 MenuTests)
-        int menuClosed = 0;
-        ButtonElement item = new("项", () => { });
-        PanelElement menuRoot = Ui.Column(item);
-        menuRoot.Style.CrossAlign = CrossAxisAlignment.Stretch;
-        LayoutEngine.Arrange(menuRoot, new RectF(0, 100, 200, 40));
-        Popup menu = new(menuRoot, new RectF(0, 100, 200, 40), PopupKind.Menu)
-        { OnClosed = () => { menuClosed++; w.Focus.PopScopeOf(menuRoot.ResolvedId!); } };
-        PopupHost.Push(h, menu);
-        w.Focus.PushScope(menuRoot.ResolvedId!);
-        ComposeFrame(w, root);
-        w.Focus.SetFocus(item);
+            w.ShowDialog("设置", p => { }, new DialogButton("确定", () => { }));
+            ButtonElement firstDialogButton = ButtonsOf(PopupHost.StackOf(h)[0].Root)[0];   // Menu push 时的记账焦点
+            // M-f①: 真 MenuElement 叠于 Dialog 之上(经 Ui.ShowMenu 打开并入围栏)
+            Ui.ShowMenu(h, new RectF(0, 100, 80, 24), new MenuItem("项", () => { }));
+            Popup menu = PopupHost.StackOf(h)[1];
+            MenuElement menuRoot = Assert.IsType<MenuElement>(menu.Root);
+            ComposeFrame(w, root);
+            Assert.True(w.Focus.IsFocused(menuRoot.Items[0]));
 
-        DialogElement dlg = (DialogElement)PopupHost.StackOf(h)[0].Root;
-        dlg.Close();                                       // 程序化关闭:栈顶是 Menu,须按身份移除
+            DialogElement dlg = (DialogElement)PopupHost.StackOf(h)[0].Root;
+            dlg.Close();                                       // 程序化关闭:栈顶是 Menu,须按身份移除
 
-        Assert.Equal(1, PopupHost.Count(h));               // 只移除 Dialog
-        Assert.Same(menu, PopupHost.StackOf(h)[0]);        // Menu 完好(未被误弹)
-        Assert.Equal(0, menuClosed);
-        Assert.Equal(menuRoot.ResolvedId, w.Focus.ActiveScopeId);   // Menu 围栏仍在(Dialog 的已出栈)
-        Assert.True(w.Focus.IsFocused(opener));            // Dialog 按身份归还打开者焦点
+            Assert.Equal(1, PopupHost.Count(h));               // 只移除 Dialog
+            Assert.Same(menu, PopupHost.StackOf(h)[0]);        // 真 MenuElement 完好(未被误弹)
+            Assert.Equal(menuRoot.ResolvedId, w.Focus.ActiveScopeId);   // Menu 围栏仍在(Dialog 的已出栈)
+            Assert.True(w.Focus.IsFocused(opener));            // Dialog 按身份归还打开者焦点
 
-        w.Focus.HandleKeys(new[] { new KeyEventData(SharpUI.Key.Escape, true, false) });
-        Assert.Equal(0, PopupHost.Count(h));               // Esc → 栈顶非 Tooltip = Menu
-        Assert.Equal(1, menuClosed);
-        // 既知边缘:Menu 归还其 push 时记账(已死 Dialog 内元素)= 陈旧 id;次帧未注册 → FocusedThisFrame
-        // 为 null,Tab 从未知 id 自愈入圈。栈身份正确性为承重断言(上方),焦点陈旧归还不影响交互正确性。
-        Assert.Equal(firstDialogButton.ResolvedId, w.Focus.FocusedId);
-        PopupHost.Clear(h);
+            w.Focus.HandleKeys(new[] { new KeyEventData(SharpUI.Key.Escape, true, false) });
+            Assert.Equal(0, PopupHost.Count(h));               // Esc → 栈顶非 Tooltip = Menu
+            // 既知边缘:Menu 归还其 push 时记账(已死 Dialog 内元素)= 陈旧 id;次帧未注册 → FocusedThisFrame
+            // 为 null,Tab 从未知 id 自愈入圈。栈身份正确性为承重断言(上方),焦点陈旧归还不影响交互正确性。
+            Assert.Equal(firstDialogButton.ResolvedId, w.Focus.FocusedId);
+        }
+        finally
+        {
+            PopupHost.Clear(h);
+            FocusManager.UnbindWindow(h);
+        }
+    }
+
+    [Fact]
+    public void App_ShowDialog_ZeroWindows_ThrowsInvalidOperationException()
+    {
+        App app = (App)Activator.CreateInstance(
+            typeof(App),
+            BindingFlags.Instance | BindingFlags.NonPublic,
+            binder: null,
+            args: new object[] { new AppWindow() },
+            culture: null)!;
+        app.Windows.Clear();
+
+        var ex1 = Assert.Throws<InvalidOperationException>(() =>
+            app.ShowDialog("提示", p => { }, new DialogButton("确定", () => { })));
+        Assert.Equal("App 无活动窗口,无法 ShowDialog", ex1.Message);
+
+        var ex2 = Assert.Throws<InvalidOperationException>(() =>
+            app.ShowDialog("提示", p => { }, dismissOnMaskClick: false, new DialogButton("确定", () => { })));
+        Assert.Equal("App 无活动窗口,无法 ShowDialog", ex2.Message);
     }
 
     // ---- 视觉(headless D3D11 像素读回;空 label 隔离字体面)----

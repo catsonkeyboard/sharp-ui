@@ -21,6 +21,7 @@ public class ShaderCompilerTests
     public void Compile_SyntaxError_ReturnsErrorMessage()
     {
         (byte[] code, string? err) = ShaderCompiler.Compile("float4 garbage(", "VSMain", "vs_5_0");
+        Assert.Empty(code);
         Assert.NotNull(err);
         Assert.Contains("error", err, StringComparison.OrdinalIgnoreCase);
     }

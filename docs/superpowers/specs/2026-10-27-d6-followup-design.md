@@ -30,3 +30,16 @@ IME 视觉补验(`artifacts/ime-test/ime-regression-v3.ps1`,桌面解锁后)—�
 ## 验收
 
 - 379 → ~400+ 全绿;Counter demo 菜单加一级 SubMenu 演示;AOT 复测;裁定#47(D6 收尾定稿)。
+
+## 实施纪要(2026-10-27 收官,裁定#47)
+
+- **Task 1 (`65cdddc`, 386/386)**:
+  - `Ui.ShowMenu` 与 `AppWindow.ShowMenu` 增加可选 `SizeF? screenSize` 重载(`FocusManager.ScreenSize` 由 `App.CreateWindow`/`App.Run` 同步更新;Select 自动复用);底部溢出上翻 `Math.Max(0, anchor.Y - menuH)`、右侧溢出左钳 `Math.Max(0, screen.Width - menuW)`。
+  - `MenuSub(string label, params object?[] children)` 落地(2 层上限,超层抛 `InvalidOperationException`);父项尾绘 `▶` 箭头(两段 quad 结构体运算,Draw 零新分配);悬停 `0.2s`(`Anim.Now` 墙钟)+ `Right`/`Enter`/点击双触发展开,切兄弟父项先按身份 `Remove` 旧子菜单;`Left`/`Esc` 仅关子菜单归还父项焦点,子菜单叶子激活调 `CloseTree()` 连带收起父菜单。
+- **Task 2 (`448818e`, 389/389)**:
+  - 三套“定位所属窗”收敛为 `FocusManager.SdlWindow` 唯一真相(`BindWindow` 同步置位、`UnbindWindow` 清零;`Element.OwnerFocus` 为声明式唯一入口;`_byWindow` 仅留作命令式 `Ui.ShowMenu(IntPtr)` 入口桥;`DialogElement`/`MenuElement` 移除冗余 `_owner` 字段)。
+  - `Scroll.Dispatch(declarationRoot, in input, sdlWindow)` 接入 `PopupHost.TopNonTooltipOf(sdlWindow)` 模态栅门:栈顶有 Dialog/Menu 时仅对栈顶浮层根分发滚轮(或模态吞掉),Tooltip 穿透滚声明树;`App.Run` 与单测共用同一入口。
+  - `SliderElement` Range 模式聚焦按 `Space` 翻转 `StateStore` 活动 thumb `0 ↔ 1`(单 thumb 不消费 Space),聚焦/捕获时活动 thumb 外扩 1px 底层圆角矩形绘 `0x93C5FD` 亮色描边(`ActiveKey` 按 `ResolvedId` 引用判等缓存,Draw 零新分配)。
+- **Task 3 (收官, 392/392)**:
+  - M-a..M-g 七项打磨批全数落码:`Ui.Slider` 可空回调默认 `null`、`RadioElement.CanActivate => Enabled && !_isSelected`、`UploadBenchTests.cs` 1/8/32 区段微基线入库(`SHARPUI_RUN_BENCH=1` 门控,常态早退)、`FocusManager._radioGroups` 组名键留存注释、`Capture_NewDownOnSecondCapturable_OverridesToSecond` 单测、`DialogTests` 真 `MenuElement` 叠栈 + `SelectTests` 全量 `try/finally { Cleanup(h); }` + `App.ShowDialog` 零窗守卫、`ShaderCompiler.ReadBlobString` 改 `Encoding.Latin1`。
+  - Counter demo 新增 `Menu` 按钮(含 `+10`、`MenuSeparator`、`MenuSub("More", "+100", "Zero")` 与状态回显),`SelectTests.DemoSegment` 覆盖完整 SubMenu 演示路径;AOT 发布产物 `Counter.exe` `2,798,592` B、总部署面 `6,263,296` B (`≈5.97 MiB`,≤8MB 持续达成);主规格书 `docs/superpowers/specs/2026-10-25-sharp-ui-spec.md` 记录裁定#47。

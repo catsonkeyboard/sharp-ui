@@ -12,6 +12,9 @@ internal sealed class CounterState
 
     // D5 浮层段状态(裁定#46):Select 选中下标(三项)
     public int SizeIndex = 1;
+
+    // D6 菜单/子菜单演示回显状态(裁定#47)
+    public string MenuPicked = "none";
 }
 
 internal static class Program
@@ -21,8 +24,17 @@ internal static class Program
     private static int Main()
     {
         var state = new CounterState();
-        App app = null!;   // 先声明后赋值:About 回调捕获 app(CS0165);回调仅在 Run 后的点击中触发
-        app = App.Create("SharpUI Counter", 900, 960, () => Column(
+        App app = null!;   // 先声明后赋值:About/Menu 回调捕获 app(CS0165);回调仅在 Run 后的点击中触发
+        app = App.Create("SharpUI Counter", 900, 960, () =>
+        {
+            ButtonElement menuBtn = null!;
+            menuBtn = new ButtonElement("Menu", () => app.ShowMenu(menuBtn.Frame,
+                new MenuItem("+10", () => { state.Count += 10; state.MenuPicked = "+10"; }),
+                new MenuSeparator(),
+                new MenuSub("More",
+                    new MenuItem("+100", () => { state.Count += 100; state.MenuPicked = "+100"; }),
+                    new MenuItem("Zero", () => { state.Count = 0; state.MenuPicked = "Zero"; }))));
+            return Column(
                 Ui.Text("Counter").Size(28).Bold().Color(0xE8E8EC),
                 Ui.Text(state.Count.ToString()).Size(48).Color(0x7AA2F7),
                 Row(
@@ -41,8 +53,9 @@ internal static class Program
                     new ButtonElement("About", () => app.ShowDialog("About",
                         p => p.Add(Ui.Text("SharpUI D5:Dialog / Tooltip / Menu / Select 浮层全链。").Size(14)),
                         new DialogButton("OK", () => { }) { IsDefault = true, IsCancel = true })),
+                    menuBtn,
                     Ui.Select(Sizes, state.SizeIndex, i => state.SizeIndex = i),
-                    Ui.Text($"size = {Sizes[state.SizeIndex]}").Size(13).Color(0x9AA2B3)
+                    Ui.Text($"size = {Sizes[state.SizeIndex]} | menu = {state.MenuPicked}").Size(13).Color(0x9AA2B3)
                 ).Gap(12f),
                 Ui.Scroll(
                     Enumerable.Range(1, 12).Select(i => (Element)Ui.Text($"line {i}").Size(14).Color(0x9AA2B3)).ToArray()
@@ -56,7 +69,8 @@ internal static class Program
                     ui.Text($"count = {state.Count}", 14, 0x9AA2B3);
                     if (ui.Button("Reset").Clicked()) state.Count = 0;
                 })
-            ).Center().Gap(12f).Padding(24f));
+            ).Center().Gap(12f).Padding(24f);
+        });
         return app.Run();
     }
 }

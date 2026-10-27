@@ -9,6 +9,7 @@ public sealed class FocusManager
 {
     readonly List<string> _tabOrder = new();
     readonly Dictionary<string, Element> _byId = new();
+    // 组名键进程期留存(静态组名下非增长,同 OwnerModule 先例;动态拼组名场景须留意)
     readonly Dictionary<string, List<RadioElement>> _radioGroups = new();
     readonly List<(string ScopeId, string? SavedFocusId)> _scopes = new();
     string? _focusedId;

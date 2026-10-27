@@ -58,8 +58,8 @@ public sealed class RadioElement : PanelElement, IActivatable
         set { _enabled = value; Focusable = value; }
     }
 
-    /// <summary>IActivatable:禁用拒激活(指针/键盘统一门,账本与回调一致)。</summary>
-    public bool CanActivate => _enabled;
+    /// <summary>IActivatable:禁用或已选中拒激活(指针/键盘统一门,已选中再点 ClickedIds 账本与回调一致不记 —— 闭合 D4 终审 M5)。</summary>
+    public bool CanActivate => Enabled && !_isSelected;
 
     /// <summary>激活语义:未选中时触发 onSelected 一次;已选中再激活 = 值未变化,不回调。</summary>
     public void InvokeClick()

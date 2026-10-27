@@ -424,6 +424,16 @@ public sealed class MenuElement : PanelElement
 /// (App.CreateWindow 接线;未注册句柄抛 InvalidOperationException —— 围栏不可定位时拒绝静默降级)。</summary>
 public static class MenuExtensions
 {
+    public static void ShowMenu(this App app, RectF anchorRect, params object?[] items) =>
+        ShowMenu(app, anchorRect, screenSize: null, items);
+
+    public static void ShowMenu(this App app, RectF anchorRect, SizeF? screenSize, params object?[] items)
+    {
+        if (app.Windows.Count == 0)
+            throw new InvalidOperationException("App 无活动窗口,无法 ShowMenu");
+        ShowMenu(app.Windows[0], anchorRect, screenSize, items);
+    }
+
     public static void ShowMenu(this AppWindow window, RectF anchorRect, params object?[] items) =>
         Show(window.Focus, anchorRect, items, screenSize: window.Focus.ScreenSize);
 

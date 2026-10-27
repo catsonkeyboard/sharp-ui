@@ -30,7 +30,7 @@ public static class Ui
 
     /// <summary>滑块(T3):拖拽捕获/轨道点击就位续拖/键盘微调(±step、Home/End);.Range 链式启用双 thumb
     /// 区间,.Vertical 纵向(上=大);值态由调用方持有,回调报钳制+吸附后的新值(仅变化触发)。</summary>
-    public static SliderElement Slider(float min, float max, float value, Action<float> onChanged) =>
+    public static SliderElement Slider(float min, float max, float value, Action<float>? onChanged = null) =>
         new(min, max, value, onChanged);
 
     /// <summary>下拉选择器(T4):按钮形态(当前项文本+下拉箭头);点击/聚焦+Enter/Space 打开锚定菜单

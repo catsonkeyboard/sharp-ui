@@ -125,12 +125,20 @@ public sealed class DialogElement : PanelElement, IActivatable
 public static class DialogExtensions
 {
     public static void ShowDialog(this App app, string title, Action<PanelElement> build,
-        params DialogButton[] buttons) =>
+        params DialogButton[] buttons)
+    {
+        if (app.Windows.Count == 0)
+            throw new InvalidOperationException("App 无活动窗口,无法 ShowDialog");
         ShowDialog(app.Windows[0], title, build, dismissOnMaskClick: true, buttons);
+    }
 
     public static void ShowDialog(this App app, string title, Action<PanelElement> build,
-        bool dismissOnMaskClick, params DialogButton[] buttons) =>
+        bool dismissOnMaskClick, params DialogButton[] buttons)
+    {
+        if (app.Windows.Count == 0)
+            throw new InvalidOperationException("App 无活动窗口,无法 ShowDialog");
         ShowDialog(app.Windows[0], title, build, dismissOnMaskClick, buttons);
+    }
 
     /// <summary>打开模态 Dialog:遮罩+居中面板(标题+内容槽+按钮行);焦点围栏入栈(PushScope),
     /// 关闭(Pop → OnClosed)PopScope 归还打开者焦点;初始焦点=Dialog 内首个可聚焦元素(DOM 序,
