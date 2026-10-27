@@ -126,4 +126,66 @@ public static class Shaders
             outColor = vColor * texture(uAtlas, vTexCoord);
         }
         """;
+
+    /// <summary>跨平台 T2:Apple Metal(MSL)顶点源。与 GLSL330/HLSL 版语义等价:Y 上行 NDC
+    /// (1.0 - y/h*2,Metal NDC 同 +1=窗口上沿,无 GL 式窗口原点差异吸收需求)、预乘白×顶点色。
+    /// MSL 形态:metal_stdlib + using namespace metal;vertex 函数修饰;[[stage_in]] 顶点描述符
+    /// 装配(T3 的 MTLVertexDescriptor attributes 0/1/2 对位 [[attribute(N)]]);uniform 走
+    /// constant 地址空间引用 [[buffer(0)]](T3 setVertexBuffer:offset:atIndex: 槽 0,上载 ≥8 字节
+    /// float2)。简报原稿 VsIn.texCoord 行 "[[attribute(1);" 缺 "]" 系笔误(同类先例:M3e T3
+    /// GLSL Y 方向笔误),按 MSL 语法修正为 [[attribute(1)]];结构与括号配平由 ObjectiveCTests
+    /// 锁定。源码字符串经 newLibraryWithSource:options:error: 运行时编译 —— 本机无 Metal
+    /// 编译器,编译/链接验证待 CI macOS(标注:待 CI)。</summary>
+    public const string MslVertexSource = """
+        #include <metal_stdlib>
+        using namespace metal;
+
+        struct VsIn
+        {
+            float2 position [[attribute(0)]];
+            float2 texCoord [[attribute(1)]];
+            float4 color    [[attribute(2)]];
+        };
+
+        struct VsOut
+        {
+            float4 position [[position]];
+            float2 texCoord;
+            float4 color;
+        };
+
+        vertex VsOut vs_main(VsIn in [[stage_in]], constant float2& uSize [[buffer(0)]])
+        {
+            VsOut o;
+            o.position = float4(in.position.x / uSize.x * 2.0 - 1.0,
+                                1.0 - in.position.y / uSize.y * 2.0, 0.0, 1.0);
+            o.texCoord = in.texCoord;
+            o.color = in.color;
+            return o;
+        }
+        """;
+
+    /// <summary>跨平台 T2:Apple Metal(MSL)片段源。atlas [[texture(0)]] / 采样器
+    /// [[sampler(0)]](T3 setFragmentTexture:atIndex:0 + setFragmentSamplerState:atIndex:0);
+    /// 预乘顶点色 × 纹理,混合 (One, OneMinusSourceAlpha) 由 Metal 后端管线状态落地(对位
+    /// D3D11/GL 两后端)。attribute(2) 顶点色在 T3 侧以 UChar4 normalized 顶点格式供入
+    /// (HLSL COLOR0 先例:内存 RGBA 直读)。编译验证待 CI macOS。</summary>
+    public const string MslFragmentSource = """
+        #include <metal_stdlib>
+        using namespace metal;
+
+        struct VsOut
+        {
+            float4 position [[position]];
+            float2 texCoord;
+            float4 color;
+        };
+
+        fragment float4 fs_main(VsOut in [[stage_in]],
+                                texture2d<float> atlas [[texture(0)]],
+                                sampler atlasSampler [[sampler(0)]])
+        {
+            return in.color * atlas.sample(atlasSampler, in.texCoord);
+        }
+        """;
 }
