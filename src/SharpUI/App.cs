@@ -107,14 +107,16 @@ public sealed class App
                 InputState input = w.LastTree is not null
                     ? Interaction.Update(w.Session, w.LastTree, in raw, w.Focus)
                     : InputState.Empty;
+                // 浮层开启时滚轮仍路由声明树(D5 已知语义,模态破口,接线点见 T2 报告;Dialog 内 Scroll 场景启用前须栅)。
                 if (input.WheelDelta != 0f && w.LastTree is not null) Scroll.Dispatch(w.LastTree, in input);
                 FeedFocused(w.LastTree, w.Focus, w.Focus.SdlWindow, in raw);   // T2 已知项 A:浮层栈根兜底(Dialog 内 TextField)
                 UiContext.CurrentInput = input;
 
                 Element root = w.Render();
                 IdResolver.Assign(root);
-                // D5 浮层栈帧首快照(Update 外点 Pop 已生效):注册/绘制都以本帧此点为准;
-                // 帧中回调 Push 的新浮层下一帧纳入(同 liveCount 惯例),帧中 Esc-Pop 以 min 钳制不越界。
+                // D5 浮层栈帧中快照(Update 后取):指针路径的 Push 发生于 Interaction.Update(本快照前)
+                // —— 当帧即注册并绘制;Update 的外点 Pop 亦已生效。注册/绘制都以本帧此点为准;
+                // 键盘路径(HandleKeys 在快照后)Push 的新浮层下一帧纳入(同 liveCount 惯例),帧中 Esc-Pop 以 min 钳制不越界。
                 IReadOnlyList<Popup> popups = PopupHost.StackOf(w.Window.SdlWindowHandle);
                 int popupCount = popups.Count;
                 w.Focus.BeginFrame();
@@ -123,8 +125,6 @@ public sealed class App
                     TreeWalk.Register(popups[p].Root, w.Focus);
                 if (popupCount == 0 && w.Focus.FocusedId is null && FindAutoFocus(root) is { } af)   // IME 热修自测:声明式启动聚焦(浮层打开时不抢焦点入声明树)
                     w.Focus.SetFocus(af);
-                w.Focus.HandleKeys(raw.KeyEvents ?? Array.Empty<KeyEventData>(), w.Session);
-                input = input with { Focused = w.Focus.FocusedThisFrame, FocusedId = w.Focus.FocusedId };
 
                 SizeF screen = new(w.Window.Width / w.Scale, w.Window.Height / w.Scale);
                 RectF screenRect = new(0, 0, screen.Width, screen.Height);
@@ -134,6 +134,13 @@ public sealed class App
                 for (int p = 0; p < popupCount && p < popups.Count; p++)
                     if (popups[p].Kind == PopupKind.Dialog)
                         LayoutEngine.Arrange(popups[p].Root, screenRect);
+                // 键路由(D5 终审 I-1):置于 Arrange 后 —— 键盘激活回调(Select 开菜单锚=自身 Frame 等)
+                // 消费当帧已排布几何,根治"激活回调取未排布 Frame(0,0,0,0)"类缺陷。四项先后依赖已复验:
+                // FeedFocused 字符流仍在前(LastTree,相对位置不变)/ QueueClick 账本下一帧 Update 收账,
+                // 帧内位置无关 / TextInput 仍在其后(FocusedThisFrame 新鲜且坐标已排布)/ auto-focus 门
+                // 仍在 Register 后、键路由前。仍处于浮层快照后:键盘路径 Push 的浮层下一帧注册绘制。
+                w.Focus.HandleKeys(raw.KeyEvents ?? Array.Empty<KeyEventData>(), w.Session);
+                input = input with { Focused = w.Focus.FocusedThisFrame, FocusedId = w.Focus.FocusedId };
                 TextFieldElement? tf = w.Focus.FocusedThisFrame as TextFieldElement;   // IME 热修:Arrange 后帧坐标已就绪
                 w.TextInput.Update(w.Window.SdlWindowHandle, tf?.ResolvedId,
                     tf is null || tf.CursorRectLogical() is not { } cr ? null

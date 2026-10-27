@@ -128,6 +128,50 @@ public class SelectTests
         Cleanup(h);
     }
 
+    /// <summary>I-1 终审回归:镜像 App.Run 真实帧序(C-2 每帧重建树)的键盘开菜单 —— 锚必须取 Select
+    /// 排布后的 Frame 下缘,而非未排布默认 (0,0,0,0)(激活回调消费自身 Frame,Menu 类浮层 Push 后定格
+    /// 不重排)。帧序镜像 App.Run 逐行(修复后序,须与 App.Run 同步改):构建→Assign→BeginFrame→
+    /// Register→Arrange→HandleKeys;两帧驱动 —— 帧 N-1 经 Tab 聚焦(稳定 Key 跨帧保持 FocusedId),
+    /// 帧 N Enter 激活开菜单。</summary>
+    [Fact]
+    public void KeyboardOpen_RunFrameOrder_MenuAnchoredAtArrangedFrameBottom()
+    {
+        (AppWindow w, IntPtr h) = Window(10);
+        PanelElement Frame(out SelectElement sel)
+        {
+            sel = Ui.Select(new[] { "small", "medium", "large" }, 1, static _ => { });
+            sel.Key = "size";                                    // 稳定键:FocusedId 跨帧(C-2 重建)
+            PanelElement root = Ui.Column(new Spacer(new SizeF(0, 40)), sel);   // 前置让位:锚 Y>0 缺陷可判
+            root.Style.CrossAlign = CrossAxisAlignment.Stretch;
+            IdResolver.Assign(root);
+            return root;
+        }
+
+        // 帧 N-1(App.Run 序):Arrange 后 Tab 聚焦 Select
+        PanelElement r0 = Frame(out SelectElement s0);
+        w.Focus.BeginFrame();
+        TreeWalk.Register(r0, w.Focus);
+        LayoutEngine.Arrange(r0, new RectF(0, 0, 200, 260));
+        w.Focus.HandleKeys(new[] { new KeyEventData(Key.Tab, true, false) });
+        w.LastTree = r0;
+        Assert.True(w.Focus.IsFocused(s0));                      // 前置:焦点已落 Select
+
+        // 帧 N(App.Run 序):Arrange 后 Enter 键盘开菜单
+        PanelElement root = Frame(out SelectElement sel);
+        w.Focus.BeginFrame();
+        TreeWalk.Register(root, w.Focus);
+        LayoutEngine.Arrange(root, new RectF(0, 0, 200, 260));
+        w.Focus.HandleKeys(new[] { new KeyEventData(Key.Enter, true, false) }, w.Session);
+
+        Assert.Equal(1, PopupHost.Count(h));
+        Popup p = PopupHost.StackOf(h)[0];
+        Assert.Equal(PopupKind.Menu, p.Kind);
+        Assert.Equal(sel.Frame, p.AnchorRect);                   // 锚=排布后 Frame(激活回调当帧几何)
+        Assert.True(p.AnchorRect.Y > 0 && p.AnchorRect.Height > 0);   // 非未排布默认 (0,0,0,0)
+        Assert.Equal(p.AnchorRect.Bottom, p.Root.Frame.Y);       // 菜单定格于锚下缘(Show 时 Arrange)
+        Cleanup(h);
+    }
+
     // ---- 选择(菜单内指针/键盘)----
 
     [Fact]
@@ -145,6 +189,25 @@ public class SelectTests
         Assert.Equal(1, calls);
         Assert.Equal(0, PopupHost.Count(h));                       // 选中即关菜单
         Assert.True(w.Focus.IsFocused(sel));                       // 围栏归还
+    }
+
+    /// <summary>I-2 终审:点选"当前项"(selectedIndex=1 点第 1 项)不触发 onChanged —— 无变化即无回调
+    /// (D4 回调纪律);菜单照关、焦点照还。</summary>
+    [Fact]
+    public void MenuItem_ClickCurrentItem_NoCallback_MenuCloses()
+    {
+        (AppWindow w, IntPtr h) = Window(11);
+        int calls = 0;
+        (PanelElement root, SelectElement sel) = Declared(w, _ => calls++);
+        Click(w, root, Center(sel));
+        MenuElement menu = (MenuElement)PopupHost.StackOf(h)[0].Root;
+
+        Click(w, root, Center(menu.Items[1]));                     // 点选当前项(无变化)
+
+        Assert.Equal(0, calls);                                    // 不回调
+        Assert.Equal(0, PopupHost.Count(h));                       // 菜单照关
+        Assert.True(w.Focus.IsFocused(sel));                       // 焦点照还
+        Cleanup(h);
     }
 
     [Fact]

@@ -2,7 +2,7 @@ namespace SharpUI;
 
 /// <summary>下拉选择器(D5 T4):按钮形态(当前项文本 + 右侧 ▼ 箭头图形)。点击/聚焦+Enter/Space
 /// 打开锚定菜单(复用 <see cref="MenuExtensions.Show"/>,锚=自身 Frame,初始焦点=当前项即高亮);
-/// 菜单项激活 → onChanged(新下标) + 关菜单(Esc/外点只关不回调)。
+/// 菜单项激活 → onChanged(新下标) + 关菜单(Esc/外点/点选当前项只关不回调)。
 /// 键盘两路径:菜单未开时方向键直接换选(IKeySteerable,±1 钳制不环移,仅变化回调);开菜单时方向键
 /// 在菜单内导航(既有 MenuElement.Navigate)、Enter 确认聚焦项、Esc 关闭不开菜单。
 /// 选中态由调用方持有(树每帧重建,selectedIndex 参数即当前值,Button/Checkbox 回调式同构)。
@@ -96,7 +96,8 @@ public sealed class SelectElement : PanelElement, IActivatable, IKeySteerable
         _onChanged(next);
     }
 
-    /// <summary>打开下拉菜单:options 逐项映射 MenuItem(OnClick=onChanged(下标)),锚=自身 Frame
+    /// <summary>打开下拉菜单:options 逐项映射 MenuItem(OnClick=onChanged(下标);当前项门 —— 点选
+    /// 未变化的当前项不回调,仅关菜单,D4 回调纪律),锚=自身 Frame
     /// (菜单左上对齐 Frame 底缘),初始焦点=当前项(Select 特有,非首项)。命令式动作,分配自由(T1 惯例)。</summary>
     void Open()
     {
@@ -107,7 +108,7 @@ public sealed class SelectElement : PanelElement, IActivatable, IKeySteerable
         for (int i = 0; i < _options.Length; i++)
         {
             int index = i;                                   // 闭包捕获循环下标
-            items[i] = new MenuItem(_options[index], () => _onChanged(index));
+            items[i] = new MenuItem(_options[index], () => { if (index != _selectedIndex) _onChanged(index); });
         }
         MenuExtensions.Show(focus.SdlWindow, focus, Frame, items, _selectedIndex);
     }
