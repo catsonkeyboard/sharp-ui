@@ -110,7 +110,6 @@ public sealed class CheckboxElement : PanelElement, IActivatable
         float dx = b.X - a.X, dy = b.Y - a.Y;
         float len = MathF.Sqrt(dx * dx + dy * dy);
         float nx = -dy / len * halfWidth, ny = dx / len * halfWidth;
-        var solidUv = new RectF(uv.X, uv.Y, 0f, 0f);
         mesh.AddTriangle(new PointF(a.X + nx, a.Y + ny), new PointF(b.X + nx, b.Y + ny), new PointF(b.X - nx, b.Y - ny), color, uv);
         mesh.AddTriangle(new PointF(a.X + nx, a.Y + ny), new PointF(b.X - nx, b.Y - ny), new PointF(a.X - nx, a.Y - ny), color, uv);
     }

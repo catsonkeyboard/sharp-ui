@@ -58,3 +58,10 @@ rd.xml Dynamic="Required All" 实测无效。处置:M3e 时一并解决(升级 V
 - 产物(排除 *.pdb 可部署部分):Counter.exe 2,693,120 + SDL2.dll 1,702,400(vendored 2.30.8)+ freetype.dll 686,592 + harfbuzz.dll 1,075,712 = **6,157,824 B ≈ 5.87 MiB(6.16 MB)**——较 D3 收官 6,945,792 B ≈ 6.95 MB **−11.3%**;Counter.exe 3,481,088→2,693,120(−788 KB:Veldrid.SDL2 绑定层与 Newtonsoft 出栈,窗口/输入路径全自研后 ILC 产物缩量)。设计验收 ≤8MB 持续达成。
 - 依赖树:`dotnet list examples/Counter/Counter.csproj package --include-transitive` 仅 Microsoft.NETCore.App 层面条目,Newtonsoft.Json/Veldrid.* 零条目。
 - 运行实测(桌面**解锁**环境,目视可用):AOT Counter.exe 前台存活 10s(≥5s 标准),Responding=True,MainWindowTitle "SharpUI Counter",CPU 2.33s/10s(渲染循环实做工作),CloseMainWindow 干净退出 ExitCode=0,stdout/stderr 零输出——无未处理异常退出。**全屏抓屏目视渲染完整可见**(标题/计数/按钮/滚动列表/文本框/Reset 全部正确,artifacts/ime-test/aot-smoke.png;解锁环境无需降级承证,金样本与 T4 harness 继续作为像素级护栏)。
+
+## D4 收官:控件库一期 + 性能债清偿(2026-10-27 Task 5,裁定#44)
+
+`dotnet publish examples/Counter/Counter.csproj -c Release -r win-x64 -p:PublishAot=true` 成功(发布前清空旧 publish 目录防陈旧残留);离线环境仅 NU1900 两条(nuget.org 漏洞数据拉取失败的还原噪声,非漏洞告警),零编译警告、零 NU1903。
+
+- 产物(排除 *.pdb 可部署部分):Counter.exe 2,726,912 + SDL2.dll 1,702,400(vendored 2.30.8)+ freetype.dll 686,592 + harfbuzz.dll 1,075,712 = **6,191,616 B ≈ 5.90 MiB**——较裁定#43 收官 6,157,824 B **+33,792 B(+0.55%,控件面:全部来自 Counter.exe 2,693,120→2,726,912,控件段 IL/产物增量)**;设计验收 ≤8MB 持续达成。
+- 运行实测(桌面锁定,采降级标准:进程存活 + 无未处理异常):AOT Counter.exe 存活 10s(≥5s 标准),Responding=True,MainWindowTitle "SharpUI Counter",CPU 0.80s/10s(渲染循环实做工作),CloseMainWindow 干净退出 ExitCode=0,stdout/stderr 零输出;渲染正确性承证同前节降级逻辑(JIT 同渲染路径冒烟 + headless D3D11 读回像素断言,含 D4 控件交互前后四帧)。

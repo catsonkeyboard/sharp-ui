@@ -107,7 +107,7 @@ public class D3D11ContextTests
         ctx.BeginFrame(0.07f, 0.07f, 0.08f, 1f);
         ctx.SetScissor(0, 0, 64, 64);
         ctx.Draw(verts, 8, idx, 6, 0);
-        ctx.Draw(verts, 8, idx, 6, 6);   // startIndex>0:错误实现会读到 scratch 陈旧尾段
+        ctx.Draw(verts, 8, idx, 6, 6);   // startIndex>0:D4 起 WRITE_DISCARD 每绘制整槽改名,scratch 机制已不存在;两区段读回仍为分段重定基的有效回归护栏
         byte[] px = ctx.ReadBackMainFramebuffer();
         Assert.Equal(new byte[] { 255, 255, 255, 255 }, Pixel(px, 16, 16));   // 段 A 就位
         Assert.Equal(new byte[] { 0, 0, 255, 255 }, Pixel(px, 48, 48));       // 段 B 就位(BGRA:纯红)
