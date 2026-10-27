@@ -32,7 +32,7 @@ public sealed class TextAtlas : IDisposable
     {
         _ctx = ctx;
         _scale = scale;
-        _fonts = new FontLibrary(fallbackFamilies ?? new[] { "Microsoft YaHei", "Segoe UI Emoji" });
+        _fonts = new FontLibrary(fallbackFamilies);   // null → FontLibrary 平台默认回退链(Windows 现值不变;X-2)
         _shaper = new Shaper(_fonts);
         _rasterizer = new GlyphRasterizer(_fonts);
         _packer = new ShelfPacker((int)_ctx.AtlasSize, (int)_ctx.AtlasSize);

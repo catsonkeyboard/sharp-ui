@@ -3,7 +3,10 @@ using Microsoft.Win32;
 
 namespace SharpUI.Text;
 
-/// <summary>族名→字体文件路径(spec:Windows 注册表实现,Linux/macOS 后续里程碑)。</summary>
+/// <summary>族名→字体文件路径。实现:Windows=注册表(WindowsFontLocator)、Linux=fontconfig
+/// 约定目录扫描(LinuxFontLocator)、macOS=目录扫描回退(MacFontLocator;CoreText 优先待 objc 层
+/// 落地后接线)。bold=先查 "&lt;family&gt; Bold",查不到回退 "&lt;family&gt;"(与 TextAtlas.BoldOf
+/// 回退语义一致,三实现同契约)。</summary>
 internal interface IFontLocator
 {
     /// <summary>解析族名(含粗体族如 "Segoe UI Bold");失败返回 null。
@@ -73,8 +76,9 @@ internal sealed class WindowsFontLocator : IFontLocator
 }
 
 /// <summary>
-/// D3 文本层 Task 2:FT_Library + 槽位脸表生命周期。槽 0 = "Segoe UI"(spec 固定,同 TextAtlas),
-/// 1.. = 回退族(注册表解析失败或文件缺失并入槽 0,同现状 tf ?? _typefaces[0];文件在而 FT 加载失败
+/// D3 文本层 Task 2:FT_Library + 槽位脸表生命周期。槽 0 = 平台主族(Windows "Segoe UI" /
+/// Linux "Noto Sans"(缺则 DejaVu Sans)/ Mac "Helvetica Neue",跨平台里程碑 X-2),
+/// 1.. = 回退族(发现失败或文件缺失并入槽 0,同现状 tf ?? _typefaces[0];文件在而 FT 加载失败
 /// 属异常路径,抛出不并入);每脸配 hb_ft_font。**hb_ft 尺度同步时序(评审 Critical#1 勘误)**:
 /// hb_ft_font_create 创建期从 face->size->metrics 快照尺度(hb-ft.h L95-97 明示建前先设尺寸),
 /// 此后直接 FT_Set_Pixel_Sizes 不触发 hb 再同步(其变更检测只比 hb 侧 serial)——故 FaceHandle.
@@ -88,28 +92,55 @@ internal sealed class WindowsFontLocator : IFontLocator
 /// </summary>
 internal sealed class FontLibrary : IDisposable
 {
-    /// <summary>槽 0 主族名(spec 固定;T4 TextAtlas 重写时消费)。</summary>
-    public const string PrimaryFamily = "Segoe UI";
+    /// <summary>槽 0 主族名(平台映射:Windows "Segoe UI" / Linux "Noto Sans"(缺则 "DejaVu Sans",
+    /// 回退在构造期解析层完成,见 PrimaryFamilyCandidates)/ Mac "Helvetica Neue";T4 TextAtlas 重写时消费)。</summary>
+    public static string PrimaryFamily => OperatingSystem.IsWindows() ? "Segoe UI"
+        : OperatingSystem.IsLinux() ? "Noto Sans"
+        : "Helvetica Neue";
 
     readonly IntPtr _ftLib;
-    readonly string?[] _files;                     // null = 解析/加载失败 → 并入槽 0
+    readonly IFontLocator _locator = CreateLocator();   // 平台分派(跨平台里程碑 X-2)
+    readonly string _primaryFamily = "";               // 构造期解析后的槽 0 实际族名(Linux DejaVu 回退时 ≠ PrimaryFamily)
+    readonly string?[] _files;                          // null = 解析/加载失败 → 并入槽 0
     readonly Dictionary<int, FaceHandle> _faces = new();   // 槽 → 常规脸(懒建)
-    readonly IFontLocator _locator = new WindowsFontLocator();
-    FaceHandle? _boldFace;                         // 槽 0 粗体独立脸(懒建;null+已解析 = 回落主脸)
+    FaceHandle? _boldFace;                              // 槽 0 粗体独立脸(懒建;null+已解析 = 回落主脸)
     bool _boldResolved;
     bool _disposed;
 
-    /// <summary>槽 0 = Segoe UI,fallbackFamilies 依次入槽 1..;主族解析/加载失败即抛(库不可用)。</summary>
-    public FontLibrary(string[] fallbackFamilies)
+    static IFontLocator CreateLocator() =>
+        OperatingSystem.IsWindows() ? new WindowsFontLocator()
+        : OperatingSystem.IsLinux() ? new LinuxFontLocator()
+        : new MacFontLocator();
+
+    /// <summary>槽 0 主族解析候选(Linux 首选 Noto Sans,发行版最小化安装常缺 → 回退 DejaVu Sans;
+    /// Windows/Mac 单候选,行为与平台分派前一致)。</summary>
+    static string[] PrimaryFamilyCandidates() =>
+        OperatingSystem.IsLinux() ? new[] { "Noto Sans", "DejaVu Sans" } : new[] { PrimaryFamily };
+
+    /// <summary>平台默认回退族链(fallbackFamilies=null 时):Windows 保持现值(雅黑+Emoji);
+    /// Linux Noto CJK SC + Noto Color Emoji;Mac PingFang SC + Apple Color Emoji(待 CI 实机验证)。</summary>
+    static string[] DefaultFallbackFamilies() => OperatingSystem.IsWindows()
+        ? new[] { "Microsoft YaHei", "Segoe UI Emoji" }
+        : OperatingSystem.IsLinux()
+        ? new[] { "Noto Sans CJK SC", "Noto Color Emoji" }
+        : new[] { "PingFang SC", "Apple Color Emoji" };
+
+    /// <summary>槽 0 = PrimaryFamily(平台映射;Linux 缺 Noto 时回退 DejaVu Sans),fallbackFamilies
+    /// 依次入槽 1..(null = 平台默认链);主族解析/加载失败即抛(库不可用)。</summary>
+    public FontLibrary(string[]? fallbackFamilies = null)
     {
-        ArgumentNullException.ThrowIfNull(fallbackFamilies);
+        fallbackFamilies ??= DefaultFallbackFamilies();
         int err = FreeTypeNative.FT_Init_FreeType(out _ftLib);
         if (err != 0 || _ftLib == IntPtr.Zero)
             throw new InvalidOperationException($"FT_Init_FreeType failed: {err}");
         _files = new string?[1 + fallbackFamilies.Length];
         try
         {
-            _files[0] = ResolveExisting(PrimaryFamily, bold: false)
+            // 槽 0 候选链依次解析(单候选平台退化为原行为;Linux Noto→DejaVu 记实际命中族名供粗体解析)
+            string? primaryPath = null;
+            foreach (string candidate in PrimaryFamilyCandidates())
+                if (ResolveExisting(candidate, bold: false) is { } path) { primaryPath = path; _primaryFamily = candidate; break; }
+            _files[0] = primaryPath
                 ?? throw new InvalidOperationException($"primary font family '{PrimaryFamily}' not resolvable via font registry");
             for (int i = 0; i < fallbackFamilies.Length; i++)
                 _files[1 + i] = ResolveExisting(fallbackFamilies[i], bold: false);   // null → 并入槽 0
@@ -179,7 +210,7 @@ internal sealed class FontLibrary : IDisposable
         if (_boldFace is null && !_boldResolved)
         {
             _boldResolved = true;
-            string? boldFile = ResolveExisting(PrimaryFamily, bold: true);   // Locate 内部已含回落主脸值
+            string? boldFile = ResolveExisting(_primaryFamily, bold: true);   // Locate 内部已含回落主脸值(用实际命中族名,Linux DejaVu 回退时与槽 0 一致)
             // 回落主脸(路径同槽 0)→ 共用常规脸句柄,BoldOf "查不到回落主脸"语义
             if (boldFile is not null && !PathEquals(boldFile, _files[0]!))
                 _boldFace = LoadFace(boldFile);

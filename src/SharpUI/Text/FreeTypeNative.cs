@@ -16,15 +16,19 @@ namespace SharpUI.Text;
 /// </summary>
 internal static class FreeTypeNative
 {
-    internal const string Lib = "freetype.dll";
+    // DllImport 特性参数须编译期常量 → 取 NativeLib 编译期键(= Windows 现名,零行为差;
+    // 非 Windows 映射见 NativeLib.Resolve,X-1)
+    internal const string Lib = NativeLib.FreeType;
 
     static FreeTypeNative()
     {
         // 预载兜底覆盖测试宿主 runtimes/<rid>/native 布局(harfbuzz.dll 静态依赖 freetype.dll,须先载它)
         try
         {
-            if (!NativeLibrary.TryLoad(Lib, typeof(FreeTypeNative).Assembly, null, out _))
-                NativeLibrary.TryLoad(Path.Combine(AppContext.BaseDirectory, "runtimes", "win-x64", "native", Lib), out _);
+            // 主探测走平台解析(Windows = 现名,逐字节同前;Linux/macOS 预载系统 SONAME,为后续接线铺路)
+            if (!NativeLibrary.TryLoad(NativeLib.Resolve(NativeLib.Current, "freetype"), typeof(FreeTypeNative).Assembly, null, out _))
+                NativeLibrary.TryLoad(Path.Combine(AppContext.BaseDirectory, "runtimes", "win-x64", "native",
+                    NativeLib.Resolve(NativeLib.Platform.Windows, "freetype")), out _);   // win-x64 布局仅 Windows 宿主存在
         }
         catch { /* 预载失败交给 DllImport 自身解析路径报错 */ }
     }
@@ -84,6 +88,11 @@ internal static class FreeTypeNative
     internal const int RenderModeLcd = 3;      // FT_RENDER_MODE_LCD
     internal const int RenderModeLcdV = 4;     // FT_RENDER_MODE_LCD_V
     internal const int RenderModeSdf = 5;      // FT_RENDER_MODE_SDF
+
+    // FT_Style_Flag(freetype.h FT_STYLE_FLAG_XXX 节,L2380 附近:ITALIC=1<<0、BOLD=1<<1;
+    // X-2 族名探测的粗体判定,值经 WebFetch 官方头互证 + segoeuib.ttf 实机合同测试双重锁定)
+    internal const int StyleFlagItalic = 0x1;      // FT_STYLE_FLAG_ITALIC(1<<0)
+    internal const int StyleFlagBold = 0x2;        // FT_STYLE_FLAG_BOLD(1<<1;FaceRec.style_flags 掩码)
 
     // FT_Kerning_Mode(freetype.h L3943-3949 枚举实数)
     internal const int KerningDefault = 0;     // FT_KERNING_DEFAULT(网格拟合,26.6)

@@ -14,18 +14,21 @@ namespace SharpUI.Text;
 /// </summary>
 internal static class HarfBuzzNative
 {
-    internal const string Lib = "harfbuzz.dll";
+    // DllImport 特性参数须编译期常量 → 取 NativeLib 编译期键(= Windows 现名,零行为差;X-1)
+    internal const string Lib = NativeLib.HarfBuzz;
 
     static HarfBuzzNative()
     {
         // 预载兜底覆盖测试宿主 runtimes/<rid>/native 布局(依赖 freetype.dll,FreeTypeNative 静态构造先载)
         try
         {
-            // hb-only 入口(如 hb_version)不触发 FreeTypeNative 静态构造,显式先载 freetype.dll 硬化加载序
-            // (T1 评审 Minor#2:harfbuzz.dll 静态导入 freetype.dll,依赖解析走应用目录而非本程序集目录)
-            NativeLibrary.TryLoad(FreeTypeNative.Lib, typeof(HarfBuzzNative).Assembly, null, out _);
-            if (!NativeLibrary.TryLoad(Lib, typeof(HarfBuzzNative).Assembly, null, out _))
-                NativeLibrary.TryLoad(Path.Combine(AppContext.BaseDirectory, "runtimes", "win-x64", "native", Lib), out _);
+            // hb-only 入口(如 hb_version)不触发 FreeTypeNative 静态构造,显式先载 freetype 硬化加载序
+            // (T1 评审 Minor#2:harfbuzz.dll 静态导入 freetype.dll,依赖解析走应用目录而非本程序集目录;
+            //  Windows 上 Resolve 恒返回现名 = 原行为,Linux/macOS 预载系统 SONAME)
+            NativeLibrary.TryLoad(NativeLib.Resolve(NativeLib.Current, "freetype"), typeof(HarfBuzzNative).Assembly, null, out _);
+            if (!NativeLibrary.TryLoad(NativeLib.Resolve(NativeLib.Current, "harfbuzz"), typeof(HarfBuzzNative).Assembly, null, out _))
+                NativeLibrary.TryLoad(Path.Combine(AppContext.BaseDirectory, "runtimes", "win-x64", "native",
+                    NativeLib.Resolve(NativeLib.Platform.Windows, "harfbuzz")), out _);   // win-x64 布局仅 Windows 宿主存在
         }
         catch { /* 预载失败交给 DllImport 自身解析路径报错 */ }
     }

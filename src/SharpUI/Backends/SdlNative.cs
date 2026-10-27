@@ -21,7 +21,8 @@ namespace SharpUI.Backends;
 /// GetGlProcAddress(上下文级)全候选设置/解析、任一成功即止。</summary>
 internal static class SdlNative
 {
-    const string SdlLib = "SDL2.dll";
+    // DllImport/预载解析键:X-1 起常量化经 NativeLib(= Windows 现名,零行为差;非 Windows 映射见 Resolve)
+    const string SdlLib = NativeLib.Sdl2;
     const uint SdlInitVideo = 0x00000020;
 
     // ---- SDL_GLattr / SDL_GLprofile 实数(出处:SDL_video.h typedef enum SDL_GLattr 无显式值按声明序递增;
@@ -216,10 +217,12 @@ internal static class SdlNative
         };
         string baseDir = AppContext.BaseDirectory;
         // 候选序为本类自定(基目录 → runtimes/<rid>/native),非旧窗口层加载序的复刻——T4 实证两者落点
-        // 可分裂(Init 落基目录副本、旧窗口层建窗落 runtimes 副本);落点不可假设,属主由 GetWin32Hwnd 多候选探测兜底
-        if (NativeLibrary.TryLoad(Path.Combine(baseDir, SdlLib), out _primary)) return _primary;
+        // 可分裂(Init 落基目录副本、旧窗口层建窗落 runtimes 副本);落点不可假设,属主由 GetWin32Hwnd 多候选探测兜底。
+        // X-1:基目录候选走平台解析(Windows = 现名逐字节同前;Linux/macOS 亦按 SONAME 找 vendored 副本)
+        if (NativeLibrary.TryLoad(Path.Combine(baseDir, NativeLib.Resolve(NativeLib.Current, "SDL2")), out _primary)) return _primary;
         if (rid.Length > 0
-            && NativeLibrary.TryLoad(Path.Combine(baseDir, "runtimes", rid, "native", SdlLib), out _primary))
+            && NativeLibrary.TryLoad(Path.Combine(baseDir, "runtimes", rid, "native",
+                NativeLib.Resolve(NativeLib.Platform.Windows, "SDL2")), out _primary))   // win-* 布局仅 Windows 宿主存在
             return _primary;
         NativeLibrary.TryLoad(SdlLib, typeof(SdlNative).Assembly, null, out _primary);   // 程序集探测兜底(测试宿主布局)
         return _primary;
@@ -244,8 +247,9 @@ internal static class SdlNative
             Architecture.Arm64 => "win-arm64",
             _ => "",
         };
-        if (rid.Length > 0)   // 同路径幂等:该副本已加载则返回其句柄,不新增模块
-            NativeLibrary.TryLoad(Path.Combine(AppContext.BaseDirectory, "runtimes", rid, "native", SdlLib), out _runtimes);
+        if (rid.Length > 0)   // 同路径幂等:该副本已加载则返回其句柄,不新增模块;win-* 布局仅 Windows 宿主存在
+            NativeLibrary.TryLoad(Path.Combine(AppContext.BaseDirectory, "runtimes", rid, "native",
+                NativeLib.Resolve(NativeLib.Platform.Windows, "SDL2")), out _runtimes);
         return _runtimes;
     }
 

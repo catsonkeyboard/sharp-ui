@@ -6,13 +6,15 @@ namespace SharpUI;
 /// GetText 返回串需 SDL_free;IntPtr.Zero/空串归一为 ""。预载兜底覆盖测试宿主的 runtimes/&lt;rid&gt;/native 布局。</summary>
 public static class Clipboard
 {
-    const string Lib = "SDL2.dll";
+    // DllImport 特性参数须编译期常量 → 取 NativeLib 编译期键(= Windows 现名,零行为差;X-1)
+    const string Lib = NativeLib.Sdl2;
 
     static Clipboard()
     {
         try
         {
-            if (!NativeLibrary.TryLoad(Lib, typeof(Clipboard).Assembly, null, out _))
+            // 主探测走平台解析(Windows = 现名;Linux/macOS 预载系统 SONAME,X-1)
+            if (!NativeLibrary.TryLoad(NativeLib.Resolve(NativeLib.Current, "SDL2"), typeof(Clipboard).Assembly, null, out _))
             {
                 string rid = RuntimeInformation.ProcessArchitecture switch
                 {
@@ -22,7 +24,8 @@ public static class Clipboard
                     _ => ""
                 };
                 if (rid.Length > 0)
-                    NativeLibrary.TryLoad(Path.Combine(AppContext.BaseDirectory, "runtimes", rid, "native", Lib), out _);
+                    NativeLibrary.TryLoad(Path.Combine(AppContext.BaseDirectory, "runtimes", rid, "native",
+                        NativeLib.Resolve(NativeLib.Platform.Windows, "SDL2")), out _);   // win-* 布局仅 Windows 宿主存在
             }
         }
         catch { /* 预载失败交给 DllImport 自身解析路径报错 */ }
