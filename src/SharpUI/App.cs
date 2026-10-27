@@ -72,6 +72,7 @@ public sealed class App
         window.FocusLost += () => Interaction.CancelPress(w.Session);   // D15:失焦取消该窗按压
         w.Session.SdlWindow = window.SdlWindowHandle;   // D5:浮层命中优先/外点消费按窗接线(PopupHost 服务定位)
         w.Focus.SdlWindow = window.SdlWindowHandle;     // D5:Esc 浮层优先路由(栈空回归清焦点语义)
+        FocusManager.BindWindow(window.SdlWindowHandle, w.Focus);   // D5 T3:Ui.ShowMenu(IntPtr) 围栏服务定位
         return w;
     }
 
@@ -155,6 +156,7 @@ public sealed class App
                     IntPtr deadHandle = Windows[i].Window.SdlWindowHandle;   // D5:Dispose 前取句柄,清该窗浮层栈
                     PopupHost.Clear(deadHandle);
                     TooltipService.Clear(deadHandle);   // D5 T3:悬停计时/在开提示记账随窗清
+                    FocusManager.UnbindWindow(deadHandle);   // D5 T3:围栏注册表随窗解绑
                     Windows[i].TextInput.Update(IntPtr.Zero, null, null);   // IME 热修:移除前确保 Stop(去激活该窗文本输入)
                     Windows[i].Renderer.Dispose();
                     Windows[i].Ctx.Dispose();
@@ -169,6 +171,7 @@ public sealed class App
         {
             PopupHost.Clear(w.Window.SdlWindowHandle);   // D5:退出清栈(静态字典不随窗释放)
             TooltipService.Clear(w.Window.SdlWindowHandle);   // D5 T3:同上,服务记账清
+            FocusManager.UnbindWindow(w.Window.SdlWindowHandle);   // D5 T3:围栏注册表解绑
             w.TextInput.Update(IntPtr.Zero, null, null);
             w.Window.Dispose();   // 生命周期归 App:退出销毁残留原生窗(主窗 Close 仅置标记;对齐旧窗口层 Close 即销毁的零泄漏语义)
         }

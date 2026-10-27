@@ -17,6 +17,17 @@ public sealed class FocusManager
     /// App.CreateWindow 接线,缺省 IntPtr.Zero = 无浮层耦合(纯单测模式,既有语义不变)。</summary>
     internal IntPtr SdlWindow;
 
+    /// <summary>句柄 → 该窗 FocusManager 注册表(D5 T3:Ui.ShowMenu(IntPtr) 命令式 API 的围栏服务定位,
+    /// 同 PopupHost 按窗定位惯例)。App.CreateWindow 绑定/窗销毁解绑;合成测试经 BindWindow 注入假句柄。</summary>
+    static readonly Dictionary<IntPtr, FocusManager> _byWindow = new();
+
+    internal static void BindWindow(IntPtr sdlWindow, FocusManager focus) => _byWindow[sdlWindow] = focus;
+
+    internal static void UnbindWindow(IntPtr sdlWindow) => _byWindow.Remove(sdlWindow);
+
+    internal static FocusManager? ForWindow(IntPtr sdlWindow) =>
+        _byWindow.TryGetValue(sdlWindow, out FocusManager? f) ? f : null;
+
     public string? FocusedId => _focusedId;
     public Element? FocusedThisFrame { get; private set; }
 
