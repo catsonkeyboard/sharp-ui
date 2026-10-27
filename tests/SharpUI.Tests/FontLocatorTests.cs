@@ -103,11 +103,11 @@ public class FontLocatorTests
     [Fact]
     public void LinuxLocator_DefaultRoots_AreFontconfigConventions()
     {
-        // fontconfig 约定:发行版 /usr/share/fonts + XDG 用户 ~/.local/share/fonts + 传统 ~/.fonts
+        // fontconfig 出厂模板系统目录(/usr/share + /usr/local/share)+ XDG 用户 ~/.local/share/fonts + 传统 ~/.fonts
         string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         var locator = new LinuxFontLocator();
         Assert.Equal(
-            new[] { "/usr/share/fonts", Path.Combine(home, ".local", "share", "fonts"), Path.Combine(home, ".fonts") },
+            new[] { "/usr/share/fonts", "/usr/local/share/fonts", Path.Combine(home, ".local", "share", "fonts"), Path.Combine(home, ".fonts") },
             locator.Roots);
     }
 
@@ -166,6 +166,32 @@ public class FontLocatorTests
         string a = WriteFont(root, "a.ttf");
         var probe = new FakeProbe { Map = { [a] = ("Noto Sans", false) } };
         var locator = new LinuxFontLocator(new[] { root }, probe);
+        Assert.Equal(a, locator.Locate("Noto Sans", bold: true));
+    }
+
+    [Fact]
+    public void RegularQuery_PrefersNonBoldFace_OverModernNamedBold()
+    {
+        // 评审 Critical#1 回归:现代命名粗体文件 family_name==族名 + Bold 标志,且 Ordinal 路径序
+        // 确定性排前("a.ttf" 粗 < "b.ttf" 常规)——常规查询不得把粗体脸当常规返回
+        string root = TempRoot();
+        string a = WriteFont(root, "a.ttf");   // family "Noto Sans" + Bold 标志(现代命名粗体)
+        string b = WriteFont(root, "b.ttf");   // family "Noto Sans" 常规
+        var probe = new FakeProbe { Map = { [a] = ("Noto Sans", true), [b] = ("Noto Sans", false) } };
+        var locator = new LinuxFontLocator(new[] { root }, probe);
+        Assert.Equal(b, locator.Locate("Noto Sans", bold: false));
+    }
+
+    [Fact]
+    public void RegularQuery_BoldOnlyFamily_FallsBackToBoldFace()
+    {
+        // 粗体脸仅作无常规脸时的兜底:全粗体族常规查询仍可用(渲染粗体优于并入槽 0 出 .notdef);
+        // 粗体查询亦仍可用(样式标志路径)
+        string root = TempRoot();
+        string a = WriteFont(root, "a.ttf");
+        var probe = new FakeProbe { Map = { [a] = ("Noto Sans", true) } };
+        var locator = new LinuxFontLocator(new[] { root }, probe);
+        Assert.Equal(a, locator.Locate("Noto Sans", bold: false));
         Assert.Equal(a, locator.Locate("Noto Sans", bold: true));
     }
 

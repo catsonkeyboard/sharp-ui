@@ -103,9 +103,11 @@ internal sealed class FreeTypeFontFamilyProbe : IFontFamilyProbe, IDisposable
 /// 目录扫描式字体发现公共实现(X-2):roots 递归收集 ttf/otf/ttc → IFontFamilyProbe 判读族名,
 /// LinuxFontLocator(fontconfig 约定目录)与 MacFontLocator(回退路径)共用。匹配三级
 /// (与 WindowsFontLocator 语义对齐):① 直名(family == 目标;粗体目标即 "family Bold",
-/// 大小写不敏感)即时返回——直名优先级须压过扫描顺序,故 ②③ 只记录、全表扫完再择优;
-/// ② 粗体查询时同 family 且 style flags 含 Bold 的脸;③ 粗体回落主脸(IFontLocator 契约的
-/// BoldOf 回退;FontLibrary 以路径同异决定是否共用句柄)。
+/// 大小写不敏感)即时返回——粗体查询名自带字重意图;**常规查询须非粗体脸**(现代命名粗体文件
+/// family_name==族名 + Bold 标志且路径序排前,不看标志会把粗体脸当常规返回,评审 Critical#1),
+/// 粗体直名脸仅作无常规脸时的兜底;直名优先级须压过扫描顺序,故 ②③/兜底只记录首见、全表扫完
+/// 再择优;② 粗体查询时同 family 且 style flags 含 Bold 的脸;③ 粗体回落主脸(IFontLocator
+/// 契约的 BoldOf 回退;FontLibrary 以路径同异决定是否共用句柄)。
 /// 扫描文件表与探测结果均按需缓存一次(单线程 UI 构造期,与 WindowsFontLocator 注册表快照
 /// 同约定;探测缓存键含 wantBold:TTC 粗体提示可指向不同脸)。**Linux/macOS 目录/权限/真实
 /// 字体树语义待 CI 实机验证**(Windows 测试宿主经 roots 注入 + 假 Probe 覆盖扫描/匹配逻辑)。
@@ -138,18 +140,27 @@ internal abstract class DirectoryFontLocator : IFontLocator
         string wanted = familyName.Trim();
         if (wanted.Length == 0) return null;
         string direct = bold ? wanted + " Bold" : wanted;
-        string? styleFlagHit = null, regularHit = null;
+        string? styleFlagHit = null, regularHit = null, boldOnlyHit = null;
         foreach (string file in FontFiles())
         {
             if (!TryProbe(file, bold, out string family, out bool isBold)) continue;
-            if (string.Equals(family, direct, StringComparison.OrdinalIgnoreCase)) return file;   // ① 直名即时返回
+            if (string.Equals(family, direct, StringComparison.OrdinalIgnoreCase))
+            {
+                // ① 直名:粗体查询名自带字重意图,即时返回;常规查询须非粗体脸——现代命名粗体文件
+                //    family_name==族名 + Bold 标志,且路径序确定性排前("X-Bold.ttf" < "X-Regular.ttf"),
+                //    不看标志会把粗体脸当常规返回(评审 Critical#1)。粗体直名脸仅作常规查询
+                //    无常规脸时的兜底(记首见,渲染粗体优于并入槽 0)。
+                if (bold || !isBold) return file;
+                boldOnlyHit ??= file;
+                continue;
+            }
             if (bold && string.Equals(family, wanted, StringComparison.OrdinalIgnoreCase))
             {
                 if (isBold) styleFlagHit ??= file;   // ② 样式标志粗体(记首见)
                 else regularHit ??= file;            // ③ 主脸回退(BoldOf;记首见)
             }
         }
-        return styleFlagHit ?? regularHit;
+        return styleFlagHit ?? regularHit ?? boldOnlyHit;
     }
 
     /// <summary>扫描快照:存在的 root 递归收集字体扩展文件,按路径序排序(确定性:直名优先级
@@ -201,7 +212,7 @@ internal abstract class DirectoryFontLocator : IFontLocator
 /// <summary>
 /// Linux 字体发现(X-2):fontconfig 约定目录递归扫描 + FT face 族名匹配(默认
 /// FreeTypeFontFamilyProbe:FT_New_Memory_Face 内存探测,不落盘、无 fontconfig 依赖)。
-/// roots 可注入(Windows 宿主单测纯文件系统逻辑);匹配三级语义见 DirectoryFontLocator 头注。
+/// roots 可注入(Windows 宿主单测纯文件系统逻辑);匹配语义见 DirectoryFontLocator 头注。
 /// **目录约定与 FT 探测在真实发行版字体树上的语义待 CI 实机验证。**
 /// </summary>
 internal sealed class LinuxFontLocator : DirectoryFontLocator
@@ -212,7 +223,8 @@ internal sealed class LinuxFontLocator : DirectoryFontLocator
     protected override string[] DefaultRoots() =>
         new[]
         {
-            "/usr/share/fonts",                                        // 发行版(fontconfig 系统目录)
+            "/usr/share/fonts",                                        // fontconfig 出厂模板:发行版系统目录
+            "/usr/local/share/fonts",                                  // 同模板:本机管理员手装目录(评审 Minor#2 补)
             Path.Combine(Home(), ".local", "share", "fonts"),          // XDG 用户目录
             Path.Combine(Home(), ".fonts"),                            // 传统用户目录
         };
