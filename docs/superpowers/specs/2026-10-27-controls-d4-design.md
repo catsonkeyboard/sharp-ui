@@ -104,3 +104,12 @@ Windows 下 drawable==窗口尺寸,本机 DPI=96 断言不漂移;HiDPI(macOS Ret
    传播在 (a)(c) 即正确归属,(b) 下目标窗未聚焦不消费点击(误漂移仅一处只读位置);键盘/文本/
    按钮/滚轮仍严格按 windowID 路由、不传播(归属精确性不受影响)。精确归属需 SDK 侧
    FOCUS/MOUSE_FOCUS flags 查询判真实光标窗,待 M3e 后半评估。
+
+## 实施纪要(Task 5,2026-10-27 收官)
+
+- **demo 控件段收窄(偏离上文"验收"行,收官指令裁定)**:验收行原列 "Checkbox×2/Radio 组/
+  Slider 横+纵+Range 各一";实际交付紧凑一段 Row——`Checkbox("check") + Radio("a"/"b" 同组) +
+  Slider(0,100,50).Step(10) + 值回显文本`,状态存 CounterState(回调式 C-2)。收窄理由:收官
+  demo 以紧凑、初始不引入滚动为先;横/纵/Range/键盘等全功能面已由 ControlsTests/SliderTests
+  逐项单测锁定,demo 无需重复铺陈。主 spec 裁定#44/#45 记收官;承证(headless 读回四帧像素断言
+  + PNG 目视,桌面锁定降级)见 artifacts/t5-demo/ 与 task-5-report.md。

@@ -4,6 +4,11 @@ using static SharpUI.Ui;
 internal sealed class CounterState
 {
     public int Count;
+
+    // D4 控件段状态(裁定#44;回调式 C-2:状态存应用侧,控件不藏状态)
+    public bool Checked;
+    public bool RadioA = true;   // "a"/"b" 同组互斥=应用回调职责
+    public float SliderValue = 50f;
 }
 
 internal static class Program
@@ -19,6 +24,13 @@ internal static class Program
                     Ui.Spacer(new SizeF(8f, 0f)),
                     new ButtonElement("+", () => state.Count++)
                 ).Gap(0f),
+                Row(
+                    Ui.Checkbox("check", state.Checked, v => state.Checked = v),
+                    Ui.Radio("a", "demo", state.RadioA, () => state.RadioA = true),
+                    Ui.Radio("b", "demo", !state.RadioA, () => state.RadioA = false),
+                    Ui.Slider(0f, 100f, state.SliderValue, v => state.SliderValue = v).Step(10f),
+                    Ui.Text(state.SliderValue.ToString("F0")).Size(13).Color(0x9AA2B3)
+                ).Gap(16f),
                 Ui.Scroll(
                     Enumerable.Range(1, 12).Select(i => (Element)Ui.Text($"line {i}").Size(14).Color(0x9AA2B3)).ToArray()
                 ).Basis(96f).Fill(0x16161A).Radius(8f),
