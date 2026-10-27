@@ -65,7 +65,7 @@ public static class Ui
         if (focus is null)
             throw new InvalidOperationException(
                 "ShowMenu: 该句柄未绑定 FocusManager(App.CreateWindow 接线;合成测试经 FocusManager.BindWindow)。");
-        MenuExtensions.Show(sdlWindow, focus, anchorRect, items, screenSize: screenSize);
+        MenuExtensions.Show(focus, anchorRect, items, screenSize: screenSize);
     }
 
     static PanelElement Container(Axis axis, Element?[] children)

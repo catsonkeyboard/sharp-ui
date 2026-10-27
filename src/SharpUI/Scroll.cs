@@ -38,13 +38,19 @@ public class ScrollElement : PanelElement
     }
 }
 
-/// <summary>滚轮分发:深度优先,最深可滚者赢(D19);逐级 Frame.Contains 门 = 帧相交可见性(D17/裁定#22)。</summary>
+/// <summary>滚轮分发:深度优先,最深可滚者赢(D19);逐级 Frame.Contains 门 = 帧相交可见性(D17/裁定#22)。
+/// D6 T2 浮层滚轮栅门:当传入非零 sdlWindow 且 PopupHost.TopNonTooltipOf(sdlWindow) 非空时,滚轮仅对该栈顶
+/// 非 Tooltip 浮层的 Root 分发(浮层内含滚动容器则滚浮层,无则模态吞掉不穿透声明树);栈空或仅含 Tooltip 时穿透。</summary>
 public static class Scroll
 {
-    public static void Dispatch(Element root, in InputState input)
+    public static void Dispatch(Element? declarationRoot, in InputState input, IntPtr sdlWindow = default)
     {
-        if (input.WheelDelta != 0f)
-            DispatchDeep(root, input.Mouse, input.WheelDelta);
+        if (input.WheelDelta == 0f) return;
+        Element? target = sdlWindow != IntPtr.Zero && PopupHost.TopNonTooltipOf(sdlWindow) is { } topModal
+            ? topModal.Root
+            : declarationRoot;
+        if (target is not null)
+            DispatchDeep(target, input.Mouse, input.WheelDelta);
     }
 
     static bool DispatchDeep(Element e, PointF mouse, float delta)

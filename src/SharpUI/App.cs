@@ -71,9 +71,8 @@ public sealed class App
         };
         window.FocusLost += () => Interaction.CancelPress(w.Session);   // D15:失焦取消该窗按压
         w.Session.SdlWindow = window.SdlWindowHandle;   // D5:浮层命中优先/外点消费按窗接线(PopupHost 服务定位)
-        w.Focus.SdlWindow = window.SdlWindowHandle;     // D5:Esc 浮层优先路由(栈空回归清焦点语义)
         w.Focus.ScreenSize = new SizeF(window.Width / scale, window.Height / scale);   // D6 T1:菜单默认翻转钳制基准
-        FocusManager.BindWindow(window.SdlWindowHandle, w.Focus);   // D5 T3:Ui.ShowMenu(IntPtr) 围栏服务定位
+        FocusManager.BindWindow(window.SdlWindowHandle, w.Focus);   // D6 T2:同步置 w.Focus.SdlWindow 唯一真相 + _byWindow 入口桥
         return w;
     }
 
@@ -108,8 +107,8 @@ public sealed class App
                 InputState input = w.LastTree is not null
                     ? Interaction.Update(w.Session, w.LastTree, in raw, w.Focus)
                     : InputState.Empty;
-                // 浮层开启时滚轮仍路由声明树(D5 已知语义,模态破口,接线点见 T2 报告;Dialog 内 Scroll 场景启用前须栅)。
-                if (input.WheelDelta != 0f && w.LastTree is not null) Scroll.Dispatch(w.LastTree, in input);
+                // D6 T2 滚轮模态栅门:传入窗口句柄 —— 栈顶有非 Tooltip 浮层时仅滚该浮层(或模态吞掉),Tooltip 穿透滚声明树。
+                if (input.WheelDelta != 0f) Scroll.Dispatch(w.LastTree, in input, w.Window.SdlWindowHandle);
                 FeedFocused(w.LastTree, w.Focus, w.Focus.SdlWindow, in raw);   // T2 已知项 A:浮层栈根兜底(Dialog 内 TextField)
                 UiContext.CurrentInput = input;
 

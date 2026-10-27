@@ -181,9 +181,8 @@ public sealed class MenuElement : PanelElement
     static readonly Color32 PanelBg = Color32.FromRgb(0x1E1E24);   // 浮层底色(Dialog 面板同源)
 
     readonly List<MenuItemElement> _items = new();
-    IntPtr _owner = IntPtr.Zero;   // Show 接线(PopupHost 按窗服务定位键)
     Popup? _popup;                 // Close 按身份移除的实例凭证(Tooltip/SubMenu 可叠于其上,盲弹会误弹)
-    FocusManager? _focus;
+    FocusManager? _focus;          // D6 T2 定位收敛:所属窗句柄唯一真相为 _focus.SdlWindow,不另存冗余句柄字段
     SizeF _screenSize = new(float.PositiveInfinity, float.PositiveInfinity);
     MenuElement? _activeSubMenu;
     MenuItemElement? _activeSubOwner;
@@ -252,10 +251,9 @@ public sealed class MenuElement : PanelElement
     /// <summary>可导航项序(分隔线除外;测试/调试观测用)。</summary>
     internal IReadOnlyList<MenuItemElement> Items => _items;
 
-    /// <summary>绑定窗句柄/浮层实例/焦点管理/屏幕尺寸(Show 在 Push 前接线)。</summary>
-    internal void Bind(IntPtr owner, Popup popup, FocusManager focus, SizeF screenSize)
+    /// <summary>绑定浮层实例/焦点管理(含 SdlWindow 唯一真相)/屏幕尺寸(Show 在 Push 前接线)。</summary>
+    internal void Bind(Popup popup, FocusManager focus, SizeF screenSize)
     {
-        _owner = owner;
         _popup = popup;
         _focus = focus;
         _screenSize = screenSize;
@@ -267,10 +265,10 @@ public sealed class MenuElement : PanelElement
     /// <summary>关闭本层菜单:按身份 Remove(Tooltip/SubMenu 可叠于其上);若为父菜单则先按身份关闭已展开子菜单;幂等。</summary>
     internal void Close()
     {
-        if (_closed || _owner == IntPtr.Zero || _popup is null) return;
+        if (_closed || _focus is not { SdlWindow: var owner } || owner == IntPtr.Zero || _popup is null) return;
         CloseActiveSubMenu();
         _closed = true;
-        PopupHost.Remove(_owner, _popup);
+        PopupHost.Remove(owner, _popup);
     }
 
     /// <summary>收起整棵菜单树(子菜单叶子激活或菜单树外点消费):自根主菜单起连带关闭子菜单与主菜单。</summary>
@@ -295,7 +293,7 @@ public sealed class MenuElement : PanelElement
     /// 锚=父项右缘,水平溢出左翻到 parentItem.X - subW,垂直溢出钳制;围栏入栈并聚焦子首项。</summary>
     internal void ExpandSubMenu(MenuItemElement parentItem)
     {
-        if (_closed || _owner == IntPtr.Zero || _focus is null
+        if (_closed || _focus is not { SdlWindow: var owner } || owner == IntPtr.Zero
             || parentItem.Sub is not { } sub || !parentItem.Enabled)
             return;
         if (_activeSubMenu is { _closed: false } existing)
@@ -334,11 +332,11 @@ public sealed class MenuElement : PanelElement
                 focus.PopScopeOf(subMenu.ResolvedId!);
             },
         };
-        subMenu.Bind(_owner, popup, focus, _screenSize);
+        subMenu.Bind(popup, focus, _screenSize);
         _activeSubMenu = subMenu;
         _activeSubOwner = parentItem;
         focus.SetFocus(parentItem);   // 确保子围栏 SavedFocusId 恒为该 MenuSub 父项(Left/Esc 归还焦点)
-        PopupHost.Push(_owner, popup);
+        PopupHost.Push(owner, popup);
         focus.PushScope(subMenu.ResolvedId!);
         TreeWalk.Register(subMenu, focus);
         if (subMenu.FirstEnabled() is { } first)
@@ -427,19 +425,20 @@ public sealed class MenuElement : PanelElement
 public static class MenuExtensions
 {
     public static void ShowMenu(this AppWindow window, RectF anchorRect, params object?[] items) =>
-        Show(window.Focus.SdlWindow, window.Focus, anchorRect, items, screenSize: window.Focus.ScreenSize);
+        Show(window.Focus, anchorRect, items, screenSize: window.Focus.ScreenSize);
 
     public static void ShowMenu(this AppWindow window, RectF anchorRect, SizeF? screenSize, params object?[] items) =>
-        Show(window.Focus.SdlWindow, window.Focus, anchorRect, items, screenSize: screenSize ?? window.Focus.ScreenSize);
+        Show(window.Focus, anchorRect, items, screenSize: screenSize ?? window.Focus.ScreenSize);
 
-    /// <summary>打开锚定菜单:度量后按屏幕尺寸做底部向上翻转(anchor.Bottom + menuH &gt; screen.Height →
-    /// y = Math.Max(0, anchor.Y - menuH))与右侧钳制(anchor.X + menuW &gt; screen.Width →
-    /// x = Math.Max(0, screen.Width - menuW)),未传 screenSize 则取 focus.ScreenSize 或无穷大不钳制;
+    /// <summary>打开锚定菜单(D6 T2 定位收敛:窗口句柄唯一真相取自 focus.SdlWindow):度量后按屏幕尺寸做底部向上翻转
+    /// (anchor.Bottom + menuH &gt; screen.Height → y = Math.Max(0, anchor.Y - menuH))与右侧钳制
+    /// (anchor.X + menuW &gt; screen.Width → x = Math.Max(0, screen.Width - menuW)),未传 screenSize 则取 focus.ScreenSize 或无穷大不钳制;
     /// PushScope 围栏 + 初始焦点=initialFocusIndex 项(越界/禁用回落首个可用项);
     /// Esc/外点经 PopupHost 既有路由关闭(OnClosed → 连带关子菜单 + PopScopeOf 归还打开者焦点)。</summary>
-    internal static void Show(IntPtr window, FocusManager focus, RectF anchorRect, object?[] items,
+    internal static void Show(FocusManager focus, RectF anchorRect, object?[] items,
         int initialFocusIndex = -1, SizeF? screenSize = null)
     {
+        IntPtr window = focus.SdlWindow;
         var menu = new MenuElement(items);
         SizeF screen = ResolveScreenSize(screenSize ?? focus.ScreenSize);
         SizeF m = LayoutEngine.Measure(menu, new SizeF(float.PositiveInfinity, float.PositiveInfinity));
@@ -460,7 +459,7 @@ public static class MenuExtensions
                 focus.PopScopeOf(menu.ResolvedId!);
             },
         };
-        menu.Bind(window, popup, focus, screen);
+        menu.Bind(popup, focus, screen);
         PopupHost.Push(window, popup);     // 根 id 指派("/__popupN")后围栏以前缀圈定子树
         focus.PushScope(menu.ResolvedId!);
         MenuItemElement? initial =                          // 初始焦点(Select 当前项高亮;缺省首可用项)

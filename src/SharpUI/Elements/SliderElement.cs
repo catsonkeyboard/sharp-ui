@@ -11,12 +11,13 @@ namespace SharpUI;
 /// 单帧大步拖越两 thumb 中点会按最近翻面劫持另一 thumb(调用方值滞后一帧)。交叉钳制
 /// min ≤ max−gap / max ≥ min+gap(gap = step>0 ? step : 0),越界不产生回调(不变量优先)。
 /// 键盘:聚焦 + Left/Up 减 / Right/Down 加(两对键横纵通收)、Home=min / End=max(Range 作用于活动
-/// thumb,交叉钳制兜底);±step 或 ±量程/20(连续)—— 经 IKeySteerable 在 FocusManager.HandleKeys 消费,
-/// 不经 IActivatable(值微调非激活语义)。
+/// thumb,交叉钳制兜底);Range 模式下 Space 翻转活动 thumb 锁存 0↔1(单 thumb 模式不消费);
+/// ±step 或 ±量程/20(连续)—— 经 IKeySteerable 在 FocusManager.HandleKeys 消费,
+/// 不经 IActivatable(值微调/切换非激活语义)。
 /// 值态由调用方持有(树每帧重建,ctor 参数即当前值);回调仅值实际变化(钳制+吸附后)触发,双 thumb 各自回调。
 /// Enabled=false:灰视觉 + 不响应(CapturesDrag/Focusable 随 Enabled 置位,指针捕获/键盘消费统一门)。
-/// Draw 零新分配:几何纯结构体运算 + 静态色板;Range 拖拽/键盘帧经 StateStore 键串拼接读写活动 thumb
-/// (同 ScrollElement.StateOffset 先例的单次小分配,见 T3 报告自审;单 thumb 路径零 StateStore 触碰)。</summary>
+/// Draw 零新分配:几何纯结构体运算 + 静态色板 + ActiveKey 按 ResolvedId 实例级缓存(Range 活动 thumb 外圈
+/// 以比 thumb 大 2px 的底层圆角矩形绘 1px 0x93C5FD 亮色描边)。</summary>
 public sealed class SliderElement : PanelElement, IKeySteerable
 {
     /// <summary>thumb 主轴长(规格常量,布局/绘制/测试坐标换算共用):横 = 宽 8 / 纵 = 高 8。</summary>
@@ -28,16 +29,18 @@ public sealed class SliderElement : PanelElement, IKeySteerable
     const float TrackSize = 4f;          // 轨道厚(交叉向),主向居中
     const float TrackRadius = 2f;        // 轨道圆角(半厚,胶囊)
     const float ThumbRadius = 3f;
+    const float ActiveThumbOutline = 1f; // Range 活动 thumb 外圈 1px 描边(比 thumb 大 2px 的底层圆角矩形)
     const float KeyboardFraction = 20f;  // 连续模式键盘步长 = 量程 / 20
     const float DefaultMain = 140f;      // 自测默认主轴长(交叉向留 ThumbCross 余量)
     const float DefaultCross = 20f;
 
     // 色板(硬编码,同 Checkbox/Radio 纪律):已选段常态 0x0C63E4 / 悬停 0x3B82F6 / 聚焦 0x60A5FA
-    // (同 Button/Checkbox 蓝系);轨道余段 0x1A1A22;禁用轨道 0x24242A、禁用 thumb 0x6A6A74;
-    // thumb 常白。
+    // (同 Button/Checkbox 蓝系);Range 活动 thumb 外圈 1px 亮色描边 0x93C5FD;轨道余段 0x1A1A22;
+    // 禁用轨道 0x24242A、禁用 thumb 0x6A6A74;thumb 常白。
     static readonly Color32 Accent = Color32.FromRgb(0x0C63E4);
     static readonly Color32 AccentHover = Color32.FromRgb(0x3B82F6);
     static readonly Color32 AccentFocus = Color32.FromRgb(0x60A5FA);
+    static readonly Color32 ActiveThumbBorder = Color32.FromRgb(0x93C5FD);
     static readonly Color32 TrackRest = Color32.FromRgb(0x1A1A22);
     static readonly Color32 DisabledFill = Color32.FromRgb(0x24242A);
     static readonly Color32 DisabledThumb = Color32.FromRgb(0x6A6A74);
@@ -52,6 +55,8 @@ public sealed class SliderElement : PanelElement, IKeySteerable
     bool _vertical;
     bool _isRange;
     bool _enabled = true;
+    string? _activeKeyId;
+    string? _activeKey;
 
     public SliderElement(float min, float max, float value, Action<float>? onChanged)
     {
@@ -124,6 +129,10 @@ public sealed class SliderElement : PanelElement, IKeySteerable
             case SharpUI.Key.End:
                 Operate(_max, absolute: true);
                 return true;
+            case SharpUI.Key.Space:
+                if (!_isRange) return false;
+                WriteThumb(1 - LastThumb());
+                return true;
             default:
                 return false;
         }
@@ -183,7 +192,15 @@ public sealed class SliderElement : PanelElement, IKeySteerable
             App.State?.Set(ActiveKey(), thumb);
     }
 
-    string ActiveKey() => "slider:active:" + ResolvedId;
+    string ActiveKey()
+    {
+        if (!ReferenceEquals(_activeKeyId, ResolvedId))
+        {
+            _activeKeyId = ResolvedId;
+            _activeKey = "slider:active:" + ResolvedId;
+        }
+        return _activeKey!;
+    }
 
     // ---- 值管线 ----
 
@@ -259,8 +276,22 @@ public sealed class SliderElement : PanelElement, IKeySteerable
         if (!filled.IsEmpty)
             Tessellator.AddRoundedRect(pc.Mesh, filled, TrackRadius, active, uv);
         if (_isRange)
-            Tessellator.AddRoundedRect(pc.Mesh, ThumbRect(cMin), ThumbRadius, thumb, uv);
-        Tessellator.AddRoundedRect(pc.Mesh, ThumbRect(cMax), ThumbRadius, thumb, uv);
+        {
+            RectF rMin = ThumbRect(cMin);
+            RectF rMax = ThumbRect(cMax);
+            if (_enabled && id is not null && (pc.Input.FocusedId == id || pc.Input.CapturedId == id))
+            {
+                RectF activeRect = LastThumb() == 0 ? rMin : rMax;
+                Tessellator.AddRoundedRect(pc.Mesh,
+                    new RectF(activeRect.X - ActiveThumbOutline, activeRect.Y - ActiveThumbOutline,
+                        activeRect.Width + ActiveThumbOutline * 2f, activeRect.Height + ActiveThumbOutline * 2f),
+                    ThumbRadius + ActiveThumbOutline, ActiveThumbBorder, uv);
+            }
+            Tessellator.AddRoundedRect(pc.Mesh, rMin, ThumbRadius, thumb, uv);
+            Tessellator.AddRoundedRect(pc.Mesh, rMax, ThumbRadius, thumb, uv);
+        }
+        else
+            Tessellator.AddRoundedRect(pc.Mesh, ThumbRect(cMax), ThumbRadius, thumb, uv);
         base.Draw(pc);
     }
 

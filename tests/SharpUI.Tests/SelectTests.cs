@@ -20,7 +20,6 @@ public class SelectTests
         PopupHost.Clear(h);
         FocusManager.UnbindWindow(h);
         var w = new AppWindow();
-        w.Focus.SdlWindow = h;
         w.Session.SdlWindow = h;
         FocusManager.BindWindow(h, w.Focus);
         return (w, h);

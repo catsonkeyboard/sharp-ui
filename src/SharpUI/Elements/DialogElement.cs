@@ -21,7 +21,7 @@ public sealed class DialogElement : PanelElement, IActivatable
     readonly DialogButton[] _buttons;
     readonly bool _dismissOnMaskClick;
     bool _closed;
-    IntPtr _owner = IntPtr.Zero;   // ShowDialog 绑定(PopupHost 按窗服务定位键)
+    FocusManager? _focus;          // D6 T2 定位收敛:所属窗句柄唯一真相为 _focus.SdlWindow,不另存冗余句柄字段
     Popup? _popup;                 // 同上:Close 按身份移除的实例凭证(D5 T2 评审承重)
 
     internal DialogElement(string title, Action<PanelElement> build, DialogButton[] buttons,
@@ -70,11 +70,11 @@ public sealed class DialogElement : PanelElement, IActivatable
         Close();
     }
 
-    /// <summary>绑定宿主窗句柄与浮层实例(ShowDialog 在 Push 前接线;Close 经 PopupHost.Remove 按身份
-    /// 移除 —— Dialog 下可叠 Menu/Tooltip(D5 T3),盲弹 Pop 会误弹栈顶他者成僵尸 Dialog)。</summary>
-    internal void Bind(IntPtr owner, Popup popup)
+    /// <summary>绑定所属 FocusManager(含 SdlWindow 唯一真相)与浮层实例(ShowDialog 在 Push 前接线;
+    /// Close 经 PopupHost.Remove 按身份移除 —— Dialog 下可叠 Menu/Tooltip(D5 T3),盲弹 Pop 会误弹栈顶他者成僵尸 Dialog)。</summary>
+    internal void Bind(FocusManager focus, Popup popup)
     {
-        _owner = owner;
+        _focus = focus;
         _popup = popup;
     }
 
@@ -82,9 +82,9 @@ public sealed class DialogElement : PanelElement, IActivatable
     /// 置位,防二次移除误弹下层浮层。</summary>
     internal void Close()
     {
-        if (_closed || _owner == IntPtr.Zero || _popup is null) return;
+        if (_closed || _focus is not { SdlWindow: var owner } || owner == IntPtr.Zero || _popup is null) return;
         _closed = true;
-        PopupHost.Remove(_owner, _popup);
+        PopupHost.Remove(owner, _popup);
     }
 
     /// <summary>OnClosed 收尾置位(外部 Pop 路径的幂等记账;ShowDialog 接线)。</summary>
@@ -158,7 +158,7 @@ public static class DialogExtensions
             OnEscape = dialog.ConsumeEscape,                       // Esc → IsCancel 合成点击(T2 接线)
             OnEnterDefault = dialog.ConsumeEnterDefault,           // Enter 无激活焦点 → IsDefault(T2 接线)
         };
-        dialog.Bind(handle, popup);
+        dialog.Bind(window.Focus, popup);
         PopupHost.Push(handle, popup);
         window.Focus.PushScope(dialog.ResolvedId!);   // 围栏入栈:root id 由 Push 指派("/__popupN")
         if (FindFirstFocusable(dialog) is { } first)

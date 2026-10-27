@@ -343,4 +343,90 @@ public class PopupHostTests
         Assert.True(focus.IsFocused(ok));                    // 环回在浮层内,永不到声明树
         PopupHost.Clear(w);
     }
+
+    // ---- D6 T2: 浮层滚轮栅门 + 定位窗收敛 ----
+
+    static ScrollElement TallScroll(string key, int rows = 10, float rowH = 30f)
+    {
+        ScrollElement s = Ui.Scroll();
+        s.Key = key;
+        s.Style.FlexBasis = 100f;
+        for (int i = 0; i < rows; i++)
+            s.Add(new Spacer(new SizeF(50, rowH)));
+        return s;
+    }
+
+    [Fact]
+    public void Wheel_ModalGate_DialogWithoutScrollSwallows_DialogWithScrollScrollsDialogOnly_TooltipPassesThrough()
+    {
+        IntPtr w = Win(11);
+        PopupHost.Clear(w);
+        App.State = new StateStore();
+        try
+        {
+            ScrollElement declaredScroll = TallScroll("decl");
+            PanelElement root = Ui.Column(declaredScroll);
+            root.Style.CrossAlign = CrossAxisAlignment.Stretch;
+            LayoutEngine.Arrange(root, new RectF(0, 0, 200, 100));
+            IdResolver.Assign(root);
+            string declKey = "scroll:" + declaredScroll.ResolvedId;
+            var wheelInput = new InputState(new PointF(50, 50), false, false, false, null, WheelDelta: 1f);
+
+            // 1) 声明树含 Scroll(初始 offset 0)+ Dialog 打开(无 Scroll)→ 合成 Wheel → 声明树 Scroll offset 仍为 0(被吞)
+            var dlgNoScroll = new Popup(Ui.Column(Ui.Text("无滚动弹窗")), new RectF(0, 0, 200, 100), PopupKind.Dialog);
+            LayoutEngine.Arrange(dlgNoScroll.Root, new RectF(0, 0, 200, 100));
+            PopupHost.Push(w, dlgNoScroll);
+            Scroll.Dispatch(root, in wheelInput, w);
+            Assert.Equal(0f, App.State.Get(declKey, 0f));
+            PopupHost.Pop(w);
+
+            // 2) Dialog 内含 Scroll → 合成 Wheel → Dialog 内 Scroll offset 变化、声明树不变
+            ScrollElement dialogScroll = TallScroll("dlgScroll");
+            PanelElement dlgRoot = Ui.Column(dialogScroll);
+            dlgRoot.Style.CrossAlign = CrossAxisAlignment.Stretch;
+            var dlgWithScroll = new Popup(dlgRoot, new RectF(0, 0, 200, 100), PopupKind.Dialog);
+            PopupHost.Push(w, dlgWithScroll);
+            LayoutEngine.Arrange(dlgWithScroll.Root, new RectF(0, 0, 200, 100));
+            string dlgKey = "scroll:" + dialogScroll.ResolvedId;
+            Scroll.Dispatch(root, in wheelInput, w);
+            Assert.Equal(40f, App.State.Get(dlgKey, 0f));
+            Assert.Equal(0f, App.State.Get(declKey, 0f));
+            PopupHost.Pop(w);
+
+            // 3) 仅 Tooltip 在顶 → 声明树 Scroll 正常滚动(穿透)
+            var tip = new Popup(Ui.Column(Ui.Text("提示")), new RectF(0, 0, 80, 24), PopupKind.Tooltip);
+            LayoutEngine.Arrange(tip.Root, new RectF(0, 0, 80, 24));
+            PopupHost.Push(w, tip);
+            Scroll.Dispatch(root, in wheelInput, w);
+            Assert.Equal(40f, App.State.Get(declKey, 0f));
+        }
+        finally
+        {
+            App.State = null;
+            PopupHost.Clear(w);
+        }
+    }
+
+    [Fact]
+    public void BindWindow_SyncsFocusSdlWindow_UnbindClears_OwnerFocusBridgesToHandle()
+    {
+        IntPtr w = Win(12);
+        FocusManager.UnbindWindow(w);
+        var focus = new FocusManager();
+        Assert.Equal(IntPtr.Zero, focus.SdlWindow);
+
+        FocusManager.BindWindow(w, focus);
+        Assert.Equal(w, focus.SdlWindow);                    // BindWindow 自动同步置 SdlWindow 唯一真相
+        Assert.Same(focus, FocusManager.ForWindow(w));
+
+        (PanelElement root, ButtonElement btn) = Declared("B", () => { });
+        focus.BeginFrame();
+        TreeWalk.Register(root, focus);
+        Assert.Same(focus, btn.OwnerFocus);                  // Element.OwnerFocus 回链
+        Assert.Equal(w, btn.OwnerFocus!.SdlWindow);          // 声明式元素统一经 OwnerFocus.SdlWindow 定位窗句柄
+
+        FocusManager.UnbindWindow(w);
+        Assert.Equal(IntPtr.Zero, focus.SdlWindow);          // UnbindWindow 清零
+        Assert.Null(FocusManager.ForWindow(w));
+    }
 }

@@ -29,9 +29,10 @@ public abstract class Element
     /// 由 TooltipService 每帧扫描驱动(悬停 ≥0.5s 弹出/移出或点击移除)。internal 字段免附加属性表。</summary>
     internal string? TooltipText;
 
-    /// <summary>注册期回链(D5 T4):最近一次 TreeWalk.Register 本元素入册的 FocusManager,即所属窗
-    /// (App.Run 每帧对声明树+浮层树逐元素接线)。SelectElement 激活时据此定位所属窗的浮层栈/围栏
-    /// (打开下拉菜单);未注册(树未经 Register 直用)时激活抛 InvalidOperationException。
+    /// <summary>注册期回链(D5 T4 / D6 T2 定位收敛):最近一次 TreeWalk.Register 本元素入册的 FocusManager,
+    /// 是声明式元素获取所属 FocusManager 及其窗口句柄(<see cref="FocusManager.SdlWindow"/>)的唯一入口
+    /// (App.Run 每帧对声明树+浮层树逐元素接线;SelectElement 激活时据此定位所属窗的浮层栈/围栏打开下拉菜单,
+    /// 不另存窗句柄也不查 FocusManager._byWindow)。未注册(树未经 Register 直用)时激活抛 InvalidOperationException。
     /// 生命周期随元素实例(树每帧重建,LastTree 保留一帧,回链常新)。</summary>
     internal FocusManager? OwnerFocus;
 

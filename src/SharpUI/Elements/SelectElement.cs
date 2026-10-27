@@ -110,7 +110,7 @@ public sealed class SelectElement : PanelElement, IActivatable, IKeySteerable
             int index = i;                                   // 闭包捕获循环下标
             items[i] = new MenuItem(_options[index], () => { if (index != _selectedIndex) _onChanged(index); });
         }
-        MenuExtensions.Show(focus.SdlWindow, focus, Frame, items, _selectedIndex, focus.ScreenSize);
+        MenuExtensions.Show(focus, Frame, items, _selectedIndex, focus.ScreenSize);
     }
 
     public override void Draw(in PaintContext pc)

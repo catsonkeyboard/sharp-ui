@@ -113,7 +113,9 @@ public static class PopupHost
     internal static bool TryConsumeEnterDefault(IntPtr sdlWindow) =>
         TopNonTooltipOf(sdlWindow)?.OnEnterDefault?.Invoke() ?? false;
 
-    static Popup? TopNonTooltipOf(IntPtr sdlWindow)
+    /// <summary>自栈顶向下首个非 Tooltip 浮层(Esc/EnterDefault/滚轮模态栅门共用):
+    /// 栈空或栈中仅有 Tooltip 时返回 null(Tooltip 对键盘/滚轮透明穿透)。</summary>
+    internal static Popup? TopNonTooltipOf(IntPtr sdlWindow)
     {
         if (!_stacks.TryGetValue(sdlWindow, out List<Popup>? s)) return null;
         for (int i = s.Count - 1; i >= 0; i--)

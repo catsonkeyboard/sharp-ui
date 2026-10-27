@@ -13,20 +13,32 @@ public sealed class FocusManager
     readonly List<(string ScopeId, string? SavedFocusId)> _scopes = new();
     string? _focusedId;
 
-    /// <summary>本窗 SDL 句柄(D5):Esc 优先路由该窗浮层栈(PopupHost 按窗服务定位);
-    /// App.CreateWindow 接线,缺省 IntPtr.Zero = 无浮层耦合(纯单测模式,既有语义不变)。</summary>
+    /// <summary>本窗 SDL 句柄唯一真相(D5 / D6 T2 定位收敛):
+    /// 1) FocusManager.SdlWindow 是窗口句柄的唯一真相(BindWindow 自动同步置 SdlWindow = sdlWindow,
+    ///    UnbindWindow 同步清零;缺省 IntPtr.Zero = 无浮层耦合纯单测模式);
+    /// 2) Element.OwnerFocus(TreeWalk.Register 回链)为声明式元素获取所属 FocusManager(及 OwnerFocus.SdlWindow)的唯一入口;
+    /// 3) FocusManager._byWindow 仅留作命令式 Ui.ShowMenu(IntPtr) 的句柄→FocusManager 入口桥。</summary>
     internal IntPtr SdlWindow;
 
     /// <summary>所属窗口当前逻辑尺寸(D6 T1):App.CreateWindow/Run 同步更新;假句柄单测为 null(默认不钳制)。</summary>
     internal SizeF? ScreenSize;
 
-    /// <summary>句柄 → 该窗 FocusManager 注册表(D5 T3:Ui.ShowMenu(IntPtr) 命令式 API 的围栏服务定位,
-    /// 同 PopupHost 按窗定位惯例)。App.CreateWindow 绑定/窗销毁解绑;合成测试经 BindWindow 注入假句柄。</summary>
+    /// <summary>句柄 → FocusManager 入口桥(D5 T3 / D6 T2):仅服务命令式 <see cref="Ui.ShowMenu(IntPtr, RectF, object?[])"/>
+    /// 从窗口句柄反查所属 FocusManager;声明式控件一律经 <see cref="Element.OwnerFocus"/>、浮层自身持 FocusManager 引用
+    /// 读 <see cref="SdlWindow"/>,不经此字典重复查找。App.CreateWindow 绑定/窗销毁解绑。</summary>
     static readonly Dictionary<IntPtr, FocusManager> _byWindow = new();
 
-    internal static void BindWindow(IntPtr sdlWindow, FocusManager focus) => _byWindow[sdlWindow] = focus;
+    internal static void BindWindow(IntPtr sdlWindow, FocusManager focus)
+    {
+        focus.SdlWindow = sdlWindow;
+        _byWindow[sdlWindow] = focus;
+    }
 
-    internal static void UnbindWindow(IntPtr sdlWindow) => _byWindow.Remove(sdlWindow);
+    internal static void UnbindWindow(IntPtr sdlWindow)
+    {
+        if (_byWindow.Remove(sdlWindow, out FocusManager? focus) && focus.SdlWindow == sdlWindow)
+            focus.SdlWindow = IntPtr.Zero;
+    }
 
     internal static FocusManager? ForWindow(IntPtr sdlWindow) =>
         _byWindow.TryGetValue(sdlWindow, out FocusManager? f) ? f : null;
@@ -132,6 +144,9 @@ public sealed class FocusManager
                             Interaction.QueueClick(session, kbId);   // 裁定#18:下一帧账本可见
                         invoked = true;
                     }
+                    // D6 T2:非 IActivatable 元素(Slider Range)的 Space 落 IKeySteerable 切换活动 thumb 0↔1
+                    if (!invoked && ke.Key == Key.Space)
+                        SteerFocused(Key.Space);
                     // D5 T2:IsDefault=Enter —— 焦点不在可激活元素(TextField/无焦/圈外)时落栈顶非
                     // Tooltip 浮层的缺省动作钩子(Dialog 默认按钮);Space 不触发(空格=激活聚焦元素
                     // 既有语义);无浮层/未设钩子返回 false=既有 no-op。

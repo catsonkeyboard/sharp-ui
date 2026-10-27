@@ -326,6 +326,42 @@ public class SliderTests
         finally { App.State = null; }
     }
 
+    [Fact]
+    public void Keyboard_Range_SpaceTogglesActiveThumb_SingleThumbDoesNotConsumeSpace()
+    {
+        App.State = new StateStore();
+        try
+        {
+            var minCalls = new List<float>();
+            var maxCalls = new List<float>();
+            float minV = 20f, maxV = 80f;
+            var rig = new Rig(() => new SliderElement(0f, 100f, minV, v => { minV = v; minCalls.Add(v); })
+                .Range(maxV, v => { maxV = v; maxCalls.Add(v); }).Step(10f));
+
+            // 聚焦 Range(20,80) → Right 动 min(默认 0: 20 → 30)
+            rig.KeyFrame(Key.Right);
+            Assert.Equal(new float[] { 30f }, minCalls);
+            Assert.Empty(maxCalls);
+
+            // Space 切到 1 → Right 动 max(80 → 90)
+            rig.KeyFrame(Key.Space);
+            rig.KeyFrame(Key.Right);
+            Assert.Equal(new float[] { 30f }, minCalls);
+            Assert.Equal(new float[] { 90f }, maxCalls);
+
+            // 再 Space 切回 0 → Home 动 min(30 → 0)
+            rig.KeyFrame(Key.Space);
+            rig.KeyFrame(Key.Home);
+            Assert.Equal(new float[] { 30f, 0f }, minCalls);
+            Assert.Equal(new float[] { 90f }, maxCalls);
+
+            // 单 thumb 模式下 Key.Space 不消费(返回 false)
+            var single = new SliderElement(0f, 100f, 50f, null);
+            Assert.False(single.HandleKey(Key.Space));
+        }
+        finally { App.State = null; }
+    }
+
     // ---- 禁用 ----
 
     [Fact]
@@ -363,23 +399,24 @@ public class SliderTests
         return s;
     }
 
-    static (int Verts, bool Accent, bool Hover, bool Focus, bool White) DrawInto(
-        MeshBuilder mesh, TextAtlas atlas, Element e, string? hoverId, string? focusedId)
+    static (int Verts, bool Accent, bool Hover, bool Focus, bool White, bool ActiveOutline) DrawInto(
+        MeshBuilder mesh, TextAtlas atlas, Element e, string? hoverId, string? focusedId, string? capturedId = null)
     {
         IdResolver.Assign(e);
         int before = mesh.VertexCount;
         var input = new InputState(new PointF(-1f, -1f), false, false, false, null,
-            HoveredId: hoverId, FocusedId: focusedId);
+            HoveredId: hoverId, FocusedId: focusedId, CapturedId: capturedId);
         e.Draw(new PaintContext(mesh, atlas, input));
-        bool accent = false, hover = false, focus = false, white = false;
+        bool accent = false, hover = false, focus = false, white = false, outline = false;
         foreach (UiVertex v in mesh.Vertices.Slice(before))   // 只扫本次新增段(mesh 跨控件累积)
         {
             if (v.R == 0x0C && v.G == 0x63 && v.B == 0xE4) accent = true;    // 常态蓝 0x0C63E4
             if (v.R == 0x3B && v.G == 0x82 && v.B == 0xF6) hover = true;     // 悬停 0x3B82F6
             if (v.R == 0x60 && v.G == 0xA5 && v.B == 0xFA) focus = true;     // 聚焦 0x60A5FA
+            if (v.R == 0x93 && v.G == 0xC5 && v.B == 0xFD) outline = true;   // Range 活动 thumb 描边 0x93C5FD
             if (v.R == 255 && v.G == 255 && v.B == 255) white = true;
         }
-        return (mesh.VertexCount - before, accent, hover, focus, white);
+        return (mesh.VertexCount - before, accent, hover, focus, white, outline);
     }
 
     [Fact]
@@ -395,22 +432,30 @@ public class SliderTests
         var focused = Arrange(new SliderElement(0f, 100f, 50f, null));
         var disabled = Arrange(new SliderElement(0f, 100f, 50f, null) { Enabled = false });
         var range = Arrange(new SliderElement(0f, 100f, 40f, null).Range(60f, null));
+        var rangeFocused = Arrange(new SliderElement(0f, 100f, 40f, null).Range(60f, null));
+        var rangeCaptured = Arrange(new SliderElement(0f, 100f, 40f, null).Range(60f, null));
 
         var n = DrawInto(mesh, atlas, normal, null, null);
         var h = DrawInto(mesh, atlas, hovered, hovered.ResolvedId, null);
         var f = DrawInto(mesh, atlas, focused, null, focused.ResolvedId);
         var d = DrawInto(mesh, atlas, disabled, null, null);
         var r = DrawInto(mesh, atlas, range, null, null);
+        var rf = DrawInto(mesh, atlas, rangeFocused, null, rangeFocused.ResolvedId);
+        var rc = DrawInto(mesh, atlas, rangeCaptured, rangeCaptured.ResolvedId, null, rangeCaptured.ResolvedId);
 
         Assert.True(n.Accent);                                // 常态:已选段 0x0C63E4 + 白 thumb
         Assert.True(n.White);
-        Assert.False(n.Hover || n.Focus);
+        Assert.False(n.Hover || n.Focus || n.ActiveOutline);
         Assert.True(h.Hover);                                 // 悬停:0x3B82F6,非常态蓝
         Assert.False(h.Accent);
         Assert.True(f.Focus);                                 // 聚焦:0x60A5FA(聚焦压过悬停)
-        Assert.False(f.Accent);
-        Assert.False(d.Accent || d.Hover || d.Focus || d.White);   // 禁用:全灰,无蓝无白
+        Assert.False(f.Accent || f.ActiveOutline);            // 单 thumb 聚焦不画 Range 活动 thumb 描边
+        Assert.False(d.Accent || d.Hover || d.Focus || d.White || d.ActiveOutline);   // 禁用:全灰,无蓝无白
         Assert.True(r.Verts > n.Verts);                       // Range:双 thumb 几何更多
         Assert.True(r.Accent && r.White);                     // 已选段照常着色
+        Assert.False(r.ActiveOutline);                        // Range 未聚焦/未捕获不画活动描边
+        Assert.True(rf.ActiveOutline);                        // Range 聚焦时画 0x93C5FD 活动 thumb 1px 描边
+        Assert.True(rf.Verts > r.Verts);
+        Assert.True(rc.ActiveOutline);                        // Range 捕获中也画 0x93C5FD 活动 thumb 1px 描边
     }
 }
