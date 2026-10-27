@@ -6,6 +6,10 @@ namespace SharpUI.Backends;
 /// <summary>
 /// M3e Task 3:OpenGL 3.3 core 渲染上下文,实现后端中立 IRenderContext(第二后端,经 SDL 原生 GL 路线)。
 /// headless 路径 = 64×64 隐藏 GL 窗口 + 自建上下文(像素验证);窗口路径 = 调用方窗口上自建上下文(T4 接线)。
+/// 目标尺寸纪律(D4 Task4,C-4):窗口路径 TargetWidth/Height 实取 SDL_GL_GetDrawableSize 像素尺寸
+/// (HiDPI:drawable 可大于逻辑窗尺寸,渲染分辨率必须随 drawable;逻辑窗尺寸仅用于 ScaleFactor 语义,
+/// App 侧消费),构造与 Resize 两入口一致;headless 参数即目标(隐藏窗无缩放,语义由测试锁定)。
+/// 视口/scissor/读回全部随 TargetWidth/Height,即随 drawable。
 /// 纪律:零 unsafe、NativeAOT 兼容、绘制路径零新分配(直钉调用者数组 + glBufferSubData 显式长度,
 /// 无 D3D11 整块 scratch 之需 —— 上传量恒等于当帧实际长度,无越界面)。
 /// Y 轴三处落实(GL 默认帧缓冲原点左下,与 D3D11 的全部差异收敛于此):
@@ -57,6 +61,7 @@ public sealed class GLContext : IRenderContext
                     $"SDL_GL_CreateContext 失败(窗口 0x{window:X}):3.3 core/双缓冲属性未达属主模块或像素格式不可用");
             MakeCurrent();
             GL.EnsureLoaded();
+            if (!ownsWindow) ApplyDrawableSize();   // 窗口路径:Target=drawable 像素(D4 Task4)
             _ = SdlNative.SetSwapInterval(1);   // VSync 建上下文后设一次;失败忽略(隐藏窗/驱动不支持)
             CreatePipeline();
         }
@@ -128,15 +133,32 @@ public sealed class GLContext : IRenderContext
 
     // ---- IRenderContext ----
 
-    /// <summary>仅记录新尺寸:GL 窗口由 SDL 管理(交换链尺寸事件在 T4 窗口层处理),viewport 于下次
-    /// BeginFrame 按 TargetWidth/Height 刷新。不接受 0(同 D3D11 语义);headless 不抛
-    /// (GL headless 无离屏目标重建问题,与 D3D11 headless NotSupportedException 语义之差由实现取舍)。</summary>
+    /// <summary>窗口尺寸变化通知:Target 实取 SDL_GL_GetDrawableSize 像素尺寸(D4 Task4,C-4 —— HiDPI
+    /// 下渲染分辨率=drawable 而非逻辑窗尺寸;逻辑尺寸仅用于 ScaleFactor 语义,App 侧消费);headless
+    /// 保持"仅记录参数"语义不变(GLContextTests.ResizeZero 锁定)。不接受 0(同 D3D11 语义);
+    /// headless 不抛(GL headless 无离屏目标重建问题,与 D3D11 headless NotSupportedException 语义
+    /// 之差由实现取舍)。视口/scissor/读回全部随 TargetWidth/Height(即随 drawable),于下次
+    /// BeginFrame 刷新。</summary>
     public void Resize(uint width, uint height)
     {
         ThrowIfDisposed();
         ValidateSize(width, height);
         TargetWidth = width;
         TargetHeight = height;
+        if (!_ownsWindow) ApplyDrawableSize();
+    }
+
+    /// <summary>窗口路径:TargetWidth/Height=SDL_GL_GetDrawableSize(D4 Task4)。查询 0(窗口最小化
+    /// 等瞬态)时保守保留逻辑尺寸(渲染循环不接受 0 目标,ValidateSize 不变量;Windows 下
+    /// drawable==窗口尺寸,该分支纯防御)。headless 不查询:隐藏窗参数即目标,语义由测试锁定。</summary>
+    void ApplyDrawableSize()
+    {
+        SdlNative.GetDrawableSize(_window, out int w, out int h);
+        if (w > 0 && h > 0)
+        {
+            TargetWidth = (uint)w;
+            TargetHeight = (uint)h;
+        }
     }
 
     /// <summary>图集区域上传(RGBA 字节,左上原点 —— GL 纹理行 0 即首个上传字节,与 UV (0,0) 对应,

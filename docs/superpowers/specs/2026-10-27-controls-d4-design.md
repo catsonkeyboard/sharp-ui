@@ -58,3 +58,49 @@ src/SharpUI/Text/SdlTextInput.cs      EnsureBound 候选序同构化(C-5)
 ## 范围外(D5+)
 
 Dialog/Tooltip 浮层机制、Menu/Select;触屏/手柄;RTL 布局;控件主题系统(色板沿用 Button 硬编码,主题化另议)。
+
+## 实施纪要(Task 4,2026-10-27 落档)
+
+### C-4.1 D3D11 部分上传(取舍)
+
+vb/ib 改 `DYNAMIC+CpuAccessWrite`(Bind 不变;DYNAMIC 创建时 pInitialData=NULL,初始化语义=首次
+Draw 的 Map 写入)。Draw 路径:**每绘制** `Map(WRITE_DISCARD)` → kernel32 RtlMoveMemory 只拷当帧
+实际字节(顶点 [0..vertexCount) 前缀直拷;索引源分段连续、直写缓冲头部即完成重定基,单次块拷、
+scratch 数组整体移除)→ `Unmap` → IA 绑定 → `DrawIndexed(indexCount, 0, 0)`。
+
+- **Map 时机偏离计划稿**:计划设想"每帧每缓冲恰一次 Map、分段复用同 Map";但映射中的缓冲不得被
+  管线消费(首次绘制后缓冲已绑定 IA 读入),跨绘制驻留映射再绘制属未定义 —— 故取 ImGui 批次同款
+  "每绘制 Map→写→Unmap→绘制"。单区段帧(常态)即每帧恰一次;多区段帧每区段一次,仍只写实际字节。
+  WRITE_DISCARD 改名由运行时管理(改名槽回收复用),映射+IA 在途绑定合法(D3D11 运行时专为此设
+  改名机制;两区段读回测试 `Headless_DrawTwoSegments_StartIndexOffset` 实证)。未引入
+  MapWriteNoOverwrite 环形进阶(非必需,留作未来多区段密集场景的演进项)。
+- **分段重定基语义保持**(拷到缓冲头部 + DrawIndexed 偏移 0):重定基每次拷贝量 O(indexCount),
+  直写分段+偏移为 O(startIndex+indexCount)(末段近乎整帧重传),维持旧取舍;接口契约不变,
+  金样本 6/6 与 D3D11ContextTests 8/8(含两区段)锁定。
+- 旧"scratch 字节容量恒等于 ByteWidth"不变量与 20 字节圆整随整块上传一并移除(容量仅约束
+  ByteWidth,×2 增长保留);块拷原语=kernel32 RtlMoveMemory(注意导出名非 CopyMemory,后者是
+  头文件宏,EntryPointNotFound 实证)。
+
+### C-4.2 GL drawable
+
+`SdlNative.GetDrawableSize`(SDL_GL_GetDrawableSize,属主模块);GLContext 窗口路径构造与 Resize:
+TargetWidth/Height 实取 drawable 像素(逻辑窗尺寸仅用于 ScaleFactor 语义,App 侧);视口/scissor/
+读回全部随 Target(即随 drawable)。headless 参数即目标(语义由 GLContextTests 锁定,不变)。
+Windows 下 drawable==窗口尺寸,本机 DPI=96 断言不漂移;HiDPI(macOS Retina/Wayland)渲染分辨率
+正确性由此修复。
+
+### C-4.3 多窗/多线程评估(三子项结论)
+
+1. **GL EnsureLoaded 加锁:落码**(评估结论=加)。单线程泵下并发首调竞态不可达,但加锁为零成本
+   防御(快路径无锁读,锁仅首调进入,双检防重复解析);委托字段先写后置 `_loaded`,x86-TSO 下
+   读方经 `_loaded` 观察到的字段恒就绪。已落 `GL.EnsureLoaded`(lock + 双检)。
+2. **OwnerModule 缓存失效:维持,注释落档**(评估结论=不加失效钩子)。关窗残留键留存至进程结束
+   (SdlPump.Unregister 只清泵窗表,本字典不清),单键成本一 IntPtr、量级=历史窗数,非增长型。
+   失效风险链="HWND 复用 且 新旧窗属主模块不同"——应用建窗恒走同一 SdlWindow 层,属主翻转不可达,
+   残留键复用即命中正确属主;缓存命中复验会重引入多候选探测、缓存归零收益。若未来出现不同层/不同
+   模块建窗路径,须先给失效策略再接入(注释已记)。
+3. **SdlPump 无归属鼠标精确归属:维持"最近聚焦窗"近似**(评估结论=不落码,精确化留 M3e 后半)。
+   无归属 MOUSEMOTION 仅三态:关闭瞬间队列尾部事件/混宿进程他方窗口/焦点簿记空窗;"最近聚焦窗"
+   传播在 (a)(c) 即正确归属,(b) 下目标窗未聚焦不消费点击(误漂移仅一处只读位置);键盘/文本/
+   按钮/滚轮仍严格按 windowID 路由、不传播(归属精确性不受影响)。精确归属需 SDK 侧
+   FOCUS/MOUSE_FOCUS flags 查询判真实光标窗,待 M3e 后半评估。

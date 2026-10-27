@@ -6,14 +6,14 @@ namespace SharpUI.Backends;
 /// <summary>
 /// M3d-ii Task 3:D3D11 渲染上下文,实现后端中立 IRenderContext v2(替代旧窗口栈 GraphicsContext)。
 /// headless 路径全功能(离屏 RT + 读回);窗口路径(交换链/Resize/Present)已实现,T4 接线。
-/// 纪律:零 unsafe、NativeAOT 兼容、绘制路径零新分配(常驻钉扎槽 + span 拷贝,稳态无堆分配)。
+/// 纪律:零 unsafe、NativeAOT 兼容、绘制路径零新分配(常驻钉扎槽 + 钉调用者数组直拷,稳态无堆分配)。
 /// 槽位纪律(照抄 D3D11Spike 实证模式):每个 COM 对象取得后立即做 IUnknown AddRef/Release 往返实证;
 /// Dispose 逆序 Release 全部 COM 对象并留痕(ReleaseTrace)。hr 判定按 COM FAILED 语义(hr&lt;0):
 /// CreateInputLayout 在布局与运行时缓存重复时返回 S_FALSE(成功码)且对象有效。
-/// 上传语义(D3D11.3 功能规范):UpdateSubresource 对缓冲 pDstBox 必须 NULL 且整块 ByteWidth 自 pSrcData
-/// 读出 — 故上下文自持常驻钉扎 scratch(UiVertex[]/ushort[],字节容量恒等于 GPU ByteWidth),Draw 先
-/// span 拷入 scratch 再整块上传;尾段陈旧数据不被 DrawIndexed 的索引引用(直接钉调用者数组会在容量
-/// (×2 增长)大于当帧数组时越界读取)。级间链接:D3D11 按硬件寄存器配对 VS 输出/PS 输入,PSIn 首成员
+/// 上传语义(D4 Task4,C-4):vb/ib 为 DYNAMIC+CpuAccessWrite,绘制路径 Map(WRITE_DISCARD) →
+/// kernel32 CopyMemory 只写当帧实际字节(顶点前缀直拷/索引分段重定基直写头部)→ Unmap → 绘制
+/// (ImGui 批次模式;Map 时机取舍与分段语义见 Draw 注释);图集/常量缓冲仍 Default+UpdateSubresource。
+/// 级间链接:D3D11 按硬件寄存器配对 VS 输出/PS 输入,PSIn 首成员
 /// 必须 SV_Position(见 Shaders.HlslFragmentSource 注释;链接错位时采样/顶点色读 0,真机调试层实证)。
 /// </summary>
 public sealed class D3D11Context : IRenderContext
@@ -57,10 +57,9 @@ public sealed class D3D11Context : IRenderContext
     GCHandle _viewportPin, _scissorPin, _boxPin, _rtvPin, _vbSlotPin, _cbSlotPin, _srvSlotPin, _samplerSlotPin,
              _stridesPin, _offsetsPin, _cbPin, _semPosPin, _semTexPin, _semColPin;
 
-    // ---- 上传 scratch(字节容量恒等于 GPU ByteWidth;首容量 256KB/512KB,×2 增长,同旧 Renderer) ----
-    UiVertex[]? _vbScratch;
-    ushort[]? _ibScratch;
-    GCHandle _vbScratchPin, _ibScratchPin;
+    // ---- 上传缓冲容量(D4 Task4:vb/ib 为 DYNAMIC,Draw 经 Map(WRITE_DISCARD) 只写当帧实际字节;
+    // 无 scratch 数组,亦无旧"scratch 字节容量恒等于 GPU ByteWidth"不变量 —— 该不变量只服务于
+    // UpdateSubresource 整块读取的有界性,随整块上传一并移除。首容量 256KB/512KB,×2 增长,同旧 Renderer) ----
     uint _vbCapacityBytes = 256 * 1024, _ibCapacityBytes = 512 * 1024;
 
     // ---- 设备方法委托(构造期解析一次;绘制路径零分配要求禁止逐帧 Vfn) ----
@@ -232,10 +231,20 @@ public sealed class D3D11Context : IRenderContext
         _rsSetScissorRects(_context, 1, _scissorPin.AddrOfPinnedObject());
     }
 
-    /// <summary>绘制一段索引几何(零分配):取 indices[startIndex .. startIndex+indexCount) 分段,重定基拷入
-    /// 常驻 scratch 头部(DrawIndexed 偏移 0)→ UpdateSubresource 整块上传 → 全状态落地。取舍:分段重定基的
-    /// 每次拷贝量 O(indexCount),一帧 N 个剪裁区段合计 O(总索引数);若上传 [0..startIndex+indexCount) 维持
-    /// GPU 侧偏移,末尾区段每次重传几乎整个前缀,均摊 O(N×总数),故选重定基。</summary>
+    /// <summary>绘制一段索引几何(零分配):取 indices[startIndex .. startIndex+indexCount) 分段,重定基
+    /// 直写 DYNAMIC 缓冲头部(DrawIndexed 偏移 0)。上传语义(D4 Task4,C-4):每次绘制
+    /// Map(WRITE_DISCARD) → CopyMemory 只拷当帧实际字节 → Unmap → IA 绑定 → DrawIndexed —— 顶点为
+    /// [0..vertexCount) 前缀直拷,索引源分段连续、直写缓冲头部即完成重定基(单次块拷,无中间 scratch)。
+    /// 相比旧 UpdateSubresource 整块上传(恒整容量/绘制:256KB vb + 512KB ib,且对绑定中缓冲隐式同步),
+    /// 上传量降为实际字节,WRITE_DISCARD 经运行时改名不阻塞 GPU(映射+IA 在途绑定合法,D3D11 运行时
+    /// 专为此设改名机制;两区段测试实证)。
+    /// Map 时机取舍:计划稿设想"每帧每缓冲恰一次 Map、分段复用同 Map";但映射中的缓冲不得被管线消费
+    /// (首次绘制后缓冲已绑定 IA 读入),跨绘制驻留映射再绘制属未定义 —— 故取 ImGui 批次同款
+    /// "每绘制 Map(DISCARD)→写→Unmap→绘制":单区段帧(常态)即每帧恰一次;多区段帧每区段一次,
+    /// 仍只写实际字节(改名槽由运行时回收,无需 MapWriteNoOverwrite 环形进阶,26.6 无关)。
+    /// 重定基 vs 直写分段+DrawIndexed 偏移:重定基每次拷贝量 O(indexCount);直写前缀为
+    /// O(startIndex+indexCount),末段近乎整帧重传(均摊 O(N×总数)),故保持重定基(接口契约不变,
+    /// 金样本/两区段读回测试锁定语义)。GCHandle.Alloc/Free 为句柄表操作,无 GC 堆分配。</summary>
     public void Draw(UiVertex[] vertices, int vertexCount, ushort[] indices, uint indexCount, uint startIndex)
     {
         ThrowIfDisposed();
@@ -249,11 +258,28 @@ public sealed class D3D11Context : IRenderContext
         if (indexCount == 0) return;
 
         EnsureUploadCapacity(vertexCount, (int)indexCount);
-        vertices.AsSpan(0, vertexCount).CopyTo(_vbScratch!);
-        indices.AsSpan((int)startIndex, (int)indexCount).CopyTo(_ibScratch!);
-        // 缓冲更新语义:box=NULL = 整块 ByteWidth;scratch 字节容量恒等于 ByteWidth,读取有界
-        _updateSubresource(_context, _vertexBuffer, 0, IntPtr.Zero, _vbScratchPin.AddrOfPinnedObject(), 0, 0);
-        _updateSubresource(_context, _indexBuffer, 0, IntPtr.Zero, _ibScratchPin.AddrOfPinnedObject(), 0, 0);
+        GCHandle vp = GCHandle.Alloc(vertices, GCHandleType.Pinned);
+        GCHandle ip = GCHandle.Alloc(indices, GCHandleType.Pinned);
+        try
+        {
+            int hrVb = _map(_context, _vertexBuffer, 0, D3D11Native.MapWriteDiscard, 0,
+                out D3D11Native.MappedSubresource mappedVb);
+            if (hrVb < 0 || mappedVb.Data == IntPtr.Zero)
+                ThrowHr("ID3D11DeviceContext::Map(vertex, WRITE_DISCARD)", hrVb, D3D11Native.SlotCtxMap);
+            D3D11Native.CopyMemory(mappedVb.Data, vp.AddrOfPinnedObject(),
+                (UIntPtr)((long)vertexCount * UiVertex.SizeInBytes));
+            _unmap(_context, _vertexBuffer, 0);   // 映射中的缓冲不得被管线消费,先解映射再落地状态
+
+            int hrIb = _map(_context, _indexBuffer, 0, D3D11Native.MapWriteDiscard, 0,
+                out D3D11Native.MappedSubresource mappedIb);
+            if (hrIb < 0 || mappedIb.Data == IntPtr.Zero)
+                ThrowHr("ID3D11DeviceContext::Map(index, WRITE_DISCARD)", hrIb, D3D11Native.SlotCtxMap);
+            D3D11Native.CopyMemory(mappedIb.Data,
+                IntPtr.Add(ip.AddrOfPinnedObject(), (int)(startIndex * sizeof(ushort))),
+                (UIntPtr)((long)indexCount * sizeof(ushort)));
+            _unmap(_context, _indexBuffer, 0);
+        }
+        finally { ip.Free(); vp.Free(); }
 
         _iaSetInputLayout(_context, _inputLayout);
         _vbSlot[0] = _vertexBuffer;
@@ -564,9 +590,11 @@ public sealed class D3D11Context : IRenderContext
         _rsSetState(_context, _rasterizerState);
     }
 
-    /// <summary>顶点/索引上传缓冲与 scratch 容量保障:首建或超容(×2,同旧 Renderer.EnsureCapacity)时重建。
-    /// GPU ByteWidth 与 scratch 字节长度恒等(UpdateSubresource 整块读取的有界性前提);顶点容量向上取整到
-    /// 20 的倍数(256KB/20=13107.2,直接截断会短 4 字节)。</summary>
+    /// <summary>顶点/索引 DYNAMIC 缓冲容量保障:首建或超容(×2,同旧 Renderer.EnsureCapacity)时重建。
+    /// D4 Task4:Usage=DYNAMIC|CpuAccessWrite(DYNAMIC 创建时 pInitialData 必须 NULL —— 初始化语义
+    /// 改为首次 Draw 的 Map(WRITE_DISCARD) 写入,重建同理,首绘即填)。旧 20 字节圆整与 scratch 重建
+    /// 随整块上传移除(容量仅约束 GPU ByteWidth;Map 路径只写实际字节,无整块读取有界性前提);
+    /// 重建消亡旧缓冲,本路径无跨绘制驻留映射,无需额外 Map 状态失效处理。</summary>
     void EnsureUploadCapacity(int vertexCount, int indexCount)
     {
         uint vbNeed = (uint)vertexCount * UiVertex.SizeInBytes;
@@ -574,15 +602,13 @@ public sealed class D3D11Context : IRenderContext
         if (_vertexBuffer == IntPtr.Zero || vbNeed > _vbCapacityBytes)
         {
             if (vbNeed > _vbCapacityBytes) _vbCapacityBytes = Math.Max(_vbCapacityBytes * 2, vbNeed);
-            // 无条件圆整到 20 的倍数:首容量 262144/20=13107.2,截断会使 scratch(262140B)< ByteWidth(262144B),
-            // 整块上传越界 4 字节(违反类头声明的"scratch 字节容量恒等于 ByteWidth"不变量)
-            _vbCapacityBytes = (_vbCapacityBytes + UiVertex.SizeInBytes - 1) / UiVertex.SizeInBytes * UiVertex.SizeInBytes;
             ReleaseOne(ref _vertexBuffer, "ID3D11Buffer(vertex)");
-            if (_vbScratchPin.IsAllocated) _vbScratchPin.Free();
-            _vbScratch = new UiVertex[_vbCapacityBytes / UiVertex.SizeInBytes];
-            _vbScratchPin = GCHandle.Alloc(_vbScratch, GCHandleType.Pinned);
-            var desc = new D3D11Native.BufferDesc { ByteWidth = _vbCapacityBytes, Usage = D3D11Native.D3D11UsageDefault, BindFlags = D3D11Native.BindVertex };
-            int hr = _createBuffer(_device, ref desc, IntPtr.Zero, out _vertexBuffer);
+            var desc = new D3D11Native.BufferDesc
+            {
+                ByteWidth = _vbCapacityBytes, Usage = D3D11Native.D3D11UsageDynamic,
+                BindFlags = D3D11Native.BindVertex, CPUAccessFlags = D3D11Native.CpuAccessWrite,
+            };
+            int hr = _createBuffer(_device, ref desc, IntPtr.Zero /* DYNAMIC 禁初始数据 */, out _vertexBuffer);
             if (hr < 0 || _vertexBuffer == IntPtr.Zero) ThrowHr("CreateBuffer(vertex)", hr, D3D11Native.SlotDevCreateBuffer);
             ValidateIUnknown(_vertexBuffer, "ID3D11Buffer(vertex)");
         }
@@ -590,11 +616,12 @@ public sealed class D3D11Context : IRenderContext
         {
             if (ibNeed > _ibCapacityBytes) _ibCapacityBytes = Math.Max(_ibCapacityBytes * 2, ibNeed);
             ReleaseOne(ref _indexBuffer, "ID3D11Buffer(index)");
-            if (_ibScratchPin.IsAllocated) _ibScratchPin.Free();
-            _ibScratch = new ushort[_ibCapacityBytes / sizeof(ushort)];
-            _ibScratchPin = GCHandle.Alloc(_ibScratch, GCHandleType.Pinned);
-            var desc = new D3D11Native.BufferDesc { ByteWidth = _ibCapacityBytes, Usage = D3D11Native.D3D11UsageDefault, BindFlags = D3D11Native.BindIndex };
-            int hr = _createBuffer(_device, ref desc, IntPtr.Zero, out _indexBuffer);
+            var desc = new D3D11Native.BufferDesc
+            {
+                ByteWidth = _ibCapacityBytes, Usage = D3D11Native.D3D11UsageDynamic,
+                BindFlags = D3D11Native.BindIndex, CPUAccessFlags = D3D11Native.CpuAccessWrite,
+            };
+            int hr = _createBuffer(_device, ref desc, IntPtr.Zero /* DYNAMIC 禁初始数据 */, out _indexBuffer);
             if (hr < 0 || _indexBuffer == IntPtr.Zero) ThrowHr("CreateBuffer(index)", hr, D3D11Native.SlotDevCreateBuffer);
             ValidateIUnknown(_indexBuffer, "ID3D11Buffer(index)");
         }
@@ -606,7 +633,6 @@ public sealed class D3D11Context : IRenderContext
     {
         if (_disposed) return;
         _disposed = true;
-        FreePin(ref _vbScratchPin); FreePin(ref _ibScratchPin);
         FreePin(ref _viewportPin); FreePin(ref _scissorPin); FreePin(ref _boxPin);
         FreePin(ref _rtvPin); FreePin(ref _vbSlotPin); FreePin(ref _cbSlotPin);
         FreePin(ref _srvSlotPin); FreePin(ref _samplerSlotPin);

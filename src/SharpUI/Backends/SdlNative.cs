@@ -70,7 +70,13 @@ internal static class SdlNative
     }
 
     /// <summary>窗口属主 SDL 模块句柄(WMInfo 应答候选;窗口级缓存,窗口关闭不强求清理——句柄仅作字典键)。
-    /// 裁定#38 纪律:任何窗口相关 SDL_GL_*/WMInfo 调用前经此定位属主,勿直接用 Primary()。</summary>
+    /// 裁定#38 纪律:任何窗口相关 SDL_GL_*/WMInfo 调用前经此定位属主,勿直接用 Primary()。
+    /// 多窗/多线程评估②(D4 Task4,结论=维持缓存,不加失效钩子):关窗残留键事实——SdlPump.Unregister
+    /// 只清泵窗表,本字典键(窗口地址)留存至进程结束,单键成本一 IntPtr(量级=历史窗数,非增长型)。
+    /// 失效风险链="HWND 被操作系统复用 且 新旧窗属主模块不同":两事件同时发生才出错,而应用建窗恒走
+    /// 同一 SdlWindow 层(属主模块选择策略进程级一致),属主翻转不可达,残留键复用即命中正确属主。
+    /// 精确失效(缓存命中亦 TryWmInfo 复验)会重引入每次调用的多候选探测,缓存归零收益,故不做;
+    /// 若未来多窗口创建路径(不同层/不同模块建窗)出现,需先行给出失效策略再接入。</summary>
     internal static IntPtr OwnerModule(IntPtr sdlWindow)
     {
         lock (_ownerLock)
@@ -115,6 +121,14 @@ internal static class SdlNative
     /// <summary>交换属主窗口前后缓冲(垂直同步节奏由 SetSwapInterval 控制)。</summary>
     internal static void SwapWindow(IntPtr sdlWindow) =>
         Fn<GlSwapWindowFn>(OwnerModule(sdlWindow), "SDL_GL_SwapWindow")(sdlWindow);
+
+    /// <summary>查询窗口 GL drawable 像素尺寸(SDL_GL_GetDrawableSize;D4 Task4 增)。HiDPI 下
+    /// drawable 可大于逻辑窗口尺寸(macOS Retina/Wayland 复合器缩放);Windows SDL 坐标即物理像素,
+    /// 两者恒等(DPI=96 本机断言不漂移的前提,亦是窗口路径 TargetWidth/Height 实取 drawable 的
+    /// 本机等价性依据)。窗口级调用 → 属主模块(裁定#38 纪律)。SDL 允许任一出参 NULL,本绑定恒传
+    /// 有效出参(out 语义)。</summary>
+    internal static void GetDrawableSize(IntPtr sdlWindow, out int w, out int h) =>
+        Fn<GlGetDrawableSizeFn>(OwnerModule(sdlWindow), "SDL_GL_GetDrawableSize")(sdlWindow, out w, out h);
 
     /// <summary>设置交换间隔(0=立即/1=垂直同步/-1=自适应);作用域=各模块"当前上下文",
     /// 无窗口参属主未知 → 全候选,任一接受即成(无当前上下文的副本报 -1,忽略)。</summary>
@@ -292,6 +306,9 @@ internal static class SdlNative
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate void GlSwapWindowFn(IntPtr window);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void GlGetDrawableSizeFn(IntPtr window, out int w, out int h);
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate int GlSetSwapIntervalFn(int interval);

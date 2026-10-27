@@ -13,62 +13,70 @@ namespace SharpUI.Backends;
 internal static class GL
 {
     static bool _loaded;
+    static readonly object _loadLock = new();   // D4 Task4 评估①:并发首调防御(见 EnsureLoaded 注释)
 
     // ---- 加载器 ----
 
-    /// <summary>惰性全量解析(幂等;须已 MakeCurrent,否则全部指针为 NULL 即抛)。</summary>
+    /// <summary>惰性全量解析(幂等;须已 MakeCurrent,否则全部指针为 NULL 即抛)。
+    /// 多窗/多线程评估①(D4 Task4):UI 泵单线程下并发首调竞态不可达,加锁为多窗多线程演进(或
+    /// 测试宿主并行)的零成本防御 —— 快路径无锁读,锁仅首调进入;双检防并发首调重复解析。委托字段
+    /// 全部先写后置 _loaded,x86-TSO 存储序下读方经 _loaded 观察到的字段恒已就绪。</summary>
     internal static void EnsureLoaded()
     {
         if (_loaded) return;
-        _getString = R<GetStringFn>("glGetString");
-        _getError = R<GetErrorFn>("glGetError");
-        _createShader = R<CreateShaderFn>("glCreateShader");
-        _shaderSource = R<ShaderSourceFn>("glShaderSource");
-        _compileShader = R<CompileShaderFn>("glCompileShader");
-        _getShaderiv = R<GetShaderivFn>("glGetShaderiv");
-        _getShaderInfoLog = R<GetShaderInfoLogFn>("glGetShaderInfoLog");
-        _deleteShader = R<DeleteShaderFn>("glDeleteShader");
-        _createProgram = R<CreateProgramFn>("glCreateProgram");
-        _attachShader = R<AttachShaderFn>("glAttachShader");
-        _linkProgram = R<LinkProgramFn>("glLinkProgram");
-        _getProgramiv = R<GetProgramivFn>("glGetProgramiv");
-        _getProgramInfoLog = R<GetProgramInfoLogFn>("glGetProgramInfoLog");
-        _useProgram = R<UseProgramFn>("glUseProgram");
-        _genVertexArrays = R<GenVertexArraysFn>("glGenVertexArrays");
-        _bindVertexArray = R<BindVertexArrayFn>("glBindVertexArray");
-        _enableVertexAttribArray = R<EnableVertexAttribArrayFn>("glEnableVertexAttribArray");
-        _vertexAttribPointer = R<VertexAttribPointerFn>("glVertexAttribPointer");
-        _genBuffers = R<GenBuffersFn>("glGenBuffers");
-        _bindBuffer = R<BindBufferFn>("glBindBuffer");
-        _bufferData = R<BufferDataFn>("glBufferData");
-        _bufferSubData = R<BufferSubDataFn>("glBufferSubData");
-        _deleteBuffers = R<DeleteBuffersFn>("glDeleteBuffers");
-        _bindBufferBase = R<BindBufferBaseFn>("glBindBufferBase");
-        _genTextures = R<GenTexturesFn>("glGenTextures");
-        _bindTexture = R<BindTextureFn>("glBindTexture");
-        _texImage2D = R<TexImage2DFn>("glTexImage2D");
-        _texSubImage2D = R<TexSubImage2DFn>("glTexSubImage2D");
-        _deleteTextures = R<DeleteTexturesFn>("glDeleteTextures");
-        _texParameteri = R<TexParameteriFn>("glTexParameteri");
-        _activeTexture = R<ActiveTextureFn>("glActiveTexture");
-        _enable = R<EnableFn>("glEnable");
-        _disable = R<DisableFn>("glDisable");
-        _blendFunc = R<BlendFuncFn>("glBlendFunc");
-        _viewport = R<ViewportFn>("glViewport");
-        _scissor = R<ScissorFn>("glScissor");
-        _clearColor = R<ClearColorFn>("glClearColor");
-        _clear = R<ClearFn>("glClear");
-        _drawElements = R<DrawElementsFn>("glDrawElements");
-        _getUniformLocation = R<GetUniformLocationFn>("glGetUniformLocation");
-        _uniform1i = R<Uniform1iFn>("glUniform1i");
-        _readPixels = R<ReadPixelsFn>("glReadPixels");
-        // M3e T3 增补(T2 清单外,均为 GL 2.0/3.0/3.1 core 入口,签名出处 GLES3/gl3.h):
-        // UBO 显式绑定点(330 core 无 layout(binding),不得假设默认 0)+ Dispose 对象卫生
-        _getUniformBlockIndex = R<GetUniformBlockIndexFn>("glGetUniformBlockIndex");
-        _uniformBlockBinding = R<UniformBlockBindingFn>("glUniformBlockBinding");
-        _deleteProgram = R<DeleteProgramFn>("glDeleteProgram");
-        _deleteVertexArrays = R<DeleteVertexArraysFn>("glDeleteVertexArrays");
-        _loaded = true;
+        lock (_loadLock)
+        {
+            if (_loaded) return;
+            _getString = R<GetStringFn>("glGetString");
+            _getError = R<GetErrorFn>("glGetError");
+            _createShader = R<CreateShaderFn>("glCreateShader");
+            _shaderSource = R<ShaderSourceFn>("glShaderSource");
+            _compileShader = R<CompileShaderFn>("glCompileShader");
+            _getShaderiv = R<GetShaderivFn>("glGetShaderiv");
+            _getShaderInfoLog = R<GetShaderInfoLogFn>("glGetShaderInfoLog");
+            _deleteShader = R<DeleteShaderFn>("glDeleteShader");
+            _createProgram = R<CreateProgramFn>("glCreateProgram");
+            _attachShader = R<AttachShaderFn>("glAttachShader");
+            _linkProgram = R<LinkProgramFn>("glLinkProgram");
+            _getProgramiv = R<GetProgramivFn>("glGetProgramiv");
+            _getProgramInfoLog = R<GetProgramInfoLogFn>("glGetProgramInfoLog");
+            _useProgram = R<UseProgramFn>("glUseProgram");
+            _genVertexArrays = R<GenVertexArraysFn>("glGenVertexArrays");
+            _bindVertexArray = R<BindVertexArrayFn>("glBindVertexArray");
+            _enableVertexAttribArray = R<EnableVertexAttribArrayFn>("glEnableVertexAttribArray");
+            _vertexAttribPointer = R<VertexAttribPointerFn>("glVertexAttribPointer");
+            _genBuffers = R<GenBuffersFn>("glGenBuffers");
+            _bindBuffer = R<BindBufferFn>("glBindBuffer");
+            _bufferData = R<BufferDataFn>("glBufferData");
+            _bufferSubData = R<BufferSubDataFn>("glBufferSubData");
+            _deleteBuffers = R<DeleteBuffersFn>("glDeleteBuffers");
+            _bindBufferBase = R<BindBufferBaseFn>("glBindBufferBase");
+            _genTextures = R<GenTexturesFn>("glGenTextures");
+            _bindTexture = R<BindTextureFn>("glBindTexture");
+            _texImage2D = R<TexImage2DFn>("glTexImage2D");
+            _texSubImage2D = R<TexSubImage2DFn>("glTexSubImage2D");
+            _deleteTextures = R<DeleteTexturesFn>("glDeleteTextures");
+            _texParameteri = R<TexParameteriFn>("glTexParameteri");
+            _activeTexture = R<ActiveTextureFn>("glActiveTexture");
+            _enable = R<EnableFn>("glEnable");
+            _disable = R<DisableFn>("glDisable");
+            _blendFunc = R<BlendFuncFn>("glBlendFunc");
+            _viewport = R<ViewportFn>("glViewport");
+            _scissor = R<ScissorFn>("glScissor");
+            _clearColor = R<ClearColorFn>("glClearColor");
+            _clear = R<ClearFn>("glClear");
+            _drawElements = R<DrawElementsFn>("glDrawElements");
+            _getUniformLocation = R<GetUniformLocationFn>("glGetUniformLocation");
+            _uniform1i = R<Uniform1iFn>("glUniform1i");
+            _readPixels = R<ReadPixelsFn>("glReadPixels");
+            // M3e T3 增补(T2 清单外,均为 GL 2.0/3.0/3.1 core 入口,签名出处 GLES3/gl3.h):
+            // UBO 显式绑定点(330 core 无 layout(binding),不得假设默认 0)+ Dispose 对象卫生
+            _getUniformBlockIndex = R<GetUniformBlockIndexFn>("glGetUniformBlockIndex");
+            _uniformBlockBinding = R<UniformBlockBindingFn>("glUniformBlockBinding");
+            _deleteProgram = R<DeleteProgramFn>("glDeleteProgram");
+            _deleteVertexArrays = R<DeleteVertexArraysFn>("glDeleteVertexArrays");
+            _loaded = true;
+        }
     }
 
     static T R<T>(string name) where T : class

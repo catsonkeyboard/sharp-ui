@@ -290,11 +290,20 @@ internal static class D3D11Native
 
     [DllImport("d3dcompiler_47.dll")]
     internal static extern int D3DCompile(
-        IntPtr srcData, uint srcDataSize,
+        IntPtr srcData, uint srcSize,
         [MarshalAs(UnmanagedType.LPStr)] string sourceName,
         IntPtr defines, IntPtr include,
         [MarshalAs(UnmanagedType.LPStr)] string entryPoint,
         [MarshalAs(UnmanagedType.LPStr)] string target,
         uint flags1, uint flags2,
         out IntPtr codeBlob, out IntPtr errorBlob);
+
+    /// <summary>kernel32 RtlMoveMemory(D4 Task4 增):钉扎托管内存 → 原生映射内存的
+    /// 块拷贝原语 —— DYNAMIC 缓冲 Map 后写 mapped.Data 需 native←managed 块拷,零 unsafe 且 BCL 无
+    /// IntPtr 目标的托管块拷入口(Buffer.MemoryCopy 为 unsafe 签名,Marshal.Copy 仅数组→指针且无
+    /// 结构体/ushort 重载)。注意导出名是 RtlMoveMemory:头文件宏 CopyMemory= RtlMoveMemory,
+    /// kernel32 无 "CopyMemory" 导出(EntryPointNotFoundException 实证)。签名全 blittable,AOT 兼容;
+    /// kernel32 系统常驻,无新增可再分发依赖。语义同 memmove(重叠安全)。</summary>
+    [DllImport("kernel32.dll", EntryPoint = "RtlMoveMemory", SetLastError = false)]
+    internal static extern void CopyMemory(IntPtr destination, IntPtr source, UIntPtr length);
 }
