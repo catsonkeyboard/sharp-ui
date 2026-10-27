@@ -25,6 +25,10 @@ public abstract class Element
     public bool Focusable;
     internal string? ResolvedId { get; set; }
 
+    /// <summary>悬停提示文本(D5 T3):ElementExtensions.Tooltip 链式附加;非 null 即为 Tooltip 载体,
+    /// 由 TooltipService 每帧扫描驱动(悬停 ≥0.5s 弹出/移出或点击移除)。internal 字段免附加属性表。</summary>
+    internal string? TooltipText;
+
     public Element Add(Element child)
     {
         Children ??= new List<Element>(4);

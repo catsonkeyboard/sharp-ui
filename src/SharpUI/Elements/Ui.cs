@@ -69,4 +69,8 @@ public static class ElementExtensions
     public static T Shrink<T>(this T e, float shrink) where T : Element { e.Style.FlexShrink = shrink; return e; }
     public static T Basis<T>(this T e, float basis) where T : Element { e.Style.FlexBasis = basis; return e; }
     public static T Wrap<T>(this T e) where T : Element { e.Style.Wrap = FlexWrap.Wrap; return e; }
+
+    /// <summary>给任意元素附悬停提示(F-1 Tooltip 经 PopupHost,D5 T3):悬停 ≥0.5s 于元素左下弹出
+    /// 提示浮层,移出/点击移除;无焦点语义(Esc 穿越)。链式。</summary>
+    public static T Tooltip<T>(this T e, string text) where T : Element { e.TooltipText = text; return e; }
 }

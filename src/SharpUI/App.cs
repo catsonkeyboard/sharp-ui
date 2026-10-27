@@ -145,6 +145,7 @@ public sealed class App
                 w.Renderer.Submit(mesh, screen, w.Scale);
                 w.Ctx.Present();
                 w.LastTree = root;
+                TooltipService.Update(w.Window.SdlWindowHandle, root, in input);   // D5 T3:悬停计时/存活/孤儿清理(帧尾,Push 次帧入绘)
             }
             State.Sweep();   // 全局一次/帧:所有窗口本帧触碰后才扫描失联键(D25 宽限:>300 帧未触碰才清)
             State.Tick();    // 帧计数 +1(M3c):宽限期以帧为刻度,先 Sweep 后 Tick
@@ -153,6 +154,7 @@ public sealed class App
                 {
                     IntPtr deadHandle = Windows[i].Window.SdlWindowHandle;   // D5:Dispose 前取句柄,清该窗浮层栈
                     PopupHost.Clear(deadHandle);
+                    TooltipService.Clear(deadHandle);   // D5 T3:悬停计时/在开提示记账随窗清
                     Windows[i].TextInput.Update(IntPtr.Zero, null, null);   // IME 热修:移除前确保 Stop(去激活该窗文本输入)
                     Windows[i].Renderer.Dispose();
                     Windows[i].Ctx.Dispose();
@@ -166,6 +168,7 @@ public sealed class App
         foreach (AppWindow w in Windows)   // IME 热修:退出兜底,残留窗(含主窗)各确保 Stop
         {
             PopupHost.Clear(w.Window.SdlWindowHandle);   // D5:退出清栈(静态字典不随窗释放)
+            TooltipService.Clear(w.Window.SdlWindowHandle);   // D5 T3:同上,服务记账清
             w.TextInput.Update(IntPtr.Zero, null, null);
             w.Window.Dispose();   // 生命周期归 App:退出销毁残留原生窗(主窗 Close 仅置标记;对齐旧窗口层 Close 即销毁的零泄漏语义)
         }
