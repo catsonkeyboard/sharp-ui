@@ -65,3 +65,11 @@ rd.xml Dynamic="Required All" 实测无效。处置:M3e 时一并解决(升级 V
 
 - 产物(排除 *.pdb 可部署部分):Counter.exe 2,726,912 + SDL2.dll 1,702,400(vendored 2.30.8)+ freetype.dll 686,592 + harfbuzz.dll 1,075,712 = **6,191,616 B ≈ 5.90 MiB**——较裁定#43 收官 6,157,824 B **+33,792 B(+0.55%,控件面:全部来自 Counter.exe 2,693,120→2,726,912,控件段 IL/产物增量)**;设计验收 ≤8MB 持续达成。
 - 运行实测(桌面锁定,采降级标准:进程存活 + 无未处理异常):AOT Counter.exe 存活 10s(≥5s 标准),Responding=True,MainWindowTitle "SharpUI Counter",CPU 0.80s/10s(渲染循环实做工作),CloseMainWindow 干净退出 ExitCode=0,stdout/stderr 零输出;渲染正确性承证同前节降级逻辑(JIT 同渲染路径冒烟 + headless D3D11 读回像素断言,含 D4 控件交互前后四帧)。
+
+## D5 收官:浮层机制 + 控件二期(2026-10-27 Task 4,裁定#46)
+
+`dotnet publish examples/Counter/Counter.csproj -c Release -r win-x64 -p:PublishAot=true` 成功(发布前清空旧 publish 目录防陈旧残留);零警告、零错误、零 NU1903(IL3000 第三方链已随窗口层收官消失,复核输出为空)。
+
+- 产物(排除 *.pdb 可部署部分):Counter.exe 2,782,208 + SDL2.dll 1,702,400(vendored 2.30.8)+ freetype.dll 686,592 + harfbuzz.dll 1,075,712 = **6,246,912 B ≈ 5.96 MiB(6.25 MB)**——较 D4 收官 6,191,616 B **+55,296 B(+0.89%,浮层面:全部来自 Counter.exe 2,726,912→2,782,208,PopupHost/焦点围栏/Dialog/Tooltip/Menu/Select IL 增量;原生库三件不变)**;设计验收 ≤8MB 持续达成。
+- 运行实测(桌面锁定,采降级标准:进程存活 + 无未处理异常):AOT Counter.exe 存活 10s(≥5s 标准),Responding=True,MainWindowTitle "SharpUI Counter",CPU 0.55s/10s(渲染循环实做工作),CloseMainWindow 干净退出 ExitCode=0;JIT Release 同脚本复测(alive=True/Responding=True/clean exit 0,CPU 1.20s/10s)——demo 新增 About 弹窗/Tooltip/Select 走同一渲染管线,无未处理异常。
+- 渲染正确性承证(降级逻辑同前节):headless D3D11 读回像素断言——Select 按钮形态/下拉箭头/禁用色板(SelectTests GPU 条)+ Dialog(T2)/Menu(T3)各自既有视觉测试;demo 段交互(About→Dialog、Select 换选回显)以状态断言承证(SelectTests DemoSegment 条,WindowSmokeTests 式)。

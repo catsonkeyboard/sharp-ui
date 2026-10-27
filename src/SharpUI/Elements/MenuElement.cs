@@ -205,8 +205,12 @@ public static class MenuExtensions
         Show(window.Focus.SdlWindow, window.Focus, anchorRect, items);
 
     /// <summary>打开锚定菜单:度量后 Arrange 于锚底缘左对齐(Push 前定格);PushScope 围栏 + 初始焦点
-    /// =首个可用项;Esc/外点经 PopupHost 既有路由关闭(OnClosed → PopScopeOf 归还打开者焦点)。</summary>
-    internal static void Show(IntPtr window, FocusManager focus, RectF anchorRect, object?[] items)
+    /// =initialFocusIndex 项(D5 T4 Select 传当前项下标即"当前项高亮"),越界/禁用回落首个可用项;
+    /// Esc/外点经 PopupHost 既有路由关闭(OnClosed → PopScopeOf 归还打开者焦点)。
+    /// 已知边界(D5 T4 裁定入档,spec 裁定#46):无翻转/钳制 —— 锚贴屏底时菜单溢出屏幕
+    /// (Push 时无屏幕矩形知识;修法需按窗屏幕矩形注册表,当前无近屏底菜单场景,缓议)。</summary>
+    internal static void Show(IntPtr window, FocusManager focus, RectF anchorRect, object?[] items,
+        int initialFocusIndex = -1)
     {
         var menu = new MenuElement(items);
         SizeF m = LayoutEngine.Measure(menu, new SizeF(float.PositiveInfinity, float.PositiveInfinity));
@@ -219,7 +223,11 @@ public static class MenuExtensions
         menu.Bind(window, popup, focus);
         PopupHost.Push(window, popup);     // 根 id 指派("/__popupN")后围栏以前缀圈定子树
         focus.PushScope(menu.ResolvedId!);
-        if (menu.FirstEnabled() is { } first)
+        MenuItemElement? initial =                          // 初始焦点(Select 当前项高亮;缺省首可用项)
+            initialFocusIndex >= 0 && initialFocusIndex < menu.Items.Count && menu.Items[initialFocusIndex].Enabled
+                ? menu.Items[initialFocusIndex]
+                : menu.FirstEnabled();
+        if (initial is { } first)
             focus.SetFocus(first);         // 初始焦点入圈(打开者焦点已由 PushScope 记账)
     }
 }

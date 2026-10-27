@@ -73,6 +73,7 @@ public sealed class FocusManager
     public void Register(Element e)
     {
         if (string.IsNullOrEmpty(e.ResolvedId)) return;
+        e.OwnerFocus = this;   // D5 T4 注册期回链:元素 → 所属窗(Select 激活开菜单的服务定位)
         _byId[e.ResolvedId!] = e;
         if (e.Focusable) _tabOrder.Add(e.ResolvedId!);
         if (e is RadioElement radio)

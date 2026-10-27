@@ -101,12 +101,14 @@ public sealed class App
             {
                 AppWindow w = Windows[i];
                 RawInput raw = InputMapper.Map(w.Window.GetSnapshotAndReset(), w.Scale);   // 各窗取当帧快照(T3:自有 InputSnapshot)
+                Atlas = w.Atlas;   // 每窗切换服务定位:TextElement 度量读当前窗图集。置于 Update 前
+                // (D5 T4 顺带①收账,原在 FeedFocused 后):点击回调内开浮层(ShowMenu/Select 下拉)即以
+                // 本窗图集度量 —— 多窗 DPI 不同时不再用上一窗图集估宽;单窗赋值相同仅时点提前,零行为差。
                 InputState input = w.LastTree is not null
                     ? Interaction.Update(w.Session, w.LastTree, in raw, w.Focus)
                     : InputState.Empty;
                 if (input.WheelDelta != 0f && w.LastTree is not null) Scroll.Dispatch(w.LastTree, in input);
                 FeedFocused(w.LastTree, w.Focus, w.Focus.SdlWindow, in raw);   // T2 已知项 A:浮层栈根兜底(Dialog 内 TextField)
-                Atlas = w.Atlas;   // 每窗切换服务定位:TextElement 度量读当前窗图集
                 UiContext.CurrentInput = input;
 
                 Element root = w.Render();

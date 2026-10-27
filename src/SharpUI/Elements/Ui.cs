@@ -33,6 +33,12 @@ public static class Ui
     public static SliderElement Slider(float min, float max, float value, Action<float> onChanged) =>
         new(min, max, value, onChanged);
 
+    /// <summary>下拉选择器(T4):按钮形态(当前项文本+下拉箭头);点击/聚焦+Enter/Space 打开锚定菜单
+    /// (当前项高亮,选中回调+关菜单);菜单未开时方向键直接换选(±1 钳制,仅变化回调);
+    /// Esc 不开菜单(开菜单时只关菜单)。选中态由调用方持有,回调报新下标。</summary>
+    public static SelectElement Select(string[] options, int selectedIndex, Action<int> onChanged) =>
+        new(options, selectedIndex, onChanged);
+
     /// <summary>竖向滚动容器(D19);与 Container 同构,但 new ScrollElement(默认 Vertical)。</summary>
     public static ScrollElement Scroll(params Element?[] children)
     {
