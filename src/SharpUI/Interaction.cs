@@ -56,8 +56,14 @@ public sealed class InputSession
 
 public static class Interaction
 {
-    /// <summary>取消进行中的按压(窗口失焦时由 App 按窗调用;规格书 M2b-i)。</summary>
-    public static void CancelPress(InputSession session) => session.PressedOn = null;
+    /// <summary>取消进行中的按压(窗口失焦时由 App 按窗调用;规格书 M2b-i)。
+    /// 捕获同步取消(评审 Important#1):只清 PressedOn 会残留 CapturedId —— 后续 Motion 继续锁定
+    /// 悬停/驱动拖拽消费(失焦自愈缺陷)。捕获生命周期与按压一致:Up/新 Down 覆盖/取消 同灭。</summary>
+    public static void CancelPress(InputSession session)
+    {
+        session.PressedOn = null;
+        session.CapturedId = null;
+    }
 
     /// <summary>键盘激活入队:HandleKeys 当帧回调已触发,账本在下一帧 Update 开头可见(裁定#18)。</summary>
     public static void QueueClick(InputSession session, string id) => session.Queued.Add(id);

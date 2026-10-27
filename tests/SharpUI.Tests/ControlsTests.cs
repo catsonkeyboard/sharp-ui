@@ -61,6 +61,26 @@ public class ControlsTests
     }
 
     [Fact]
+    public void CancelPress_ClearsCapture_MotionDoesNotFollow()
+    {
+        // 评审 Important#1 失焦自愈:CancelPress 只清 PressedOn 不清 CapturedId → 捕获残留,
+        // 后续 Motion 继续锁定悬停(自愈缺陷)。捕获生命周期与按压一致,取消应同步清捕获。
+        SliderProbe probe = ProbeAt(new RectF(0, 0, 100, 40));
+        var s = new InputSession();
+        Interaction.Update(s, probe, new RawInput(new PointF(50, 20), new[] { true }));
+        Assert.NotNull(s.CapturedId);                         // 捕获中(前置:Down 已捕获)
+
+        Interaction.CancelPress(s);                           // 失焦 → App 按窗取消
+        InputState motion = Interaction.Update(s, probe, new RawInput(new PointF(500, 500), Array.Empty<bool>()));
+        Assert.Null(motion.CapturedId);                       // 捕获已取消:后续 Motion 不再跟随
+        Assert.Null(motion.HoveredId);                        // 悬停锁定解除,回归空间命中(光标在元素外 = 无)
+
+        InputState up = Interaction.Update(s, probe, new RawInput(new PointF(500, 500), new[] { false }));
+        Assert.Equal(0, probe.Clicks);                        // 按压目标随取消失效,元素外松开不完成点击
+        Assert.Null(up.CapturedId);
+    }
+
+    [Fact]
     public void Capture_NewDownElsewhere_Overrides()
     {
         SliderProbe probe = ProbeAt(new RectF(0, 0, 100, 40));
