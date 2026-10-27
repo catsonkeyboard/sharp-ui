@@ -42,6 +42,25 @@ public class ObjectiveCTests
         "SelSetLoadAction", "SelSetStoreAction", "SelSetTexture", "SelSetClearColor",
         // CAMetalLayer(QuartzCore CAMetalLayer.h;nextDrawable 简报列,device/drawableSize 自然扩展)
         "SelNextDrawable", "SelSetDevice", "SelSetDrawableSize",
+        // ---- T3 扩展(MetalContext headless 消费;出处逐条见 MetalNative.cs) ----
+        // NSString(Foundation/NSString.h;类方法,MSL 源/函数名构造)
+        "SelStringWithUTF8String",
+        // MTLBuffer(MTLBuffer.h;contents getter,NS_RETURNS_INNER_POINTER)
+        "SelContents",
+        // MTLTexture 2D 便捷形(MTLTexture.h;图集上传)
+        "SelReplaceRegion",
+        // MTLDevice / MTLSamplerDescriptor(MTLDevice.h / MTLSampler.h)
+        "SelNewSamplerStateWithDescriptor", "SelSetMinFilter", "SelSetMagFilter",
+        "SelSetSAddressMode", "SelSetTAddressMode",
+        // MTLVertexDescriptor 族(MTLVertexDescriptor.h;attributes/layouts getter + 属性 setter)
+        "SelAttributes", "SelLayouts", "SelSetFormat", "SelSetOffset", "SelSetBufferIndex",
+        "SelSetStride", "SelSetStepFunction", "SelSetStepRate",
+        // MTLRenderPipelineColorAttachmentDescriptor 混合(MTLRenderPipeline.h;BOOL setter 低字节即位)
+        "SelSetBlendingEnabled", "SelSetSourceRGBBlendFactor", "SelSetDestinationRGBBlendFactor",
+        "SelSetSourceAlphaBlendFactor", "SelSetDestinationAlphaBlendFactor",
+        "SelSetRgbBlendOperation", "SelSetAlphaBlendOperation",
+        // MTLRenderCommandEncoder 5 参索引便捷形 / MTLCommandBuffer 同步
+        "SelDrawIndexedPrimitives", "SelWaitUntilCompleted",
     };
 
     [Fact]
@@ -151,6 +170,13 @@ public class ObjectiveCTests
         AssertSig("MsgSendVoidGetBytes",
             new[] { typeof(IntPtr), typeof(IntPtr), typeof(IntPtr), typeof(UIntPtr), typeof(MetalNative.Region), typeof(UIntPtr) },
             typeof(void));   // getBytes:bytesPerRow:fromRegion:mipmapLevel:
+        // T3 扩展(MetalContext 消费)
+        AssertSig("MsgSendVoidRegionNUIntPtrNUInt",
+            new[] { typeof(IntPtr), typeof(IntPtr), typeof(MetalNative.Region), typeof(UIntPtr), typeof(IntPtr), typeof(UIntPtr) },
+            typeof(void));   // replaceRegion:mipmapLevel:withBytes:bytesPerRow:(Region 在前,头文件参数序)
+        AssertSig("MsgSendVoidNUIntNUIntNUIntPtrNUInt",
+            new[] { typeof(IntPtr), typeof(IntPtr), typeof(UIntPtr), typeof(UIntPtr), typeof(UIntPtr), typeof(IntPtr), typeof(UIntPtr) },
+            typeof(void));   // drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:
     }
 
     /// <summary>评审 Important#1 回归锁:objectAtIndexedSubscript: 是单 NSUInteger 参

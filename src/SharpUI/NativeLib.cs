@@ -49,4 +49,16 @@ internal static class NativeLib
             _ => throw new ArgumentOutOfRangeException(nameof(platform), platform, null),
         };
     }
+
+    /// <summary>X-4 T3(裁定#48):DllImport 名(Windows 形态 const)→ 基名 —— Resolve 的反函数,
+    /// 供 App 静态构造的 SetDllImportResolver 把 DllImport 惰性解析名重定向到平台 SONAME
+    /// (Linux/macOS 上 SDL/FT/HB 的 DllImport 实际生效路径)。已知三库精确映射;未知名返回
+    /// null(调用方回落 IntPtr.Zero = .NET 默认解析,零面扩展)。纯函数,与 Resolve 同矩阵单测面。</summary>
+    internal static string? BaseNameOf(string dllImportName) => dllImportName switch
+    {
+        Sdl2 => "SDL2",
+        FreeType => "freetype",
+        HarfBuzz => "harfbuzz",
+        _ => null,
+    };
 }

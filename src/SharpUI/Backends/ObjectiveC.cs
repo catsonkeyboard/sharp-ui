@@ -69,6 +69,8 @@ internal static class ObjectiveC
     static DMsgSendVoidDouble4 _msgSendVoidDouble4 = null!;
     static DMsgSendVoidScissorRect _msgSendVoidScissorRect = null!;
     static DMsgSendVoidGetBytes _msgSendVoidGetBytes = null!;
+    static DMsgSendVoidRegionNUIntPtrNUInt _msgSendVoidRegionNUIntPtrNUInt = null!;
+    static DMsgSendVoidNUIntNUIntNUIntPtrNUInt _msgSendVoidNUIntNUIntNUIntPtrNUInt = null!;
 
     /// <summary>Selector 注册缓存(sel_registerName 本身廉价且幂等,缓存避免每帧字符串往返;
     /// ConcurrentDictionary:UI 线程为主但无必要假设单线程)。</summary>
@@ -116,6 +118,8 @@ internal static class ObjectiveC
             _msgSendVoidDouble4 = Bind<DMsgSendVoidDouble4>("objc_msgSend");
             _msgSendVoidScissorRect = Bind<DMsgSendVoidScissorRect>("objc_msgSend");
             _msgSendVoidGetBytes = Bind<DMsgSendVoidGetBytes>("objc_msgSend");
+            _msgSendVoidRegionNUIntPtrNUInt = Bind<DMsgSendVoidRegionNUIntPtrNUInt>("objc_msgSend");
+            _msgSendVoidNUIntNUIntNUIntPtrNUInt = Bind<DMsgSendVoidNUIntNUIntNUIntPtrNUInt>("objc_msgSend");
             _bound = true;
         }
     }
@@ -245,6 +249,23 @@ internal static class ObjectiveC
         MetalNative.Region region, nuint level)
     { Ensure(); _msgSendVoidGetBytes(rcv, sel, pixelBytes, bytesPerRow, region, level); }
 
+    /// <summary>replaceRegion:mipmapLevel:withBytes:bytesPerRow: —— MTLTexture.h 2D 便捷形:
+    /// `replaceRegion:(MTLRegion)region mipmapLevel:(NSUInteger)level withBytes:(const void *)pixelBytes
+    /// bytesPerRow:(NSUInteger)bytesPerRow`(T3 增:图集上传;MTLRegion 48B 按值走栈,与
+    /// MsgSendVoidGetBytes 同型混排)。**BOOL 形参 ABI 附注(setBlendingEnabled: 消费)**:
+    /// BOOL=_Bool 1 字节,arm64/x86_64 实参均取寄存器低 8 位 —— MsgSendVoidNUInt 传 nuint 0/1
+    /// 低字节即位,高位被 callee 忽略,安全。</summary>
+    internal static void MsgSendVoidRegionNUIntPtrNUInt(IntPtr rcv, IntPtr sel, MetalNative.Region region,
+        nuint level, IntPtr pixelBytes, nuint bytesPerRow)
+    { Ensure(); _msgSendVoidRegionNUIntPtrNUInt(rcv, sel, region, level, pixelBytes, bytesPerRow); }
+
+    /// <summary>drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset: ——
+    /// MTLRenderCommandEncoder.h 5 参便捷形(T3 增:索引绘制,对位 GL DrawElements 原生偏移路径;
+    /// indexBuffer 为 id&lt;MTLBuffer&gt; 对象参,indexBufferOffset 为字节偏移 nuint)。</summary>
+    internal static void MsgSendVoidNUIntNUIntNUIntPtrNUInt(IntPtr rcv, IntPtr sel,
+        nuint a0, nuint a1, nuint a2, IntPtr a3, nuint a4)
+    { Ensure(); _msgSendVoidNUIntNUIntNUIntPtrNUInt(rcv, sel, a0, a1, a2, a3, a4); }
+
     // ---- 委托类型(私有嵌套;Cdecl —— macOS 两 64 位 ABI 上 C 约定即 objc_msgSend 约定,见类头) ----
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
@@ -308,6 +329,14 @@ internal static class ObjectiveC
     private delegate void DMsgSendVoidScissorRect(IntPtr rcv, IntPtr sel, MetalNative.ScissorRect rect);
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-    private delegate void DMsgSendVoidGetBytes(IntPtr rcv, IntPtr sel, IntPtr pixelBytes, nuint bytesPerRow,
+    private delegate IntPtr DMsgSendVoidGetBytes(IntPtr rcv, IntPtr sel, IntPtr pixelBytes, nuint bytesPerRow,
         MetalNative.Region region, nuint level);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void DMsgSendVoidRegionNUIntPtrNUInt(IntPtr rcv, IntPtr sel, MetalNative.Region region,
+        nuint level, IntPtr pixelBytes, nuint bytesPerRow);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void DMsgSendVoidNUIntNUIntNUIntPtrNUInt(IntPtr rcv, IntPtr sel,
+        nuint a0, nuint a1, nuint a2, IntPtr a3, nuint a4);
 }

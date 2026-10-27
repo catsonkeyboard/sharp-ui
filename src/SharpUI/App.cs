@@ -1,10 +1,31 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using SharpUI.Backends;
 
 namespace SharpUI;
 
 public sealed class App
 {
+    /// <summary>X-4 T3(裁定#48):DllImportResolver 接线 —— T1 NativeLib 留尾落点。仅非 Windows
+    /// 注册(Windows 走默认解析:vendored DLL 与 DllImport 常量逐字节一致,零行为差门槛 ——
+    /// IsWindows 守卫即零差保证,不经本路径);Linux/macOS 上把 DllImport 名(Windows 形态 const,
+    /// 特性参数须编译期常量所限)经 NativeLib.Resolve 重定向到平台名(libSDL2-2.0.so.0 /
+    /// libfreetype.6.dylib 等),SDL/FT/HB 的 DllImport 自此在非 Windows 实际生效。未知名回落
+    /// IntPtr.Zero = 默认解析(libobjc 经显式句柄、Metal.framework 经绝对路径,均不经此)。</summary>
+    static App()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            NativeLibrary.SetDllImportResolver(typeof(App).Assembly, static (name, assembly, path) =>
+            {
+                string? baseName = NativeLib.BaseNameOf(name);
+                return baseName is not null
+                    && NativeLibrary.TryLoad(NativeLib.Resolve(NativeLib.Current, baseName), out IntPtr handle)
+                    ? handle : IntPtr.Zero;
+            });
+        }
+    }
+
     /// <summary>TextElement 度量用(M1 服务定位,M2 换度量上下文)。多窗:Run 每窗构建前置为该窗图集。</summary>
     public static TextAtlas? Atlas { get; internal set; }
 
@@ -42,17 +63,25 @@ public sealed class App
     /// (T4:像素读回须控末帧不 Present,Run 循环不可注入,故暴露组装点而非绕开重抄时序)。</summary>
     internal static AppWindow CreateWindow(string title, int width, int height, Func<Element>? render)
     {
+        // 后端选择(裁定#41/#48):SHARPUI_BACKEND 显式指定优先;"default" 平台默认 —— Windows=D3D11、
+        // macOS=Metal(裁定#48 预留:窗口路径待 M3e 后半,headless 离屏已实证;当前 macOS default 会经
+        // MetalContext.CreateForWindow 抛 NotImplementedException 自证)、其余=GL。
+        // metal 平台拒绝(Windows/Linux 选 metal)前置于一切 SDL/IME 动作 —— 纯逻辑可断言(测试消费)。
+        string backend = NormalizeBackendName(Environment.GetEnvironmentVariable("SHARPUI_BACKEND"));
+        bool useMetal = backend == "metal" || (backend == "default" && OperatingSystem.IsMacOS());
+        if (useMetal && !OperatingSystem.IsMacOS())
+            throw new PlatformNotSupportedException(
+                "SHARPUI_BACKEND=metal 仅限 macOS 宿主(Metal.framework/libobjc 系统库);Windows 请用 d3d11/gl。见 docs/superpowers/specs 裁定#48。");
         SdlTextInput.EnableImeUi();                       // 裁定#34:窗口创建前
         SdlNative.EnsureVideoInit();                      // 裁定#38:Init 落点与建窗模块可分裂(历史实证),不可假设;见 SdlNative 类注
-        // 后端选择(裁定#41):SHARPUI_BACKEND 显式指定优先;"default" 平台默认 —— Windows=D3D11、
-        // 非 Windows=GL(后者本轮仅编译保证,本机无环境验证;D3D11 亦仅 Windows 可用)。
-        string backend = NormalizeBackendName(Environment.GetEnvironmentVariable("SHARPUI_BACKEND"));
-        bool useGl = backend == "gl" || (backend == "default" && !OperatingSystem.IsWindows());
+        bool useGl = backend == "gl" || (backend == "default" && !OperatingSystem.IsWindows() && !OperatingSystem.IsMacOS());
         if (useGl)
             GLContext.SetCoreProfileAttributes();   // 时序:EnsureVideoInit 后、建窗前(3.3 core + 双缓冲;见其注释)
         var window = new SdlWindow(title, 100, 100, width, height,
             SdlWindowFlags.Resizable | SdlWindowFlags.Shown | (useGl ? SdlWindowFlags.OpenGL : SdlWindowFlags.None));
-        IRenderContext ctx = useGl
+        IRenderContext ctx = useMetal
+            ? MetalContext.CreateForWindow(window.SdlWindowHandle, (uint)window.Width, (uint)window.Height)   // 当前必抛 NotImplementedException(M3e 后半接 NSView.layer)
+            : useGl
             ? GLContext.CreateForWindow(window.SdlWindowHandle, (uint)window.Width, (uint)window.Height)   // SwapWindow 节奏=构造期 SetSwapInterval(1)
             : D3D11Context.CreateForWindow(SdlNative.GetWin32Hwnd(window.SdlWindowHandle),
                 (uint)window.Width, (uint)window.Height);   // 交换链 Present(1,0) 即 VSync(spec §7,每窗)
@@ -76,12 +105,15 @@ public sealed class App
         return w;
     }
 
-    /// <summary>后端名归一(SHARPUI_BACKEND):trim + 小写;"gl"/"opengl"→gl、"d3d11"/"d3d"→d3d11;
-    /// 空/未识别 → "default"(平台默认:Windows=d3d11,其余=gl)。</summary>
+    /// <summary>后端名归一(SHARPUI_BACKEND):trim + 小写;"gl"/"opengl"→gl、"d3d11"/"d3d"→d3d11、
+    /// "metal"→metal(裁定#48;别名面仅此一形,OpenGL/D3D 的历史别名不镜像 —— Metal 无通称变体);
+    /// 空/未识别 → "default"(平台默认:Windows=d3d11、macOS=metal(M3e 后半落地前经
+    /// CreateForWindow 显式 NotImplementedException)、其余=gl)。</summary>
     internal static string NormalizeBackendName(string? raw) => raw?.Trim().ToLowerInvariant() switch
     {
         "gl" or "opengl" => "gl",
         "d3d11" or "d3d" => "d3d11",
+        "metal" => "metal",
         _ => "default",
     };
 

@@ -44,3 +44,16 @@ src/SharpUI/
 ## 范围外
 
 CI workflow 编写(待 GitHub remote);Linux GL 实机验证;macOS 窗口路径(SDL NSView 接 CAMetalLayer);Metal 帧调优。
+
+## 实施纪要(Task 1-3 交付,2026-10-28 收官;裁定#48)
+
+- **T1(1faa630 + de26f3a)**:NativeLib 常量表+Resolve 纯函数;LinuxFontLocator(fontconfig 目录扫描,目录查询排除 bold 面勘误)/MacFontLocator(CoreText+回退);FontLibrary 平台分派+默认族三平台映射;NativeLibTests/FontLocatorTests/FontLibraryTests 纯逻辑全矩阵。
+- **T2(aa901e0 + 38be1cc)**:ObjectiveC 19 个 MsgSend 定参包装(调用约定/所有权交接/error 槽有效性三论证入类头;objectAtIndexedSubscript 单下标形态勘正);MetalNative 37 Selector 契约集+MTLCreateSystemDefaultDevice(绝对路径 DllImport)+MTLScissorRect/MTLRegion 按值结构体;MSL 顶点/片段源;ObjectiveCTests 契约锁(ExpectedSelectors 精确集合+签名断言+MSL 结构标记)。
+- **T3(本提交)**:
+  - `MetalContext.cs`(新):headless 全路径实现,API 序逐出处注释(类头+方法头);**顶点表错槽裁定**——顶点描述符 attributes bufferIndex=1,与 MSL `uSize [[buffer(0)]]` 错开(stage_in 装配与显式 buffer 引用共顶点缓冲表,同槽冲突);**帧模型裁定**——编码-提交,headless Present 严格 no-op,FlushFrame(endEncoding+commit[+waitUntilCompleted])在下一 BeginFrame/ReadBack/Dispose 落地;**索引裁定**(简报留白"32 位或 16→32 展开实现者定")——取 drawIndexedPrimitives 原生 UInt16+字节偏移(对位 GL DrawElements,免逐帧展开);**Resize 裁定**——离屏目标重建而非 GL 式仅记录(texture 无法长出像素,属性语义镜像锁定);libc memcpy DllImport(/usr/lib/libSystem.dylib,Marshal.Copy 无 span→指针重载,.NET 10 实面核对)作 Shared 缓冲直写原语。
+  - `MetalNative.cs`:+25 Selector(62 计)+全部消费枚举常量(RGBA8Unorm=70/Float2=29/UChar4Normalized=9/PerVertex=1/One=1/OneMinusSourceAlpha=5/Add=0/Triangle=3/UInt16=0/Nearest=0/ClampToEdge=0/Shared=0);**T2 枚举勘误**:MTLLoadAction/MTLStoreAction 实数 DontCare=0/Load=1/Clear=2、Store=1(T2 注释记忆笔误;Store 按 T2 原注 0 取值=DontCare 弃读回内容,实质正确性修复)。
+  - `ObjectiveC.cs`:+2 包装(MsgSendVoidRegionNUIntPtrNUInt=replaceRegion、MsgSendVoidNUIntNUIntNUIntPtrNUInt=drawIndexedPrimitives 5 参,21 计)。
+  - `App.cs`+`NativeLib.cs`:NormalizeBackendName "metal" 分支;CreateWindow 路由(macOS default→metal 预留/Windows+Linux 显式 metal 抛 PlatformNotSupportedException 前置于 SDL/IME);静态构造 SetDllImportResolver(仅非 Windows,BaseNameOf→Resolve→TryLoad,未知名回落)——X-4 门控接线落地。
+  - 测试:MetalContextTests 8 项(`SHARPUI_RUN_MAC != "1"` 门控 0ms 空过,镜像 GLContextTests+残留 scissor 复位);BackendSelectionTests metal 归一 3 行+Windows 拒绝 1 项;ObjectiveCTests 契约同步(62/21)。
+  - 门槛:全量 **451/451**(439+12);AOT 发布不变(Counter.exe 2,801,152 B vs 基线 2,800,640 B,+512 B,publish 零告警)。
+  - 待 CI 实机验证清单八项见主 spec 裁定#48(MetalContextTests 像素/Shared×离散 GPU/MSL 编译/autorelease 累积/Shared 并发/字体发现/Resolver 生效/macOS 路由自证)。

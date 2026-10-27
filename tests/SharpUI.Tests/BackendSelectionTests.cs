@@ -20,8 +20,26 @@ public class BackendSelectionTests
     [InlineData(null, "default")]
     [InlineData(" OpenGL ", "gl")]
     [InlineData("d3d", "d3d11")]
+    [InlineData("metal", "metal")]        // 裁定#48:metal 归一(trim+小写;别名面仅此一形)
+    [InlineData("Metal", "metal")]
+    [InlineData(" metal ", "metal")]
     public void BackendName_Normalizes(string? raw, string expected) =>
         Assert.Equal(expected, App.NormalizeBackendName(raw));
+
+    /// <summary>裁定#48 纯逻辑:Windows 上选 metal 抛 PlatformNotSupportedException(带指引)。
+    /// 守卫前置于 EnableImeUi/EnsureVideoInit 之前的 CreateWindow 首段 —— 无 SDL/GPU 动作即可断言;
+    /// 仅 Windows 断言(macOS/Linux 的 metal 分派归 CI 实机;env 经 try/finally 复位防串测)。</summary>
+    [Fact]
+    public void MetalBackend_OnWindows_ThrowsPlatformNotSupported()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        Environment.SetEnvironmentVariable("SHARPUI_BACKEND", "metal");
+        try
+        {
+            Assert.Throws<PlatformNotSupportedException>(() => App.CreateWindow("metal-reject", 64, 64, null));
+        }
+        finally { Environment.SetEnvironmentVariable("SHARPUI_BACKEND", null); }
+    }
 
     [Fact]
     [Trait("Category", "Gpu")]
