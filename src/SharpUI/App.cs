@@ -138,8 +138,8 @@ public sealed class App
                        Math.Max(1, (int)(cr.Width * w.Scale)), (int)(cr.Height * w.Scale)));
                 mesh.Clear();
                 root.Draw(new PaintContext(mesh, w.Atlas, input));
-                // D5 绘制序:声明树之后栈底→栈顶逐层 Draw(后进在上)。浮层根不重排(打开者 Arrange 于 Push 前,
-                // resize 期间帧定格);PaintContext 为 struct,逐层构造零堆分配。
+                // D5 绘制序:声明树之后栈底→栈顶逐层 Draw(后进在上)。浮层根 Arrange 分层(同上):Dialog 类
+                // 每帧重排,Menu/Tooltip 打开者定格;PaintContext 为 struct,逐层构造零堆分配。
                 for (int p = 0; p < popupCount && p < popups.Count; p++)
                     popups[p].Root.Draw(new PaintContext(mesh, w.Atlas, input));
                 w.Renderer.Submit(mesh, screen, w.Scale);

@@ -28,12 +28,27 @@ public sealed class FocusManager
     /// push 时 FocusedId 记账,PopScope 归还。打开浮层的控件在 Push 后自行 SetFocus 入圈。</summary>
     public void PushScope(string scopeId) => _scopes.Add((scopeId, _focusedId));
 
-    /// <summary>围栏出栈:焦点归还 push 时的 FocusedId(打开者);空栈为无操作。</summary>
+    /// <summary>围栏出栈:焦点归还 push 时的 FocusedId(打开者);空栈为无操作。
+    /// 盲弹契约:调用方保证目标即栈顶围栏(浮层自身是当前顶层的常规关闭路径)。</summary>
     public void PopScope()
     {
         if (_scopes.Count == 0) return;
         _focusedId = _scopes[^1].SavedFocusId;
         _scopes.RemoveAt(_scopes.Count - 1);
+    }
+
+    /// <summary>围栏按身份出栈(D5 T2 评审承重):自栈顶向下首个 ScopeId 匹配项移除(其余围栏栈序保持),
+    /// 焦点归还该围栏 push 时的记账 —— 下层浮层先行关闭(Dialog 下叠 Menu 时 Dialog.Close)不误弹上层
+    /// 围栏。未命中为无操作。scopeId 唯一性由 PopupHost.Push 的浮层根 id 指派保证("/__popupN")。</summary>
+    public void PopScopeOf(string scopeId)
+    {
+        for (int i = _scopes.Count - 1; i >= 0; i--)
+            if (string.Equals(_scopes[i].ScopeId, scopeId, StringComparison.Ordinal))
+            {
+                _focusedId = _scopes[i].SavedFocusId;
+                _scopes.RemoveAt(i);
+                return;
+            }
     }
 
     public void BeginFrame()

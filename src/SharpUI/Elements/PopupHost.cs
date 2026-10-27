@@ -3,9 +3,9 @@ namespace SharpUI;
 /// <summary>浮层种类(F-1):Dialog=模态居中;Menu=锚定下拉;Tooltip=悬停提示(无焦点语义,对 Esc 透明)。</summary>
 internal enum PopupKind { Dialog, Menu, Tooltip }
 
-/// <summary>浮层条目(每窗栈;F-1)。Root 为浮层根元素(Focusable 树;打开者负责 Arrange —— App.Run 不重排,
-/// 窗口 resize 期间浮层帧定格为打开时布局,T2/T3 可自行重排)。AnchorRect 为锚定矩形(逻辑坐标;
-/// Dialog=全屏居中忽略)。</summary>
+/// <summary>浮层条目(每窗栈;F-1)。Root 为浮层根元素(Focusable 树)。Arrange 责任分层(D5 T2 已知项 B
+/// 裁定):Dialog 类根由 App.Run 每帧重排(居中随窗口 resize 重算);Menu/Tooltip 由打开者在 Push 前
+/// Arrange 定格(锚定语义)。AnchorRect 为锚定矩形(逻辑坐标;Dialog=全屏居中忽略)。</summary>
 internal sealed class Popup
 {
     public Popup(Element root, RectF anchorRect, PopupKind kind)
@@ -53,7 +53,9 @@ public static class PopupHost
         StackFor(sdlWindow).Add(popup);
     }
 
-    /// <summary>弹栈顶并触发其 OnClosed(回调内分配自由;焦点归还等收尾由 T2/T3 在回调中落)。</summary>
+    /// <summary>弹栈顶并触发其 OnClosed(回调内分配自由;焦点归还等收尾由 T2/T3 在回调中落)。
+    /// 盲弹契约:调用方保证目标即栈顶(Esc 路由 PopTopNonTooltip/Interaction 外点消费 —— 取栈顶快照后
+    /// 才动作);自关闭类(可能被后进浮层叠于其上)走 <see cref="Remove"/> 按身份移除,盲弹会误弹他者。</summary>
     public static void Pop(IntPtr sdlWindow)
     {
         List<Popup> stack = StackFor(sdlWindow);
@@ -61,6 +63,18 @@ public static class PopupHost
         Popup top = stack[^1];
         stack.RemoveAt(stack.Count - 1);
         top.OnClosed?.Invoke();
+    }
+
+    /// <summary>按实例移除(D5 T2 评审承重:叠栈下自关闭须按身份,栈中任意位、其余栈序保持;D5 T3 起
+    /// Dialog.Close/Menu.Close/Tooltip 移除共用)。不在栈为无操作(幂等 —— Interaction 外点 Pop 与
+    /// Draw 侧自 Remove 可能同帧同目标;不触发 OnClosed,目标已不在栈即视为已收尾)。</summary>
+    internal static void Remove(IntPtr sdlWindow, Popup popup)
+    {
+        if (!_stacks.TryGetValue(sdlWindow, out List<Popup>? s)) return;
+        int i = s.LastIndexOf(popup);   // 引用相等(Popup 未覆写 Equals)
+        if (i < 0) return;
+        s.RemoveAt(i);
+        popup.OnClosed?.Invoke();
     }
 
     public static int Count(IntPtr sdlWindow) =>

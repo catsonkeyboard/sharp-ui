@@ -260,6 +260,63 @@ public class PopupHostTests
         Assert.Equal(1, aClicks);                            // 出栈恢复激活
     }
 
+    // ---- T3 承重携带:按身份 Remove(D5 T2 评审:叠栈下盲弹 Pop 会弹错条目)----
+
+    [Fact]
+    public void Remove_ByInstance_PopsMiddleKeepsOrder_AbsentIsNoOp()
+    {
+        IntPtr w = Win(10);
+        PopupHost.Clear(w);
+        int aClosed = 0, bClosed = 0, cClosed = 0;
+        Popup a = MenuAt(Ui.Panel(), new RectF(0, 0, 10, 10), onClosed: () => aClosed++);
+        Popup b = MenuAt(Ui.Panel(), new RectF(0, 0, 10, 10), onClosed: () => bClosed++);
+        Popup c = MenuAt(Ui.Panel(), new RectF(0, 0, 10, 10), onClosed: () => cClosed++);
+        PopupHost.Push(w, a);
+        PopupHost.Push(w, b);
+        PopupHost.Push(w, c);
+
+        PopupHost.Remove(w, b);                            // 中位按实例移除(引用相等)
+        Assert.Equal(2, PopupHost.Count(w));
+        Assert.Same(a, PopupHost.StackOf(w)[0]);
+        Assert.Same(c, PopupHost.StackOf(w)[1]);           // 其余栈序保持
+        Assert.Equal(1, bClosed);
+        Assert.Equal(0, aClosed);
+        Assert.Equal(0, cClosed);
+
+        PopupHost.Remove(w, b);                            // 不在栈 = 无操作(幂等:外点 Pop 与自 Remove 可同帧同目标)
+        Assert.Equal(2, PopupHost.Count(w));
+        Assert.Equal(1, bClosed);
+        PopupHost.Clear(w);
+    }
+
+    [Fact]
+    public void PopScopeOf_RemovesByIdentity_DeepScopeKeepsTopFence()
+    {
+        int aClicks = 0;
+        (PanelElement root, PanelElement _, ButtonElement a, ButtonElement _, ButtonElement c, ButtonElement d)
+            = FencedTree(() => aClicks++);
+        var focus = new FocusManager();
+        focus.BeginFrame();
+        TreeWalk.Register(root, focus);
+
+        focus.SetFocus(a);
+        focus.PushScope("/s1");                            // 下层浮层(Dialog 类)围栏
+        focus.SetFocus(c);
+        focus.PushScope("/s2");                            // 上层浮层(Menu 类)围栏
+        focus.SetFocus(d);
+        Assert.Equal("/s2", focus.ActiveScopeId);
+
+        focus.PopScopeOf("/s1");                           // 下层先行关闭:按身份出栈,不误弹上层
+        Assert.Equal("/s2", focus.ActiveScopeId);          // 上层围栏仍在
+        focus.HandleKeys(new[] { new KeyEventData(Key.Enter, true, false) });
+        Assert.Equal(0, aClicks);                          // 归还焦点(a)在 s2 圈外:激活被围栏屏蔽
+        Assert.True(focus.IsFocused(a));                   // 归还 s1 push 时的记账焦点
+
+        focus.PopScope();                                  // 上层正常关闭(栈顶盲弹语义不变)
+        Assert.Null(focus.ActiveScopeId);
+        Assert.True(focus.IsFocused(c));                   // 归还 s2 push 时的记账焦点
+    }
+
     /// <summary>App.Run 组合模式:声明树+浮层树依次 Register、浮层根 PushScope —— Tab 只在浮层内循环。</summary>
     [Fact]
     public void PopupRegistration_Composition_ScopeFencesTabInsidePopupTree()

@@ -13,7 +13,7 @@ public sealed class DialogButton(string label, Action onClick)
 /// <summary>模态对话框浮层根(D5 T2):全屏半透明遮罩(自身=命中目标,可配遮罩点击关闭)+
 /// 居中面板(浮层底色 0x1E1E24/圆角 8:标题+内容槽+按钮行)。
 /// 打开/关闭经 DialogExtensions.ShowDialog(PopupHost.Push(Dialog 类,全屏锚)+PushScope 焦点围栏,
-/// 关闭 OnClosed → PopScope 归还打开者焦点);根/面板/遮罩均为命中目标(T1 评审携带② —— 浮层空白区
+/// 关闭 OnClosed → PopScopeOf 按身份归还打开者焦点);根/面板/遮罩均为命中目标(T1 评审携带② —— 浮层空白区
 /// 不设命中目标会被外点 dismiss 误关)。布局责任:App.Run 对 Dialog 类浮层根每帧 Arrange(居中随
 /// resize 重算,T1 已知项 B 裁定;Menu/Tooltip 保持打开者 Arrange 定格);合成测试自行 Arrange。</summary>
 public sealed class DialogElement : PanelElement, IActivatable
@@ -22,6 +22,7 @@ public sealed class DialogElement : PanelElement, IActivatable
     readonly bool _dismissOnMaskClick;
     bool _closed;
     IntPtr _owner = IntPtr.Zero;   // ShowDialog 绑定(PopupHost 按窗服务定位键)
+    Popup? _popup;                 // 同上:Close 按身份移除的实例凭证(D5 T2 评审承重)
 
     internal DialogElement(string title, Action<PanelElement> build, DialogButton[] buttons,
         bool dismissOnMaskClick = true)
@@ -69,16 +70,21 @@ public sealed class DialogElement : PanelElement, IActivatable
         Close();
     }
 
-    /// <summary>绑定宿主窗句柄(ShowDialog 在 Push 前接线;Close 经 PopupHost.Pop 按窗服务定位)。</summary>
-    internal void Bind(IntPtr owner) => _owner = owner;
+    /// <summary>绑定宿主窗句柄与浮层实例(ShowDialog 在 Push 前接线;Close 经 PopupHost.Remove 按身份
+    /// 移除 —— Dialog 下可叠 Menu/Tooltip(D5 T3),盲弹 Pop 会误弹栈顶他者成僵尸 Dialog)。</summary>
+    internal void Bind(IntPtr owner, Popup popup)
+    {
+        _owner = owner;
+        _popup = popup;
+    }
 
-    /// <summary>关闭(Pop 栈顶=自身);幂等 —— 外部直接 PopupHost.Pop 的路径经 NotifyClosed 置位,
-    /// 防二次 Pop 误弹下层浮层。</summary>
+    /// <summary>关闭(按身份 Remove 自身);幂等 —— 外部直接 PopupHost.Pop/Remove 的路径经 NotifyClosed
+    /// 置位,防二次移除误弹下层浮层。</summary>
     internal void Close()
     {
-        if (_closed || _owner == IntPtr.Zero) return;
+        if (_closed || _owner == IntPtr.Zero || _popup is null) return;
         _closed = true;
-        PopupHost.Pop(_owner);
+        PopupHost.Remove(_owner, _popup);
     }
 
     /// <summary>OnClosed 收尾置位(外部 Pop 路径的幂等记账;ShowDialog 接线)。</summary>
@@ -144,14 +150,16 @@ public static class DialogExtensions
                 throw new InvalidOperationException(
                     "ShowDialog: this window already has an open Dialog (single-dialog policy).");
         var dialog = new DialogElement(title, build, buttons, dismissOnMaskClick);
-        dialog.Bind(handle);
-        PopupHost.Push(handle, new Popup(dialog, new RectF(0, 0, 0, 0), PopupKind.Dialog)
+        var popup = new Popup(dialog, new RectF(0, 0, 0, 0), PopupKind.Dialog)
         {
             DismissOnOutsideClick = false,   // 根=全屏遮罩,真外点不存在;遮罩点击走 DialogElement.IActivatable(可配)
-            OnClosed = () => { dialog.NotifyClosed(); window.Focus.PopScope(); },   // 关闭收尾:围栏出栈=归还打开者焦点
+            // 关闭收尾:围栏按身份出栈=归还打开者焦点(PopScopeOf:Dialog 下可叠 Menu,盲弹会误弹其围栏)
+            OnClosed = () => { dialog.NotifyClosed(); window.Focus.PopScopeOf(dialog.ResolvedId!); },
             OnEscape = dialog.ConsumeEscape,                       // Esc → IsCancel 合成点击(T2 接线)
             OnEnterDefault = dialog.ConsumeEnterDefault,           // Enter 无激活焦点 → IsDefault(T2 接线)
-        });
+        };
+        dialog.Bind(handle, popup);
+        PopupHost.Push(handle, popup);
         window.Focus.PushScope(dialog.ResolvedId!);   // 围栏入栈:root id 由 Push 指派("/__popupN")
         if (FindFirstFocusable(dialog) is { } first)
             window.Focus.SetFocus(first);             // 初始焦点入圈(打开者焦点已由 PushScope 记账)
