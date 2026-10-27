@@ -14,6 +14,12 @@ public abstract class Element
     public SizeF Measured;   // Arrange 期间的度量缓存
     public bool IsHitTarget; // 命中测试终点(Button = true)
 
+    /// <summary>拖拽捕获声明(T2 捕获原语):LeftDown 命中 IsHitTarget 且本属性为 true 的元素时,
+    /// Interaction 记其 ResolvedId 为捕获者 —— 捕获期间 MouseMotion/LeftUp 路由旁路 HitTest 直达捕获者,
+    /// HoveredId 锁定捕获者;LeftUp 释放;新 LeftDown 覆盖旧捕获。仅 Slider 类拖拽控件覆写 true;
+    /// Checkbox/Radio 等点击切换控件保持默认 false(按下+松开同元素即切换,现有点击语义)。</summary>
+    internal virtual bool CapturesDrag => false;
+
     /// <summary>用户提供的稳定键;未提供时按 类型名+兄弟索引 回退(规格书 D10)。</summary>
     public string? Key { get; internal set; }
     public bool Focusable;

@@ -20,6 +20,14 @@ public static class Ui
     public static ButtonElement Button(string label, Action onClick) => new(label, onClick);
     public static TextFieldElement TextField(string placeholder = "") => new(placeholder);
 
+    /// <summary>复选框(T2):点击切换/聚焦+Space 切换;选中态由调用方持有,回调报新值。</summary>
+    public static CheckboxElement Checkbox(string label, bool isChecked, Action<bool>? onChanged) =>
+        new(label, isChecked, onChanged);
+
+    /// <summary>单选钮(T2):同 groupName 方向键组内移焦;已选中再点不回调(仅值变化触发)。</summary>
+    public static RadioElement Radio(string label, string groupName, bool isSelected, Action? onSelected) =>
+        new(label, groupName, isSelected, onSelected);
+
     /// <summary>竖向滚动容器(D19);与 Container 同构,但 new ScrollElement(默认 Vertical)。</summary>
     public static ScrollElement Scroll(params Element?[] children)
     {

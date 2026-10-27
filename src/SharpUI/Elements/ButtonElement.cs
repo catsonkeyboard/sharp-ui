@@ -1,6 +1,8 @@
 namespace SharpUI;
 
-public sealed class ButtonElement : PanelElement
+/// <summary>交互控件模式样例(T2):按下+松开同元素/聚焦+Space/Enter 激活(经 IActivatable 统一管道)。
+/// 不捕获拖拽(CapturesDrag=false 默认 —— 点击语义,非拖拽)。</summary>
+public sealed class ButtonElement : PanelElement, IActivatable
 {
     readonly Action _onClick;
 
@@ -17,6 +19,9 @@ public sealed class ButtonElement : PanelElement
     }
 
     public void InvokeClick() => _onClick();
+
+    /// <summary>IActivatable:按钮无禁用态,恒可激活。</summary>
+    public bool CanActivate => true;
 
     public override void Draw(in PaintContext pc)
     {
