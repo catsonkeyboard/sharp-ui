@@ -104,7 +104,7 @@ public sealed class App
                     ? Interaction.Update(w.Session, w.LastTree, in raw, w.Focus)
                     : InputState.Empty;
                 if (input.WheelDelta != 0f && w.LastTree is not null) Scroll.Dispatch(w.LastTree, in input);
-                FeedFocused(w.LastTree, w.Focus, in raw);
+                FeedFocused(w.LastTree, w.Focus, w.Focus.SdlWindow, in raw);   // T2 已知项 A:浮层栈根兜底(Dialog 内 TextField)
                 Atlas = w.Atlas;   // 每窗切换服务定位:TextElement 度量读当前窗图集
                 UiContext.CurrentInput = input;
 
@@ -124,7 +124,13 @@ public sealed class App
                 input = input with { Focused = w.Focus.FocusedThisFrame, FocusedId = w.Focus.FocusedId };
 
                 SizeF screen = new(w.Window.Width / w.Scale, w.Window.Height / w.Scale);
-                LayoutEngine.Arrange(root, new RectF(0, 0, screen.Width, screen.Height));
+                RectF screenRect = new(0, 0, screen.Width, screen.Height);
+                LayoutEngine.Arrange(root, screenRect);
+                // D5 T2(已知项 B 裁定):Dialog 类浮层根随帧重排 —— 居中随 resize 重算(App.Run 已有
+                // Arrange 调用点,浮层根追加一次成本一行;Menu/Tooltip 维持打开者 Arrange 定格,锚定语义)。
+                for (int p = 0; p < popupCount && p < popups.Count; p++)
+                    if (popups[p].Kind == PopupKind.Dialog)
+                        LayoutEngine.Arrange(popups[p].Root, screenRect);
                 TextFieldElement? tf = w.Focus.FocusedThisFrame as TextFieldElement;   // IME 热修:Arrange 后帧坐标已就绪
                 w.TextInput.Update(w.Window.SdlWindowHandle, tf?.ResolvedId,
                     tf is null || tf.CursorRectLogical() is not { } cr ? null
@@ -166,12 +172,17 @@ public sealed class App
         return 0;
     }
 
-    /// <summary>D22 键路由:构建前对上帧保留树按 FocusedId 定位聚焦元素,实现 ITextFeedable(T3 TextFieldElement)则喂入当帧键与字符。</summary>
-    static void FeedFocused(Element? lastTree, FocusManager focus, in RawInput raw)
+    /// <summary>D22 键路由:构建前对上帧保留树按 FocusedId 定位聚焦元素,实现 ITextFeedable(T3 TextFieldElement)
+    /// 则喂入当帧键与字符。D5 T2(已知项 A 接线):声明树未命中时逐层搜浮层栈根兜底 —— Dialog 内
+    /// TextField 的字符流(同 Interaction.FindIn 的两树路径);internal 供 DialogTests 合成驱动。</summary>
+    internal static void FeedFocused(Element? lastTree, FocusManager focus, IntPtr sdlWindow, in RawInput raw)
     {
-        if (lastTree is null || focus.FocusedId is not string id) return;
-        if (TreeWalk.Find(lastTree, id) is ITextFeedable feedable)
-            feedable.Feed(raw.KeyEvents, raw.Chars);
+        if (focus.FocusedId is not string id) return;
+        ITextFeedable? feedable = lastTree is not null ? TreeWalk.Find(lastTree, id) as ITextFeedable : null;
+        if (feedable is null && sdlWindow != IntPtr.Zero)
+            foreach (Popup p in PopupHost.StackOf(sdlWindow))
+                if (TreeWalk.Find(p.Root, id) is ITextFeedable f) { feedable = f; break; }
+        feedable?.Feed(raw.KeyEvents, raw.Chars);
     }
 
     /// <summary>深度优先找首个 AutoFocus TextFieldElement(IME 热修自测:启动聚焦)。</summary>

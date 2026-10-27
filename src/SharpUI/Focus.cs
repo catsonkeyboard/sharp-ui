@@ -76,17 +76,23 @@ public sealed class FocusManager
                     Cycle(ke.Shift);
                     break;
                 case Key.Escape:
-                    // D5:浮层栈非空时 Esc 先服务浮层 —— 弹自顶向下首个非 Tooltip;不落清焦点
+                    // D5:浮层栈非空时 Esc 先服务浮层 —— 栈顶非 Tooltip 的 OnEscape 钩子优先(T2 Dialog
+                    // IsCancel=Esc 等效,合成点击+关闭),未消费则弹自顶向下首个非 Tooltip;均不落清焦点
                     //(焦点归还由浮层 OnClosed 内的 PopScope 收尾,T2/T3 接线)。栈空保持既有语义:
                     // 清焦点。Esc 无其他消费者(TextEditing/TextField 无 Esc 分支,已核实无冲突)。
                     if (SdlWindow != IntPtr.Zero && PopupHost.Count(SdlWindow) > 0)
-                        PopupHost.PopTopNonTooltip(SdlWindow);
+                    {
+                        if (!PopupHost.TryConsumeEscape(SdlWindow))
+                            PopupHost.PopTopNonTooltip(SdlWindow);
+                    }
                     else
                         _focusedId = null;
                     break;
                 case Key.Enter:
                 case Key.KeypadEnter:
                 case Key.Space:
+                {
+                    bool invoked = false;
                     if (_focusedId is not null && InsideActiveScope(_focusedId)
                         && _byId.TryGetValue(_focusedId, out Element? e)
                         && e is IActivatable act && act.CanActivate)
@@ -94,8 +100,15 @@ public sealed class FocusManager
                         act.InvokeClick();
                         if (session is not null && e.ResolvedId is string kbId)
                             Interaction.QueueClick(session, kbId);   // 裁定#18:下一帧账本可见
+                        invoked = true;
                     }
+                    // D5 T2:IsDefault=Enter —— 焦点不在可激活元素(TextField/无焦/圈外)时落栈顶非
+                    // Tooltip 浮层的缺省动作钩子(Dialog 默认按钮);Space 不触发(空格=激活聚焦元素
+                    // 既有语义);无浮层/未设钩子返回 false=既有 no-op。
+                    if (!invoked && ke.Key != Key.Space && SdlWindow != IntPtr.Zero)
+                        PopupHost.TryConsumeEnterDefault(SdlWindow);
                     break;
+                }
                 case Key.Left:
                 case Key.Up:
                     if (!SteerFocused(ke.Key)) CycleRadio(backward: true);

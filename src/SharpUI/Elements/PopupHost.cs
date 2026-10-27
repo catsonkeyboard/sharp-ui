@@ -20,6 +20,14 @@ internal sealed class Popup
     public PopupKind Kind { get; }
     public bool DismissOnOutsideClick { get; init; } = true;
     public Action? OnClosed { get; init; }   // Pop 时收尾回调(焦点归还等,T2/T3 消费)
+
+    /// <summary>Esc 消费钩子(T2 Dialog:栈顶非 Tooltip 的 IsCancel 按钮=Esc 等效):返回 true=已消费
+    ///(合成点击+关闭),FocusManager 不再走通用弹栈;null/未消费走 PopTopNonTooltip(Esc 仍关闭)。</summary>
+    public Func<bool>? OnEscape { get; init; }
+
+    /// <summary>Enter 缺省动作钩子(T2 Dialog:IsDefault 按钮,焦点在非可激活元素时的 Enter):
+    /// 返回 true=已消费;null/未消费=既有 no-op。</summary>
+    public Func<bool>? OnEnterDefault { get; init; }
 }
 
 /// <summary>每窗浮层栈(静态按窗服务定位,同 App.Atlas 模式;F-1)。App.Run 每帧接线:
@@ -33,12 +41,13 @@ public static class PopupHost
     static readonly Dictionary<IntPtr, List<Popup>> _stacks = new();
     static int _seq;   // 自动根键序号(Root.Key 缺省时补唯一键,保围栏前缀语义;UI 线程单线程访问)
 
-    /// <summary>入栈(后进=栈顶=在上)。同时一次性指派浮层树稳定 id:根 Key 缺省补 "popupN",
-    /// 根 ResolvedId="/键"、子树经 IdResolver.AssignChildren —— 焦点围栏以 scopeId+"/" 前缀圈定子树,
-    /// 空串根会吞掉整棵声明树(IdResolver.Assign 语义下声明树根恒为 ""),浮层根必须避开。</summary>
+    /// <summary>入栈(后进=栈顶=在上)。同时一次性指派浮层树稳定 id:根 Key 缺省补 "__popupN"
+    ///(T1 评审携带①:双下划线前缀防与用户键 "popup1" 碰撞),根 ResolvedId="/键"、子树经
+    /// IdResolver.AssignChildren —— 焦点围栏以 scopeId+"/" 前缀圈定子树,空串根会吞掉整棵声明树
+    ///(IdResolver.Assign 语义下声明树根恒为 ""),浮层根必须避开。</summary>
     internal static void Push(IntPtr sdlWindow, Popup popup)
     {
-        popup.Root.Key ??= "popup" + ++_seq;
+        popup.Root.Key ??= "__popup" + ++_seq;
         popup.Root.ResolvedId = "/" + popup.Root.Key;
         IdResolver.AssignChildren(popup.Root);
         StackFor(sdlWindow).Add(popup);
@@ -78,6 +87,24 @@ public static class PopupHost
             p.OnClosed?.Invoke();
             return;
         }
+    }
+
+    /// <summary>Esc 钩子分发(T2):自栈顶向下首个非 Tooltip 若设 OnEscape 则调之(IsCancel=Esc 等效);
+    /// 未设/全 Tooltip/空栈返回 false=走通用弹栈。</summary>
+    internal static bool TryConsumeEscape(IntPtr sdlWindow) =>
+        TopNonTooltipOf(sdlWindow)?.OnEscape?.Invoke() ?? false;
+
+    /// <summary>Enter 缺省动作分发(T2):自栈顶向下首个非 Tooltip 若设 OnEnterDefault(IsDefault 按钮)
+    /// 则调之;未设/空栈返回 false=既有 no-op。</summary>
+    internal static bool TryConsumeEnterDefault(IntPtr sdlWindow) =>
+        TopNonTooltipOf(sdlWindow)?.OnEnterDefault?.Invoke() ?? false;
+
+    static Popup? TopNonTooltipOf(IntPtr sdlWindow)
+    {
+        if (!_stacks.TryGetValue(sdlWindow, out List<Popup>? s)) return null;
+        for (int i = s.Count - 1; i >= 0; i--)
+            if (s[i].Kind != PopupKind.Tooltip) return s[i];
+        return null;
     }
 
     /// <summary>窗销毁清栈(App.Run 移除窗/退出兜底;不触发 OnClosed —— 窗已死,回调可能触已释放资源)。</summary>
