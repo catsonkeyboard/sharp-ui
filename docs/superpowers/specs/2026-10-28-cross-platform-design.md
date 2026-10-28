@@ -56,4 +56,14 @@ CI workflow 编写(待 GitHub remote);Linux GL 实机验证;macOS 窗口路径(S
   - `App.cs`+`NativeLib.cs`:NormalizeBackendName "metal" 分支;CreateWindow 路由(macOS default→metal 预留/Windows+Linux 显式 metal 抛 PlatformNotSupportedException 前置于 SDL/IME);静态构造 SetDllImportResolver(仅非 Windows,BaseNameOf→Resolve→TryLoad,未知名回落)——X-4 门控接线落地。
   - 测试:MetalContextTests 8 项(`SHARPUI_RUN_MAC != "1"` 门控 0ms 空过,镜像 GLContextTests+残留 scissor 复位);BackendSelectionTests metal 归一 3 行+Windows 拒绝 1 项;ObjectiveCTests 契约同步(62/21)。
   - 门槛:全量 **451/451**(439+12);AOT 发布不变(Counter.exe 2,801,152 B vs 基线 2,800,640 B,+512 B,publish 零告警)。
-  - 待 CI 实机验证清单八项见主 spec 裁定#48(MetalContextTests 像素/Shared×离散 GPU/MSL 编译/autorelease 累积/Shared 并发/字体发现/Resolver 生效/macOS 路由自证)。
+  - 待 CI 实机验证清单八项见主 spec 裁定#48(MetalContextTests 像素/Shared×离散 GPU/MSL 编译/autorelease 累积/Shared 并发/字体发现/Resolver 生效/macOS 路由自证[含 CreateForWindow 抛 NIE 前已建窗的句柄不 Dispose——进程退出场景容忍记账,评审 Minor#6])。
+
+## 评审修复轮(Needs fixes,1C+1I+4M)
+
+- **Critical#1**:MetalContext.BeginFrame 常量缓冲绑定误用两参包装 `MsgSendVoidPtrNUInt`(SelSetVertexBuffer=setVertexBuffer:offset:atIndex: 三实参,x4=index 槽读到未定义残留值)——修为三参,并收拢常量(slot 0)/几何(slot 1)两落位至单一 `BindVertexBuffer` 三参 helper(selector↔包装配对仅此一处,错型结构性不可现;静态锚注门控下防回归)。
+- **Important#2**:MetalContextTests 补 `Headless_FreshAtlas_IsAllTransparentZero`(GL 镜像;AtlasSize 契约的构造期全零上传自此有测试触碰)。
+- **Minor#3**:`DMsgSendVoidGetBytes` 委托回退 void(getBytes 无返回值)。
+- **Minor#4**:实施纪要枚举计数 15→17 更正(报告同步)。
+- **Minor#5**:BOOL ABI 附注从 replaceRegion 包装移位至实际承载 BOOL 的 `MsgSendVoidNUInt`(MetalNative.SelSetBlendingEnabled 注释的"见 MsgSendVoidNUInt 注"指针自此有着落)。
+- **Minor#6**:macOS default→metal 路径 CreateForWindow 抛 NIE 前已建窗、句柄不经 Dispose——记入 CI 待验清单⑧(进程退出场景,不修码)。
+- 复验:全量 452/452(MetalContextTests 9 项门控)。

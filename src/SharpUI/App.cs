@@ -80,7 +80,7 @@ public sealed class App
         var window = new SdlWindow(title, 100, 100, width, height,
             SdlWindowFlags.Resizable | SdlWindowFlags.Shown | (useGl ? SdlWindowFlags.OpenGL : SdlWindowFlags.None));
         IRenderContext ctx = useMetal
-            ? MetalContext.CreateForWindow(window.SdlWindowHandle, (uint)window.Width, (uint)window.Height)   // 当前必抛 NotImplementedException(M3e 后半接 NSView.layer)
+            ? MetalContext.CreateForWindow(window.SdlWindowHandle, (uint)window.Width, (uint)window.Height)   // 当前必抛 NotImplementedException(M3e 后半接 NSView.layer);抛 NIE 前已建窗、句柄随进程退出回收——CI 待验清单⑧记账(评审 Minor#6)
             : useGl
             ? GLContext.CreateForWindow(window.SdlWindowHandle, (uint)window.Width, (uint)window.Height)   // SwapWindow 节奏=构造期 SetSwapInterval(1)
             : D3D11Context.CreateForWindow(SdlNative.GetWin32Hwnd(window.SdlWindowHandle),

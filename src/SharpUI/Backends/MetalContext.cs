@@ -150,7 +150,8 @@ internal sealed class MetalContext : IRenderContext
     /// <summary>帧起始:FlushFrame 提交上一帧 → 改写 renderPassDescriptor(attachment 0:
     /// setTexture: 重指当前目标[Resize 重建后重落位]+ setClearColor: 4×double HFA)→
     /// [queue commandBuffer](+0)→ renderCommandEncoderWithDescriptor:(+0,encoder 创建即
-    /// snapshot pass 状态,clear 按 loadAction=Clear 在此刻生效)→ 管线/图集纹理/采样器落位。
+    /// snapshot pass 状态,clear 按 loadAction=Clear 在此刻生效)→ 管线/图集纹理/采样器/
+    /// 常量缓冲(slot 0,BindVertexBuffer 三参统一落位点)落位。
     /// 清屏-scissor 语义:loadAction 清屏不受 scissor 作用(Metal 规约,clear 属 pass 装载),
     /// 每帧新 encoder 的默认 scissor/viewport 即全目标 —— GLContext.BeginFrame 的
     /// Disable(SCISSOR) 前置(残留 scissor 裁 glClear)在 Metal 由"每帧新 encoder"天然达成。
@@ -173,10 +174,18 @@ internal sealed class MetalContext : IRenderContext
         ObjectiveC.MsgSendVoidPtr(_encoder, MetalNative.SelSetRenderPipelineState, _pipelineState);
         ObjectiveC.MsgSendVoidPtrNUInt(_encoder, MetalNative.SelSetFragmentTexture, _atlasTexture, 0);
         ObjectiveC.MsgSendVoidPtrNUInt(_encoder, MetalNative.SelSetFragmentSamplerState, _sampler, 0);
-        ObjectiveC.MsgSendVoidPtrNUInt(_encoder, MetalNative.SelSetVertexBuffer, _constantBuffer, 0);
-        // 常量缓冲几何无关、对象恒定(仅 contents 变),帧首落 slot 0 一次即可;
-        // 几何缓冲对象可因容量增长重建 → 每 Draw 落 slot 1。
+        BindVertexBuffer(_constantBuffer, 0);   // 常量独占 slot 0 —— 三参统一落位点(评审 Critical#1 勘正,见 BindVertexBuffer)
     }
+
+    /// <summary>setVertexBuffer:offset:atIndex: **三实参**统一落位点(评审 Critical#1 勘正):selector
+    /// 为 (buffer, offset, index) 三参,须 MsgSendVoidPtrNUIntNUInt —— 常量(slot 0,BeginFrame)与
+    /// 几何(slot 1,Draw)两落位收拢至此单点,selector↔包装配对仅此一处,两参包装误用在结构上
+    /// 不再可现(原 BeginFrame 两参形态:x3 槽读 0 被当 offset 碰巧无害,x4=index 槽读到未定义
+    /// 残留值 → 常量绑随机槽、MSL uSize [[buffer(0)]] 落空,macOS 首帧即校验失败/几何全错)。
+    /// offset 恒 0(整缓冲上传,无子区偏移需求)。**静态锚**:本方法是 SelSetVertexBuffer 的唯一
+    /// 消费点(与 Draw 的几何落位同型同参三形态);门控测试无法在本机实跑,此收拢即防回归面。</summary>
+    void BindVertexBuffer(IntPtr buffer, nuint index) =>
+        ObjectiveC.MsgSendVoidPtrNUIntNUInt(_encoder, MetalNative.SelSetVertexBuffer, buffer, 0, index);
 
     /// <summary>顶点着色器屏幕尺寸常量(逻辑像素):MSL `constant float2&amp; uSize [[buffer(0)]]`
     /// —— 写 constantBuffer(Shared)前 8 字节。缓冲对象帧首已绑 slot 0(见 BeginFrame),
@@ -243,7 +252,7 @@ internal sealed class MetalContext : IRenderContext
         }
         finally { ip.Free(); vp.Free(); }   // 句柄表操作,无 GC 堆分配(同 GL/D3D11 Draw 注)
 
-        ObjectiveC.MsgSendVoidPtrNUIntNUInt(_encoder, MetalNative.SelSetVertexBuffer, _vertexBuffer, 0, 1);
+        BindVertexBuffer(_vertexBuffer, 1);   // 几何 slot 1 —— 与常量落位同走三参统一落位点(评审 Critical#1 锚)
         ObjectiveC.MsgSendVoidNUIntNUIntNUIntPtrNUInt(_encoder, MetalNative.SelDrawIndexedPrimitives,
             MetalNative.PrimitiveTypeTriangle, indexCount, MetalNative.IndexTypeUInt16,
             _indexBuffer, (nuint)(startIndex * sizeof(ushort)));

@@ -181,7 +181,10 @@ internal static class ObjectiveC
     internal static void MsgSendVoidPtr(IntPtr rcv, IntPtr sel, IntPtr a0) { Ensure(); _msgSendVoidPtr(rcv, sel, a0); }
 
     /// <summary>1×NSUInteger 参 void:全部描述符属性 setter —— setPixelFormat:/setWidth:/setHeight:/
-    /// setUsage:/setStorageMode:/setLoadAction:/setStoreAction:(Metal.h 属性均 NSUInteger/其枚举)。</summary>
+    /// setUsage:/setStorageMode:/setLoadAction:/setStoreAction:(Metal.h 属性均 NSUInteger/其枚举)。
+    /// **BOOL 实参 ABI 附注**(setBlendingEnabled: 消费,评审 Minor#5 归位——BOOL setter 经本包装
+    /// 传参):BOOL=_Bool 1 字节,arm64/x86_64 实参均取寄存器低 8 位 —— 本包装 nuint 传 0/1
+    /// 低字节即位,高位被 callee 忽略,安全。</summary>
     internal static void MsgSendVoidNUInt(IntPtr rcv, IntPtr sel, nuint a0) { Ensure(); _msgSendVoidNUInt(rcv, sel, a0); }
 
     /// <summary>1×NSUInteger 参 → id:objectAtIndexedSubscript:(接收者=附件数组对象,单下标参)——
@@ -252,9 +255,7 @@ internal static class ObjectiveC
     /// <summary>replaceRegion:mipmapLevel:withBytes:bytesPerRow: —— MTLTexture.h 2D 便捷形:
     /// `replaceRegion:(MTLRegion)region mipmapLevel:(NSUInteger)level withBytes:(const void *)pixelBytes
     /// bytesPerRow:(NSUInteger)bytesPerRow`(T3 增:图集上传;MTLRegion 48B 按值走栈,与
-    /// MsgSendVoidGetBytes 同型混排)。**BOOL 形参 ABI 附注(setBlendingEnabled: 消费)**:
-    /// BOOL=_Bool 1 字节,arm64/x86_64 实参均取寄存器低 8 位 —— MsgSendVoidNUInt 传 nuint 0/1
-    /// 低字节即位,高位被 callee 忽略,安全。</summary>
+    /// MsgSendVoidGetBytes 同型混排。BOOL setter ABI 注归 MsgSendVoidNUInt —— 评审 Minor#5 移位)。</summary>
     internal static void MsgSendVoidRegionNUIntPtrNUInt(IntPtr rcv, IntPtr sel, MetalNative.Region region,
         nuint level, IntPtr pixelBytes, nuint bytesPerRow)
     { Ensure(); _msgSendVoidRegionNUIntPtrNUInt(rcv, sel, region, level, pixelBytes, bytesPerRow); }
@@ -329,8 +330,8 @@ internal static class ObjectiveC
     private delegate void DMsgSendVoidScissorRect(IntPtr rcv, IntPtr sel, MetalNative.ScissorRect rect);
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-    private delegate IntPtr DMsgSendVoidGetBytes(IntPtr rcv, IntPtr sel, IntPtr pixelBytes, nuint bytesPerRow,
-        MetalNative.Region region, nuint level);
+    private delegate void DMsgSendVoidGetBytes(IntPtr rcv, IntPtr sel, IntPtr pixelBytes, nuint bytesPerRow,
+        MetalNative.Region region, nuint level);   // 评审 Minor#3:回退 void(getBytes 无返回值;T2 期 IntPtr 为误申报改动)
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate void DMsgSendVoidRegionNUIntPtrNUInt(IntPtr rcv, IntPtr sel, MetalNative.Region region,

@@ -3,10 +3,13 @@ using SharpUI.Backends;
 
 namespace SharpUI.Tests;
 
-/// <summary>跨平台 T3:Metal 后端 headless 像素验证 —— 镜像 GLContextTests 七项结构
-/// (清屏/白四边形/红通道/scissor/两段/Resize 语义/AtlasSize)。期望值同 GL 形:RGBA8Unorm
-/// 读回字节序 R,G,B,A、行序自顶向下(Metal 纹理原点左上,无 GL 式翻转,ReadBack 产出与
-/// GL 翻转后同向)—— 纯红 [255,0,0,255]、清屏 (0.07,0.07,0.08,1)=[18,18,20,255]。
+/// <summary>跨平台 T3:Metal 后端 headless 像素验证 —— 镜像 GLContextTests 结构九项
+/// (清屏/白四边形/红通道/scissor/残留 scissor 复位/两段/Resize 语义/AtlasSize/**图集全零**,
+/// 前七项=简报列集,后两项=GL 镜像补齐[残留 scissor 复位=GL Important#1 同位防护;FreshAtlas=
+/// 评审 Important#2,AtlasSize 契约——构造期 4MB replaceRegion 全零,透明零×预乘混合→清屏色,
+/// 白四边形测试只传 1 像素触不到该面])。期望值同 GL 形:RGBA8Unorm 读回字节序 R,G,B,A、
+/// 行序自顶向下(Metal 纹理原点左上,无 GL 式翻转,ReadBack 产出与 GL 翻转后同向)—— 纯红
+/// [255,0,0,255]、清屏 (0.07,0.07,0.08,1)=[18,18,20,255]。
 /// **macOS 实机门控**:全部测试首行 `SHARPUI_RUN_MAC != "1"` 即 return —— Windows 全量跑
 /// 0ms 空过(编译结构即验证);CI macOS 跑道置 SHARPUI_RUN_MAC=1 实跑(裁定#48 待验清单主体)。
 /// 测试主机并行禁用见 AssemblyInfo.cs。</summary>
@@ -154,6 +157,35 @@ public class MetalContextTests
         Assert.Equal(new byte[] { 255, 255, 255, 255 }, Pixel(px, 16, 16));   // 段 A 就位(左上)
         Assert.Equal(new byte[] { 255, 0, 0, 255 }, Pixel(px, 48, 48));       // 段 B 就位(RGBA:纯红,右下)
         Assert.Equal(new byte[] { 18, 18, 20, 255 }, Pixel(px, 48, 16));      // 两段之外仍为清屏色
+    }
+
+    [Fact]
+    [Trait("Category", "Gpu")]
+    public void Headless_FreshAtlas_IsAllTransparentZero()   // 评审 Important#2:GL 镜像补齐(AtlasSize 契约)
+    {
+        if (!MacGate) return;
+        // 构造期 4MB replaceRegion 全零(契约)—— 白块放图集 (8,8)-(10,10):屏幕 (0,0) 中心
+        // UV=(0.5/64) → 点采样 texel 恰为 8;未写区域(如 (32,32)→texel≈520)透明源 (0,0,0,0)
+        // 经预乘混合 (One,OneMinusSourceAlpha) → 清屏色黑。
+        using var ctx = MetalContext.CreateHeadless(64, 64);
+        ctx.BeginFrame(0, 0, 0, 1f);
+        ctx.UpdateAtlasRegion(new byte[]
+        {
+            255, 255, 255, 255, 255, 255, 255, 255,
+            255, 255, 255, 255, 255, 255, 255, 255,
+        }, 8, 8, 2, 2);
+        var verts = new UiVertex[4];
+        for (int i = 0; i < 4; i++) verts[i] = UiVertex.Create(
+            new PointF(i % 2 == 0 ? 0f : 64f, i < 2 ? 0f : 64f),
+            new PointF(i % 2 == 0 ? 0f : 1f, i < 2 ? 0f : 1f),   // UV 覆盖全图集
+            Color32.White);
+        ushort[] idx = { 0, 1, 2, 2, 1, 3 };
+        ctx.SetScreenSize(64, 64);
+        ctx.SetScissor(0, 0, 64, 64);
+        ctx.Draw(verts, 4, idx, 6, 0);
+        byte[] px = ctx.ReadBackMainFramebuffer();
+        Assert.Equal(new byte[] { 255, 255, 255, 255 }, Pixel(px, 0, 0));   // 白块就位(texel 8)
+        Assert.Equal(new byte[] { 0, 0, 0, 255 }, Pixel(px, 32, 32));       // 未写区域=透明零 → 清屏色黑(RGBA)
     }
 
     [Fact]
