@@ -21,6 +21,7 @@ public class WindowSmokeTests
     [Trait("Category", "Gpu")]
     public void AppWindowHarness_BothBackends_RoutingAnd_90FramesClearAndQuad(string backend)
     {
+        if (backend == "gl" && !GlSupport.Available) return;   // CI 无 GPU 环境 gl 分支早退,见 GlSupport
         string? old = Environment.GetEnvironmentVariable("SHARPUI_BACKEND");
         try
         {
@@ -97,6 +98,7 @@ public class WindowSmokeTests
     [Trait("Category", "Gpu")]
     public void App_CreateRun_MaxFrames5_FullLoop_ExitsClean(string backend)
     {
+        if (backend == "gl" && !GlSupport.Available) return;   // CI 无 GPU 环境 gl 分支早退,见 GlSupport
         string? old = Environment.GetEnvironmentVariable("SHARPUI_BACKEND");
         try
         {

@@ -45,11 +45,27 @@ internal static class NativeLib
             NativeLibrary.SetDllImportResolver(typeof(NativeLib).Assembly, static (name, assembly, path) =>
             {
                 string? baseName = BaseNameOf(name);
-                return baseName is not null
-                    && NativeLibrary.TryLoad(Resolve(Current, baseName), out IntPtr handle)
+                return baseName is not null && TryLoadResolved(baseName, out IntPtr handle)
                     ? handle : IntPtr.Zero;
             });
         }
+    }
+
+    /// <summary>裸 SONAME 失败时补显式路径探测(CI 首跑实证:macOS dlopen 默认不搜 Homebrew,
+    /// Apple Silicon 的 brew 装在 /opt/homebrew/lib、Intel 在 /usr/local/lib;Linux 发行版
+    /// 路径 dlopen 本可达,列之为兜底无害)。返回 false 交默认解析(错误信息如实)。 </summary>
+    static bool TryLoadResolved(string baseName, out IntPtr handle)
+    {
+        string soname = Resolve(Current, baseName);
+        if (NativeLibrary.TryLoad(soname, out handle)) return true;
+        string[] roots = Current == Platform.Mac
+            ? new[] { "/opt/homebrew/lib", "/usr/local/lib" }
+            : new[] { "/usr/lib/x86_64-linux-gnu", "/usr/lib/aarch64-linux-gnu", "/usr/local/lib" };
+        foreach (string root in roots)
+        {
+            if (NativeLibrary.TryLoad(System.IO.Path.Combine(root, soname), out handle)) return true;
+        }
+        return false;
     }
 
     // ---- DllImport 解析键(Windows 现名;与 Resolve(Windows, 基名) 恒等,测试锁定) ----

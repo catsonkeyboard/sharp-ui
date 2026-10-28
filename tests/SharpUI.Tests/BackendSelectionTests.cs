@@ -45,6 +45,7 @@ public class BackendSelectionTests
     [Trait("Category", "Gpu")]
     public void GlWindowHarness_90FramesClearAndQuad_PixelsStable()
     {
+        if (!GlSupport.Available) return;   // CI 无 GPU 环境按约定早退,见 GlSupport
         // 时序 = App 接线同款:EnableImeUi → EnsureVideoInit(全候选,属性才能到达属主副本)→
         // GL 属性(建窗前)→ 带OpenGL flag 建窗 → CreateForWindow。
         SdlTextInput.EnableImeUi();

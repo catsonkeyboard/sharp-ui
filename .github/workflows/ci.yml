@@ -18,17 +18,18 @@ jobs:
           dotnet-version: '10.0.x'
       - name: Build (Release)
         run: dotnet build -c Release
-      - name: Test (full suite, 456)
+      - name: Test (full suite; GL tests self-skip on GPU-less runners via GlSupport)
         run: dotnet test -c Release --no-build --logger "console;verbosity=normal"
       - name: Native AOT publish (win-x64)
         run: dotnet publish examples/Counter/Counter.csproj -c Release -r win-x64 -p:PublishAot=true
-      - name: AOT smoke (5s clean exit)
+      - name: AOT smoke (5s alive, clean kill)
         run: |
           $p = Start-Process "examples/Counter/bin/Release/net10.0/win-x64/publish/Counter.exe" -PassThru
           Start-Sleep -Seconds 5
           if ($p.HasExited) { throw "AOT smoke: exited early with $($p.ExitCode)" }
           Stop-Process -Id $p.Id -Force
           Write-Host "AOT smoke OK (alive 5s)"
+        shell: powershell
       - name: Record deployable size
         run: |
           $d = "examples/Counter/bin/Release/net10.0/win-x64/publish"
@@ -44,24 +45,20 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
-      - name: Install native deps (libsdl2 + freetype + harfbuzz)
+      - name: Install native deps (libsdl2 + freetype + harfbuzz + noto-cjk + xvfb)
         run: |
           sudo apt-get update
-          sudo apt-get install -y libsdl2-2.0-0 libfreetype6 libharfbuzz0b fonts-noto-cjk xvfb
+          sudo apt-get install -y libsdl2-2.0-0 libfreetype6 libharfbuzz0b fonts-noto-cjk xvfb mesa-utils libgl1-mesa-dri
       - name: Build (Release)
         run: dotnet build -c Release
-      - name: Non-GPU logic tests (pure + native glue)
-        run: dotnet test -c Release --no-build --filter "FullyQualifiedName!~Gpu" --logger "console;verbosity=normal"
-      - name: Native library resolution probe (headless, no App entry)
-        run: |
-          cat > /tmp/probe.csx << 'EOF'
-          // resolver probe: FT/HB load through NativeLib resolver without App
-          EOF
-          dotnet test -c Release --no-build --filter "FullyQualifiedName~NativeLibTests|FullyQualifiedName~FontLocatorTests&FullyQualifiedName!~Windows" || true
-      - name: GPU tests under xvfb (GL software)
+      - name: Non-GPU logic tests (trait-filtered)
+        run: dotnet test -c Release --no-build --filter "Category!=Gpu" --logger "console;verbosity=normal"
+      - name: GPU tests under xvfb (GL via LLVMpipe; resolver + fonts real-machine, ruling-48 checklist 6/7)
         run: |
           xvfb-run -a dotnet test -c Release --no-build --filter "Category=Gpu" --logger "console;verbosity=normal"
-        continue-on-error: true # 首跑 GL 环境摸底:软渲染器 SwapChain 兼容性未知,失败不阻断(待实机调参)
+        env:
+          SHARPUI_BACKEND: gl
+        continue-on-error: true # 首跑 GL 摸底:LLVMpipe 3.3 core 兼容性待验证,失败不阻断(下一轮按结果调参)
 
   macos:
     name: macos (metal, gated)
@@ -71,17 +68,16 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
-      - name: Install native deps (sdl2 + freetype + harfbuzz via brew)
-        run: |
-          brew install sdl2 freetype harfbuzz
+      - name: Install native deps (sdl2 + freetype + harfbuzz via brew; resolver probes /opt/homebrew/lib)
+        run: brew install sdl2 freetype harfbuzz
       - name: Build (Release)
         run: dotnet build -c Release
-      - name: Non-GPU logic tests
-        run: dotnet test -c Release --no-build --filter "FullyQualifiedName!~Gpu" --logger "console;verbosity=normal"
-      - name: Metal gated tests (ruling-48 checklist 1-8)
+      - name: Non-GPU logic tests (trait-filtered)
+        run: dotnet test -c Release --no-build --filter "Category!=Gpu" --logger "console;verbosity=normal"
+      - name: Metal gated tests + native text probes (ruling-48 checklist 1-8)
         run: |
           export SHARPUI_RUN_MAC=1
-          dotnet test -c Release --no-build --filter "FullyQualifiedName~MetalContextTests|FullyQualifiedName~ObjectiveCTests" --logger "console;verbosity=detailed"
+          dotnet test -c Release --no-build --filter "FullyQualifiedName~MetalContextTests|FullyQualifiedName~ObjectiveCTests|FullyQualifiedName~TextNativeProbeTests" --logger "console;verbosity=detailed"
       - name: FontLibrary real-machine discovery (checklist 6)
         run: |
           dotnet test -c Release --no-build --filter "FullyQualifiedName~FontLocatorTests" --logger "console;verbosity=normal"

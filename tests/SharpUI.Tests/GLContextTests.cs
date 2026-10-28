@@ -17,6 +17,7 @@ public class GLContextTests
     [Trait("Category", "Gpu")]
     public void Headless_BeginFrameClearsToColor()
     {
+        if (!GlSupport.Available) return;   // CI 无 GPU 环境(GL 1.1 软渲染)按约定早退,见 GlSupport
         using var ctx = GLContext.CreateHeadless(64, 64);
         ctx.BeginFrame(0.07f, 0.07f, 0.08f, 1f);
         ctx.Present();   // headless no-op(不交换,后备缓冲供读回)
@@ -29,6 +30,7 @@ public class GLContextTests
     [Trait("Category", "Gpu")]
     public void Headless_DrawWhiteQuad_AttributelessAtlasWhitePixel()
     {
+        if (!GlSupport.Available) return;   // CI 无 GPU 环境(GL 1.1 软渲染)按约定早退,见 GlSupport
         using var ctx = GLContext.CreateHeadless(64, 64);
         ctx.UpdateAtlasRegion(new byte[] { 255, 255, 255, 255 }, 0, 0, 1, 1);   // 图集 (0,0) 白
         float inv = 1f / ctx.AtlasSize;
@@ -52,6 +54,7 @@ public class GLContextTests
     [Trait("Category", "Gpu")]
     public void Headless_DrawRedQuad_LandsInRedChannel()   // 通道映射锁定(Color32.R→红;GL RGBA 字节序)
     {
+        if (!GlSupport.Available) return;   // CI 无 GPU 环境(GL 1.1 软渲染)按约定早退,见 GlSupport
         using var ctx = GLContext.CreateHeadless(64, 64);
         ctx.UpdateAtlasRegion(new byte[] { 255, 255, 255, 255 }, 0, 0, 1, 1);
         float inv = 1f / ctx.AtlasSize;
@@ -73,6 +76,7 @@ public class GLContextTests
     [Trait("Category", "Gpu")]
     public void Headless_ScissorClipsDraw()
     {
+        if (!GlSupport.Available) return;   // CI 无 GPU 环境(GL 1.1 软渲染)按约定早退,见 GlSupport
         using var ctx = GLContext.CreateHeadless(64, 64);
         ctx.UpdateAtlasRegion(new byte[] { 255, 255, 255, 255 }, 0, 0, 1, 1);
         float inv = 1f / ctx.AtlasSize;
@@ -95,6 +99,7 @@ public class GLContextTests
     [Trait("Category", "Gpu")]
     public void Headless_BeginFrame_ResetsScissorForClear()   // 评审 Important#1:glClear 受残留 scissor 作用
     {
+        if (!GlSupport.Available) return;   // CI 无 GPU 环境(GL 1.1 软渲染)按约定早退,见 GlSupport
         using var ctx = GLContext.CreateHeadless(64, 64);
         ctx.UpdateAtlasRegion(new byte[] { 255, 255, 255, 255 }, 0, 0, 1, 1);
         float inv = 1f / ctx.AtlasSize;
@@ -122,6 +127,7 @@ public class GLContextTests
     [Trait("Category", "Gpu")]
     public void Headless_DrawTwoSegments_StartIndexOffset()   // 分段契约:startIndex>0 各段各就各位(DrawElements 原生偏移路径)
     {
+        if (!GlSupport.Available) return;   // CI 无 GPU 环境(GL 1.1 软渲染)按约定早退,见 GlSupport
         using var ctx = GLContext.CreateHeadless(64, 64);
         ctx.UpdateAtlasRegion(new byte[] { 255, 255, 255, 255 }, 0, 0, 1, 1);
         float inv = 1f / ctx.AtlasSize;
@@ -155,6 +161,7 @@ public class GLContextTests
         // 且零初始化缺失时才失败。白块放图集 (8,8)-(10,10):屏幕 (0,0) 中心 UV=(0.5/64)
         // →点采样 texel 恰为 8;未写区域(如 (32,32)→texel 520)透明源 (0,0,0,0) 经预乘
         // 混合 (One,OneMinusSrcAlpha) → 清屏色。
+        if (!GlSupport.Available) return;   // CI 无 GPU 环境(GL 1.1 软渲染)按约定早退,见 GlSupport
         using var ctx = GLContext.CreateHeadless(64, 64);
         ctx.BeginFrame(0, 0, 0, 1f);
         ctx.UpdateAtlasRegion(new byte[]
@@ -180,6 +187,7 @@ public class GLContextTests
     [Trait("Category", "Gpu")]
     public void Headless_ResizeZero_Throws_AndResizeRecords()
     {
+        if (!GlSupport.Available) return;   // CI 无 GPU 环境(GL 1.1 软渲染)按约定早退,见 GlSupport
         using var ctx = GLContext.CreateHeadless(64, 64);
         Assert.Throws<ArgumentException>(() => ctx.Resize(0, 0));   // 不接受 0(同 D3D11 语义)
         ctx.Resize(32, 48);   // GL 窗口由 SDL 管理:仅记录尺寸,viewport 随 BeginFrame 刷新(headless 不抛)
@@ -199,6 +207,7 @@ public class GLContextTests
     [Trait("Category", "Gpu")]
     public void Headless_GlVersion_33CoreOrHigher_NotCompatibility()   // T2 评审 Minor#2:兼容上下文不得蒙混
     {
+        if (!GlSupport.Available) return;   // CI 无 GPU 环境(GL 1.1 软渲染)按约定早退,见 GlSupport
         using var ctx = GLContext.CreateHeadless(64, 64);   // 构造期 MakeCurrent,本线程可直接查询
         string ver = System.Runtime.InteropServices.Marshal.PtrToStringAnsi(GL.GetString(GL.Version))!;
         string[] nums = ver.Split(' ')[0].Split('.');
