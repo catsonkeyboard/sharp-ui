@@ -6,26 +6,6 @@ namespace SharpUI;
 
 public sealed class App
 {
-    /// <summary>X-4 T3(裁定#48):DllImportResolver 接线 —— T1 NativeLib 留尾落点。仅非 Windows
-    /// 注册(Windows 走默认解析:vendored DLL 与 DllImport 常量逐字节一致,零行为差门槛 ——
-    /// IsWindows 守卫即零差保证,不经本路径);Linux/macOS 上把 DllImport 名(Windows 形态 const,
-    /// 特性参数须编译期常量所限)经 NativeLib.Resolve 重定向到平台名(libSDL2-2.0.so.0 /
-    /// libfreetype.6.dylib 等),SDL/FT/HB 的 DllImport 自此在非 Windows 实际生效。未知名回落
-    /// IntPtr.Zero = 默认解析(libobjc 经显式句柄、Metal.framework 经绝对路径,均不经此)。</summary>
-    static App()
-    {
-        if (!OperatingSystem.IsWindows())
-        {
-            NativeLibrary.SetDllImportResolver(typeof(App).Assembly, static (name, assembly, path) =>
-            {
-                string? baseName = NativeLib.BaseNameOf(name);
-                return baseName is not null
-                    && NativeLibrary.TryLoad(NativeLib.Resolve(NativeLib.Current, baseName), out IntPtr handle)
-                    ? handle : IntPtr.Zero;
-            });
-        }
-    }
-
     /// <summary>TextElement 度量用(M1 服务定位,M2 换度量上下文)。多窗:Run 每窗构建前置为该窗图集。</summary>
     public static TextAtlas? Atlas { get; internal set; }
 

@@ -81,3 +81,11 @@ rd.xml Dynamic="Required All" 实测无效。处置:M3e 时一并解决(升级 V
 - 产物(排除 *.pdb 可部署部分):Counter.exe 2,798,592 + SDL2.dll 1,702,400(vendored 2.30.8)+ freetype.dll 686,592 + harfbuzz.dll 1,075,712 = **6,263,296 B ≈ 5.97 MiB(6.26 MB)**——较 D5 收官 6,246,912 B **+16,384 B(+0.26%,全部来自 Counter.exe 2,782,208→2,798,592,SubMenu/菜单翻转钳制/滚轮模态栅门/Range 活动 thumb 描边/M-a..M-g 打磨批与 demo Menu+SubMenu IL 增量;Encoding.Latin1 零额外引包;原生库三件不变)**;设计验收 ≤8MB 持续达成。
 - 运行实测:AOT Counter.exe 存活 ≥6s,Responding=True,MainWindowTitle "SharpUI Counter",CPU 0.53s/6s(渲染循环实做工作),CloseMainWindow 干净退出 ExitCode=0,stdout/stderr 零输出。
 - 渲染与交互正确性承证:全量 392/392 绿(含 MenuTests SubMenu `▶` 箭头像素读回、SliderTests Range 聚焦/捕获 `0x93C5FD` 1px 描边网格断言、SelectTests DemoSegment 涵盖 Menu→More 一级子菜单→激活子项连带收起整棵菜单树与状态回显)。
+
+## 跨平台终审修复波:resolver 前移 + TTC 脸遍历 + SdlNative 路径③(2026-10-28,裁定#48 终审)
+
+`dotnet publish examples/Counter/Counter.csproj -c Release -r win-x64 -p:PublishAot=true` 成功(发布前清空旧 publish 目录防陈旧残留);零警告、零错误、零 NU1903。修复轮(DMsgSendVoidGetBytes 委托返回类型回退 void 触互操作面)后未重测,本波连同终审修复波代码三项(resolver 注册前移 NativeLib 静态构造/TTC 脸遍历/SdlNative 路径③ Current 解析)一并重发布。
+
+- 产物(排除 *.pdb 可部署部分):Counter.exe 2,801,152 + SDL2.dll 1,702,400(vendored 2.30.8)+ freetype.dll 686,592 + harfbuzz.dll 1,075,712 = **6,265,856 B ≈ 5.97 MiB(6.27 MB)**——Counter.exe **2,801,152 B 与裁定#48 T3 记录逐字节持平**(修复轮+终审修复波净零尺寸漂移:App 静态构造删除与 NativeLib 静态构造新增互抵、probe 接口扩展 IL 增量在 ILC 剥离面下不显);设计验收 ≤8MB 持续达成。
+- 运行实测:AOT Counter.exe 存活 ≥6s,Responding=True,CloseMainWindow 干净退出 ExitCode=0,stdout/stderr 零输出。
+- 渲染与交互正确性承证:全量 456/456 绿(452+4 TTC 遍历测试,FontLocatorTests;Windows 合同 segoeui/YaHei 断言不变)。

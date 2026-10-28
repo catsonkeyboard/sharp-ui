@@ -20,21 +20,21 @@ public class FontLibraryTests
     {
         var locator = new WindowsFontLocator();
         // 注册表值 "Segoe UI (TrueType)" → segoeui.ttf(相对 C:\Windows\Fonts):解析结果必须是存在的文件
-        string? regular = locator.Locate("Segoe UI", bold: false);
+        string? regular = locator.Locate("Segoe UI", bold: false, out _);
         Assert.NotNull(regular);
         Assert.True(File.Exists(regular!), regular!);
         // 粗体=独立文件:值 "Segoe UI Bold (TrueType)" → segoeuib.ttf(槽 0 粗体语义与 BoldOf 一致)
-        string? bold = locator.Locate("Segoe UI", bold: true);
+        string? bold = locator.Locate("Segoe UI", bold: true, out _);
         Assert.NotNull(bold);
         Assert.True(File.Exists(bold!), bold!);
         Assert.NotEqual(Path.GetFullPath(regular!), Path.GetFullPath(bold!));   // 粗体文件 ≠ 主脸文件
         // YaHei 值名带 & 变体:"Microsoft YaHei & Microsoft YaHei UI (TrueType)" → msyh.ttc——
         // 按族名前缀匹配值名,不要求全等(T0 实况:全等匹配会漏掉雅黑)
-        string? yahei = locator.Locate("Microsoft YaHei", bold: false);
+        string? yahei = locator.Locate("Microsoft YaHei", bold: false, out _);
         Assert.NotNull(yahei);
         Assert.True(File.Exists(yahei!), yahei!);
         // 槽 2 回退源:Emoji 族注册表可解析
-        string? emoji = locator.Locate("Segoe UI Emoji", bold: false);
+        string? emoji = locator.Locate("Segoe UI Emoji", bold: false, out _);
         Assert.NotNull(emoji);
         Assert.True(File.Exists(emoji!), emoji!);
     }
@@ -45,8 +45,8 @@ public class FontLibraryTests
     {
         var locator = new WindowsFontLocator();
         // 接口契约:解析失败返回 null(FontLibrary 侧并入槽 0)
-        Assert.Null(locator.Locate("Definitely Not A Font Family", bold: false));
-        Assert.Null(locator.Locate("Definitely Not A Font Family", bold: true));
+        Assert.Null(locator.Locate("Definitely Not A Font Family", bold: false, out _));
+        Assert.Null(locator.Locate("Definitely Not A Font Family", bold: true, out _));
     }
 
     [Fact]

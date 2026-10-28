@@ -219,14 +219,16 @@ internal static class SdlNative
         // 候选序为本类自定(基目录 → runtimes/<rid>/native),非旧窗口层加载序的复刻——T4 实证两者落点
         // 可分裂(Init 落基目录副本、旧窗口层建窗落 runtimes 副本);落点不可假设,属主由 GetWin32Hwnd 多候选探测兜底。
         // X-1:基目录候选走平台解析(Windows = 现名逐字节同前;Linux/macOS 亦按 SONAME 找 vendored 副本)。
-        // 注意:Current 候选为 baseDir+SONAME 的路径限定探测,只覆盖应用侧 vendored 副本、不触系统
-        // SONAME(/usr/lib 等搜索路径)——系统 SONAME 探测待 T2 DllImportResolver 接线;Windows 布局零差。
+        // 前两候选为 baseDir+SONAME 的路径限定探测,只覆盖应用侧 vendored 副本、不触系统 SONAME
+        // (/usr/lib 等搜索路径)——路径③(终审修复波项 c)改走 Current 解析对齐 Clipboard/FT/HB 预载
+        // 模式:程序集探测 TryLoad 未命中应用目录后回落 OS 默认搜索,系统 SONAME 自此可达
+        // (Linux CI 无 vendored 副本时 EnsureVideoInit 不再注定抛);Windows 上 Resolve 恒等现名,零差。
         if (NativeLibrary.TryLoad(Path.Combine(baseDir, NativeLib.Resolve(NativeLib.Current, "SDL2")), out _primary)) return _primary;
         if (rid.Length > 0
             && NativeLibrary.TryLoad(Path.Combine(baseDir, "runtimes", rid, "native",
                 NativeLib.Resolve(NativeLib.Platform.Windows, "SDL2")), out _primary))   // win-* 布局仅 Windows 宿主存在
             return _primary;
-        NativeLibrary.TryLoad(SdlLib, typeof(SdlNative).Assembly, null, out _primary);   // 程序集探测兜底(测试宿主布局)
+        NativeLibrary.TryLoad(NativeLib.Resolve(NativeLib.Current, "SDL2"), typeof(SdlNative).Assembly, null, out _primary);   // 程序集探测兜底(测试宿主布局;路径③)
         return _primary;
     }
 

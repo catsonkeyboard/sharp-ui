@@ -1,3 +1,5 @@
+using System.Runtime.InteropServices;
+
 namespace SharpUI;
 
 /// <summary>
@@ -8,8 +10,9 @@ namespace SharpUI;
 /// libSDL2-2.0.dylib / libfreetype.6.dylib / libharfbuzz.0.dylib)。
 /// **DllImport 特性参数须编译期常量** → Sdl2/FreeType/HarfBuzz 为 const,值取 Windows 现名
 /// (零行为差门槛:Windows 宿主解析结果与改造前逐字节一致,由 NativeLibTests 契约锁死);
-/// 非 Windows 的名称映射经 Resolve(Current, baseName) 消费(预载路径;DllImportResolver 的
-/// 接线属后续任务)。Resolve 为纯函数(注入 Platform),单测全矩阵覆盖;AOT 兼容,零 unsafe。
+/// 非 Windows 的名称映射经 Resolve(Current, baseName) 消费(预载路径 + 静态构造的
+/// DllImportResolver 接线,X-4 T3 落地、终审修复波前移至本类)。Resolve 为纯函数(注入 Platform),
+/// 单测全矩阵覆盖;AOT 兼容,零 unsafe。
 /// </summary>
 internal static class NativeLib
 {
@@ -22,6 +25,32 @@ internal static class NativeLib
         OperatingSystem.IsWindows() ? Platform.Windows
         : OperatingSystem.IsLinux() ? Platform.Linux
         : Platform.Mac;
+
+    /// <summary>X-4 T3(裁定#48)接线、终审修复波前移(CI 预备项 a):SetDllImportResolver 注册点。
+    /// 原落 App 静态构造 —— headless 字体栈(FontLibrary→FreeTypeNative/HarfBuzzNative,不经 App)
+    /// 在 Linux/macOS 上 resolver 不生效,DllImport 名(Windows 形态 const,特性参数须编译期常量
+    /// 所限)无从重定向;前移至本类静态构造后,任何 NativeLib 触达即完成注册。**幂等选型=静态构造函数**:
+    /// CLR 保证类型初始化器至多执行一次,SetDllImportResolver 对同一程序集二次注册抛
+    /// InvalidOperationException 的风险由"注册点全局唯一 + 静态构造单次执行"结构性消除,无需标志位
+    /// (App 侧注册已删,进程内不存在第二调用点)。**触发覆盖论证**:三条 DllImport 入口类
+    /// (Clipboard/FreeTypeNative/HarfBuzzNative)的预载静态构造先调 Resolve/Current,即在任何
+    /// P/Invoke 名解析发生前完成注册;SdlNative/SdlEvents 经函数指针(NativeLibrary.GetExport)不经
+    /// DllImport;libobjc 显式句柄、Metal.framework 绝对路径 DllImport,未知名回落 IntPtr.Zero =
+    /// 默认解析照走。仅非 Windows 注册(Windows 走默认解析:vendored DLL 与 DllImport 常量逐字节
+    /// 一致,零行为差门槛——IsWindows 守卫即零差保证,Windows 宿主零新增路径)。</summary>
+    static NativeLib()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            NativeLibrary.SetDllImportResolver(typeof(NativeLib).Assembly, static (name, assembly, path) =>
+            {
+                string? baseName = BaseNameOf(name);
+                return baseName is not null
+                    && NativeLibrary.TryLoad(Resolve(Current, baseName), out IntPtr handle)
+                    ? handle : IntPtr.Zero;
+            });
+        }
+    }
 
     // ---- DllImport 解析键(Windows 现名;与 Resolve(Windows, 基名) 恒等,测试锁定) ----
 
@@ -51,7 +80,7 @@ internal static class NativeLib
     }
 
     /// <summary>X-4 T3(裁定#48):DllImport 名(Windows 形态 const)→ 基名 —— Resolve 的反函数,
-    /// 供 App 静态构造的 SetDllImportResolver 把 DllImport 惰性解析名重定向到平台 SONAME
+    /// 供 NativeLib 静态构造的 SetDllImportResolver 把 DllImport 惰性解析名重定向到平台 SONAME
     /// (Linux/macOS 上 SDL/FT/HB 的 DllImport 实际生效路径)。已知三库精确映射;未知名返回
     /// null(调用方回落 IntPtr.Zero = .NET 默认解析,零面扩展)。纯函数,与 Resolve 同矩阵单测面。</summary>
     internal static string? BaseNameOf(string dllImportName) => dllImportName switch

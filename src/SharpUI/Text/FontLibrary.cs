@@ -4,14 +4,16 @@ using Microsoft.Win32;
 namespace SharpUI.Text;
 
 /// <summary>族名→字体文件路径。实现:Windows=注册表(WindowsFontLocator)、Linux=fontconfig
-/// 约定目录扫描(LinuxFontLocator)、macOS=目录扫描回退(MacFontLocator;CoreText 优先待 objc 层
-/// 落地后接线)。bold=先查 "&lt;family&gt; Bold",查不到回退 "&lt;family&gt;"(与 TextAtlas.BoldOf
+/// 约定目录扫描(LinuxFontLocator)、macOS=目录扫描回退(MacFontLocator;CoreText 优先未接线,
+/// 归 M3e 后半/CI 轮)。bold=先查 "&lt;family&gt; Bold",查不到回退 "&lt;family&gt;"(与 TextAtlas.BoldOf
 /// 回退语义一致,三实现同契约)。</summary>
 internal interface IFontLocator
 {
     /// <summary>解析族名(含粗体族如 "Segoe UI Bold");失败返回 null。
-    /// bold=先查 "&lt;family&gt; Bold",查不到回退 "&lt;family&gt;"(与 TextAtlas.BoldOf 回退语义一致)。</summary>
-    string? Locate(string familyName, bool bold);
+    /// bold=先查 "&lt;family&gt; Bold",查不到回退 "&lt;family&gt;"(与 TextAtlas.BoldOf 回退语义一致)。
+    /// faceIndex=命中文件的 TTC 脸序,随路径透出供 FT_New_Memory_Face(终审修复波项 b:目录扫描
+    /// 常规查询可命中 TTC 后续脸,如 NotoSansCJK-Regular.ttc 的 SC 脸;Windows 注册表路径恒 0)。</summary>
+    string? Locate(string familyName, bool bold, out int faceIndex);
 }
 
 /// <summary>
@@ -27,8 +29,9 @@ internal sealed class WindowsFontLocator : IFontLocator
 {
     Dictionary<string, string>? _entries;   // 规范化值名(去 " (TrueType)" 类类型括注)→ 绝对路径
 
-    public string? Locate(string familyName, bool bold)
+    public string? Locate(string familyName, bool bold, out int faceIndex)
     {
+        faceIndex = 0;   // 注册表值名无脸序信息:恒 face 0(msyh.ttc 首脸=常规,与 FontLibrary face index 0 约定一致)
         ArgumentNullException.ThrowIfNull(familyName);
         if (!OperatingSystem.IsWindows()) return null;   // 后续里程碑的发现器入口;亦守护注册表 API 的平台门槛(CA1416)
         _entries ??= LoadRegistryEntries();
@@ -102,6 +105,7 @@ internal sealed class FontLibrary : IDisposable
     readonly IFontLocator _locator = CreateLocator();   // 平台分派(跨平台里程碑 X-2)
     readonly string _primaryFamily = "";               // 构造期解析后的槽 0 实际族名(Linux DejaVu 回退时 ≠ PrimaryFamily)
     readonly string?[] _files;                          // null = 解析/加载失败 → 并入槽 0
+    readonly int[] _faceIndex;                          // 槽位 TTC 脸序(终审修复波项 b;Windows 注册表路径恒 0)
     readonly Dictionary<int, FaceHandle> _faces = new();   // 槽 → 常规脸(懒建)
     FaceHandle? _boldFace;                              // 槽 0 粗体独立脸(懒建;null+已解析 = 回落主脸)
     bool _boldResolved;
@@ -134,16 +138,27 @@ internal sealed class FontLibrary : IDisposable
         if (err != 0 || _ftLib == IntPtr.Zero)
             throw new InvalidOperationException($"FT_Init_FreeType failed: {err}");
         _files = new string?[1 + fallbackFamilies.Length];
+        _faceIndex = new int[1 + fallbackFamilies.Length];
         try
         {
             // 槽 0 候选链依次解析(单候选平台退化为原行为;Linux Noto→DejaVu 记实际命中族名供粗体解析)
             string? primaryPath = null;
             foreach (string candidate in PrimaryFamilyCandidates())
-                if (ResolveExisting(candidate, bold: false) is { } path) { primaryPath = path; _primaryFamily = candidate; break; }
+                if (ResolveExisting(candidate, bold: false, out string? path, out int face))
+                {
+                    primaryPath = path;
+                    _faceIndex[0] = face;
+                    _primaryFamily = candidate;
+                    break;
+                }
             _files[0] = primaryPath
                 ?? throw new InvalidOperationException($"primary font family '{PrimaryFamily}' not resolvable via font registry");
-            for (int i = 0; i < fallbackFamilies.Length; i++)
-                _files[1 + i] = ResolveExisting(fallbackFamilies[i], bold: false);   // null → 并入槽 0
+            for (int i = 0; i < fallbackFamilies.Length; i++)   // null → 并入槽 0(faceIndex 默认 0 一并闲置)
+                if (ResolveExisting(fallbackFamilies[i], bold: false, out string? path, out int face))
+                {
+                    _files[1 + i] = path;
+                    _faceIndex[1 + i] = face;
+                }
         }
         catch
         {
@@ -199,7 +214,7 @@ internal sealed class FontLibrary : IDisposable
         if (_files[slot] is null) slot = 0;   // 解析/加载失败并入槽 0(同现状)
         if (!_faces.TryGetValue(slot, out FaceHandle? face))
         {
-            face = LoadFace(_files[slot]!);
+            face = LoadFace(_files[slot]!, _faceIndex[slot]);
             _faces[slot] = face;
         }
         return face;
@@ -210,29 +225,34 @@ internal sealed class FontLibrary : IDisposable
         if (_boldFace is null && !_boldResolved)
         {
             _boldResolved = true;
-            string? boldFile = ResolveExisting(_primaryFamily, bold: true);   // Locate 内部已含回落主脸值(用实际命中族名,Linux DejaVu 回退时与槽 0 一致)
+            // Locate 内部已含回落主脸值(用实际命中族名,Linux DejaVu 回退时与槽 0 一致)
+            ResolveExisting(_primaryFamily, bold: true, out string? boldFile, out int boldFaceIndex);
             // 回落主脸(路径同槽 0)→ 共用常规脸句柄,BoldOf "查不到回落主脸"语义
             if (boldFile is not null && !PathEquals(boldFile, _files[0]!))
-                _boldFace = LoadFace(boldFile);
+                _boldFace = LoadFace(boldFile, boldFaceIndex);
         }
         return _boldFace ?? RegularFace(0);
     }
 
-    /// <summary>注册表解析 + 文件存在性核验(值指向已卸载字体时判失败并入槽 0)。</summary>
-    string? ResolveExisting(string familyName, bool bold)
+    /// <summary>发现器解析 + 文件存在性核验(值指向已卸载字体时判失败并入槽 0);faceIndex 随路径透传。</summary>
+    bool ResolveExisting(string familyName, bool bold, out string? path, out int faceIndex)
     {
-        string? path = _locator.Locate(familyName, bold);
-        return path is not null && File.Exists(path) ? path : null;
+        path = _locator.Locate(familyName, bold, out faceIndex);
+        if (path is not null && !File.Exists(path)) { path = null; faceIndex = 0; }
+        return path is not null;
     }
 
-    /// <summary>FT_New_Memory_Face 统一加载(face index 0:TTC 如 msyh.ttc 取首个 face=常规字重)。
+    /// <summary>FT_New_Memory_Face 统一加载。faceIndex=发现器命中的 TTC 脸序(终审修复波项 b):
+    /// Windows 注册表路径恒 0(msyh.ttc 首脸=常规字重);目录扫描常规查询可命中后续脸
+    /// (NotoSansCJK-Regular.ttc 的 SC 脸)——face_index 位约定(freetype.h FT_Open_Face):
+    /// 位 0-15=文件内脸序、位 16-30=变字体 named instance,probe 透传的裸脸序直接可用。
     /// 钉住的托管字节在 FT_Done_Face 前不得释放(freetype.h 明文),由 FaceHandle 持有句柄兜底。
     /// 备忘(评审 Minor#5):钉住为整文件常驻(非按需分页)——槽位/脸数扩容时留意常驻内存 ≈ Σ字体文件大小。</summary>
-    FaceHandle LoadFace(string file)
+    FaceHandle LoadFace(string file, int faceIndex)
     {
         byte[] data = File.ReadAllBytes(file);   // 托管读取按 UTF-16 文件名:非 ASCII 路径安全(T0 携带项)
         GCHandle pin = GCHandle.Alloc(data, GCHandleType.Pinned);
-        int err = FreeTypeNative.FT_New_Memory_Face(_ftLib, pin.AddrOfPinnedObject(), data.Length, 0, out IntPtr ftFace);
+        int err = FreeTypeNative.FT_New_Memory_Face(_ftLib, pin.AddrOfPinnedObject(), data.Length, faceIndex, out IntPtr ftFace);
         if (err != 0 || ftFace == IntPtr.Zero)
         {
             pin.Free();
