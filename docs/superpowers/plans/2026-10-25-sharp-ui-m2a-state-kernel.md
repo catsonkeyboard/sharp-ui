@@ -16,7 +16,7 @@
 - 性能预算**不放宽**:Counter 场景(含 id 解析与焦点)稳态每帧分配 ≤64KB、CPU <8ms(Release)。若实测超限,报告 BLOCKED 等裁定,不得改断言。
 - 公开面最小化:本阶段新增公开成员仅限各任务 Interfaces 节列出的成员;`Veldrid.Key` 进入公开 API 是已裁定技术债(规格书 D12)。
 - 版本锁定不变:Veldrid 4.9.0 / Veldrid.SDL2 4.9.0 / Veldrid.SPIRV 1.0.15 / Newtonsoft.Json 13.0.3 / SkiaSharp 4.153.1。
-- 命令均在仓库根 `C:\Users/<user>/sharp-ui` 运行;`dotnet test` 全绿是每任务提交前置。
+- 命令均在仓库根 `<repo-root>` 运行;`dotnet test` 全绿是每任务提交前置。
 
 ---
 

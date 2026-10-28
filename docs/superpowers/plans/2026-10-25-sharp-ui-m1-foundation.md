@@ -18,7 +18,7 @@
 - 需要真实 GPU 的测试打 `[Trait("Category", "Gpu")]`;本机 `dotnet test` 必须全绿(含 Gpu)。
 - 性能预算(Release):Counter 场景稳态每帧分配 ≤64KB、单帧 CPU <8ms(规格书 §9)。
 - 提交信息用英文 Conventional Commits(`feat: ...` / `test: ...`);main 分支;每个任务至少一次提交。
-- 每个任务的手测步骤在本机 Windows 执行;命令均在仓库根 `C:\Users/<user>/sharp-ui` 运行。
+- 每个任务的手测步骤在本机 Windows 执行;命令均在仓库根 `<repo-root>` 运行。
 
 ---
 

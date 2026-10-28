@@ -1,0 +1,8 @@
+{
+  "plugins": {
+    "enabledPlugins": {
+      "blender@zcode-plugins-official": false,
+      "godot@zcode-plugins-official": false
+    }
+  }
+}
