@@ -77,3 +77,11 @@ CI workflow 编写(待 GitHub remote);Linux GL 实机验证;macOS 窗口路径(S
 - **项 c SdlNative 路径③**:`Primary()` 程序集探测兜底 `TryLoad(SdlLib,…)` → `TryLoad(NativeLib.Resolve(NativeLib.Current, "SDL2"),…)`(对齐 Clipboard/FT/HB 预载模式)——未命中应用目录后回落 OS 默认搜索,系统 SONAME 自此可达(Linux CI 无 vendored 副本时 EnsureVideoInit 不再注定抛);Windows 上 Resolve(Current) 恒等现名,零差。注释同步(原"系统 SONAME 探测待 T2 DllImportResolver 接线"表述废止)。
 - **测试**:全量 **456/456**(452+4:TtcFaceTraversal 假 Probe 3[SC 命中 face 2/大小写不敏感+粗体兜底/非粗体优先]+ FreeTypeProbe_TtcRegularTraversal_HitsLaterFace 真文件合同 1[msyh.ttc "Microsoft YaHei UI"→face 1]);Windows 注册表路径不经 probe、faceIndex 恒 0,segoeui/YaHei 合同断言不变。
 - **AOT 重发布**:Counter.exe **2,801,152 B 逐字节持平**(vs 修复轮前同值;resolver 前移+TTC 遍历净零尺寸漂移),publish 零告警;冒烟存活 6s Responding=True、CloseMainWindow 干净退出 ExitCode=0(docs/notes/m1-aot.md)。
+
+## CI 实机收账(2026-10-28,run 40629608976 三平台全绿)
+
+- **macOS(M1 runner)Metal 后端实机验证通过**:`SHARPUI_RUN_MAC=1` 下 MetalContextTests **9/9 全绿**(清屏/白四边形/红通道/scissor 方向与纵向不对称断言/残留 scissor 复位/两段 startIndex 偏移/Resize 语义/AtlasSize/FreshAtlas 构造期全零)——裁定#48 待验清单 **①像素断言、②Shared 存储、③MSL 运行时编译、⑤Shared 并发假设**四项实机销账(④autorelease 累积为观测项,首跑无崩溃)。objc ABI(arm64)/62 Selector/17 枚举常量全部经真机 Metal 校验。
+- **FT/HB 原生库在 macOS 实机加载通过**(FreeType_Loads/HarfBuzz_Loads):Homebrew `/opt/homebrew/lib` 路径探测(resolver 显式根列表)实证生效——待验清单 **⑦Resolver 实机生效** 部分销账(headless 无 App 入口)。
+- **Windows CI 全绿**:456/456(全量)+ AOT 发布 + 冒烟;GL 测试在无 GPU runner 经 `GlSupport.Available` 探测自跳过(本机有 GPU 全跑)。
+- **Linux 逻辑面全绿**(Category!=Gpu 344 项);GPU 面首跑摸底(LLVMpipe 下 D3D11-headless 硬编码测试未过,SHARPUI_BACKEND=gl 路由的 GL 面待下一轮适配)——已知边界,continue-on-error 挂账。
+- **CI 适配改动**:NativeLib resolver 增 Homebrew/Linux 显式根路径列表;GlSupport(GL 3.3 可用性一次性探测早退);ShaderCompiler/字体探针平台守卫;macOS ttc 渲染探针原生崩溃隔离为待查项(库加载已实证,渲染路径待带日志排查)。
