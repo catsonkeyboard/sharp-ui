@@ -199,6 +199,7 @@ public class GLContextTests
     [Trait("Category", "Gpu")]
     public void AtlasSize_Is1024()   // M3e:经 IRenderContext 断言契约(GL 后端同值实现)
     {
+        if (!GlSupport.Available) return;   // CI 无 GPU 环境按约定早退,见 GlSupport
         using IRenderContext ctx = GLContext.CreateHeadless(64, 64);
         Assert.Equal(1024u, ctx.AtlasSize);
     }

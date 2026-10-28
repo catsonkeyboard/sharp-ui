@@ -20,6 +20,7 @@ public class GlPerfTests
     [Trait("Category", "Gpu")]
     public void CounterScene_GlHeadless_WithinAllocationAndCpuBudget()
     {
+        if (!GlSupport.Available) return;   // CI 无 GPU 环境按约定早退,见 GlSupport
         using var ctx = GLContext.CreateHeadless(64, 64);
         using var atlas = new TextAtlas(ctx);
         App.Atlas = atlas;

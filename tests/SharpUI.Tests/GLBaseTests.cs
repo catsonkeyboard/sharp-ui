@@ -15,6 +15,7 @@ public class GLBaseTests
     [Trait("Category", "Gpu")]
     public void GlContext_33Core_CreatesAndClearsOnHiddenWindow()
     {
+        if (!GlSupport.Available) return;   // CI 无 GPU 环境按约定早退,见 GlSupport
         SdlTextInput.EnableImeUi();
         SdlNative.EnsureVideoInit();
         // 时序:EnsureVideoInit(全候选)→ SetGlAttribute → 建窗(App.CreateWindow 同款;建窗前属性须就位)
