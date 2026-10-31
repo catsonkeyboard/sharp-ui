@@ -1,9 +1,12 @@
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace SharpUI;
 
-/// <summary>系统剪贴板桥(M3c):SDL2 原生导出,Ansi 字符集(非 ASCII 文本可能被系统代码页改写)。
-/// GetText 返回串需 SDL_free;IntPtr.Zero/空串归一为 ""。预载兜底覆盖测试宿主的 runtimes/&lt;rid&gt;/native 布局。</summary>
+/// <summary>系统剪贴板桥(M3c):SDL2 原生导出,UTF-8 契约(SDL_SetClipboardText/GetClipboardText 的
+/// char* 均为 UTF-8,同 SDL_CreateWindow 标题)—— 手工封送(写 Encoding.UTF8 字节 + 0 终止,读
+/// PtrToStringUTF8),任何 locale 下非 ASCII 双向零损。GetText 返回串需 SDL_free;IntPtr.Zero/空串
+/// 归一为 ""。预载兜底覆盖测试宿主的 runtimes/&lt;rid&gt;/native 布局。</summary>
 public static class Clipboard
 {
     // DllImport 特性参数须编译期常量 → 取 NativeLib 编译期键(= Windows 现名,零行为差;X-1)
@@ -34,26 +37,41 @@ public static class Clipboard
 
     const uint SdlInitVideo = 0x20;   // SDL_INIT_VIDEO:Windows 剪贴板依赖视频子系统(隐藏辅助窗口);计数式,重复调用安全
 
-    /// <summary>写入系统剪贴板(SDL 拷贝入参,Ansi 封送);null 归一为空串。</summary>
-    public static void SetText(string s) => _ = SDL_SetClipboardText(s ?? "");
+    /// <summary>写入系统剪贴板(SDL 拷贝入参);null 归一为空串。UTF-8 手编(建窗标题 SdlEvents.CreateWindow
+    /// 同款:AllocHGlobal+Copy+尾部 0;CharSet.Ansi 会按系统代码页编非 ASCII → 其他程序粘贴出 mojibake)。</summary>
+    public static void SetText(string s) => _ = SetUtf8(s ?? "");
 
     /// <summary>同 SetText 但回传 SDL 是否接受(0=成功);剪贴板被系统策略拒绝时测试据此跳过往返断言。</summary>
-    internal static bool TrySetText(string s) => SDL_SetClipboardText(s ?? "") == 0;
+    internal static bool TrySetText(string s) => SetUtf8(s ?? "") == 0;
 
-    /// <summary>读取系统剪贴板;空/失败返回 ""(IntPtr.Zero/空串归一)。</summary>
+    /// <summary>UTF-8 编码写入(SDL 契约;复制是用户触发非热路径,暂存分配可接受,同建窗路径裁定)。</summary>
+    static int SetUtf8(string s)
+    {
+        byte[] utf8 = Encoding.UTF8.GetBytes(s);
+        IntPtr p = Marshal.AllocHGlobal(utf8.Length + 1);   // 含 0 终止
+        try
+        {
+            Marshal.Copy(utf8, 0, p, utf8.Length);
+            Marshal.WriteByte(p, utf8.Length, 0);
+            return SDL_SetClipboardText(p);
+        }
+        finally { Marshal.FreeHGlobal(p); }
+    }
+
+    /// <summary>读取系统剪贴板(SDL 返回 UTF-8 字节);空/失败返回 ""(IntPtr.Zero/空串归一)。</summary>
     public static string GetText()
     {
         IntPtr p = SDL_GetClipboardText();
         if (p == IntPtr.Zero) return "";
-        try { return Marshal.PtrToStringAnsi(p) ?? ""; }
+        try { return Marshal.PtrToStringUTF8(p) ?? ""; }
         finally { SDL_free(p); }   // SDL 约定:调用方负责释放返回串
     }
 
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
     private static extern int SDL_InitSubSystem(uint flags);
 
-    [DllImport(Lib, CharSet = CharSet.Ansi, CallingConvention = CallingConvention.Cdecl)]
-    private static extern int SDL_SetClipboardText(string text);
+    [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
+    private static extern int SDL_SetClipboardText(IntPtr text);   // UTF-8 字节指针(SetUtf8 手编)
 
     [DllImport(Lib, CallingConvention = CallingConvention.Cdecl)]
     private static extern IntPtr SDL_GetClipboardText();

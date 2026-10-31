@@ -184,4 +184,37 @@ public class TooltipTests : IDisposable
         Assert.Equal(0, PopupHost.Count(h));
         PopupHost.Clear(h);
     }
+
+    /// <summary>审计修复波 C-2:生产帧序(App.Run 每帧 w.Render() 重建整棵声明树)下,载体是每帧新实例、
+    /// 同 ResolvedId。孤儿判定若按引用比对(修复前 !_carriers.Contains(anchor)),开启后下一帧即被误判
+    /// 孤儿强删 → Tooltip 每 0.5s 闪一帧、永远无法稳定显示。本测模拟逐帧重建(同 id 载体),断言连续
+    /// 多帧存活。</summary>
+    [Fact]
+    public void RebuiltTreeEachFrame_SameIdCarrier_TooltipStaysOpen()
+    {
+        IntPtr h = Win(8);
+        PopupHost.Clear(h);
+        (PanelElement root, ButtonElement carrier) = Declared("提示");
+        TooltipService.Update(h, root, Hovering(carrier));             // 帧 0:起表
+        _t = TooltipService.HoverDelaySeconds;
+        TooltipService.Update(h, root, Hovering(carrier));             // 满 0.5s → Push
+        Assert.Equal(1, PopupHost.Count(h));
+
+        for (int frame = 1; frame <= 3; frame++)                       // 生产常态:每帧重建树 + 同 id 载体
+        {
+            _t += 0.1;
+            (root, carrier) = Declared("提示");                        // 新实例;同结构 → 同回退 ResolvedId
+            TooltipService.Update(h, root, Hovering(carrier));
+            Assert.True(PopupHost.Count(h) == 1,                        // 不被当孤儿删(≥3 帧持续在栈)
+                $"frame {frame}: tooltip was orphan-pruned (id semantics broken)");
+        }
+
+        // 对照:载体彻底消失(重建后无 Tooltip 载体)仍按孤儿移除 —— id 语义不放宽这条
+        PanelElement rebuilt = Ui.Column(Ui.Text("空"));
+        LayoutEngine.Arrange(rebuilt, new RectF(0, 0, 200, 100));
+        IdResolver.Assign(rebuilt);
+        TooltipService.Update(h, rebuilt, At(new PointF(50, 20)));
+        Assert.Equal(0, PopupHost.Count(h));
+        PopupHost.Clear(h);
+    }
 }

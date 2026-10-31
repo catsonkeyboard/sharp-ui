@@ -14,6 +14,20 @@ public class ClipboardTests(ITestOutputHelper output)
         if (!Clipboard.TrySetText("sharpui-clip"))
             output.WriteLine("SKIP: OS denied clipboard access (OpenClipboard err 5); round-trip not asserted in this context.");
         else
-            Assert.Equal("sharpui-clip", Clipboard.GetText());   // ANSI 通道:非 ASCII 会被代码页改写,断言串保持 ASCII
+            Assert.Equal("sharpui-clip", Clipboard.GetText());
+    }
+
+    /// <summary>审计修复波 C-1:SDL 剪贴板契约 UTF-8 —— 非 ASCII(BMP 外 emoji + CJK)双向往返恒等。
+    /// 修复前 SetText 按 CharSet.Ansi 系统代码页编码、GetText 按 PtrToStringAnsi 解码,任何 locale 下
+    /// 非 ASCII 必然 mojibake;修复后手工 UTF-8 封送(建窗标题同款),往返应零损。</summary>
+    [Fact]
+    [Trait("Category", "Gpu")]
+    public void Clipboard_NonAsciiUtf8_RoundTrips()
+    {
+        const string s = "你好 SharpUI 😀";   // BMP 内 CJK + 代理对 emoji,两路编码陷阱都覆盖
+        if (!Clipboard.TrySetText(s))
+            output.WriteLine("SKIP: OS denied clipboard access (OpenClipboard err 5); round-trip not asserted in this context.");
+        else
+            Assert.Equal(s, Clipboard.GetText());
     }
 }

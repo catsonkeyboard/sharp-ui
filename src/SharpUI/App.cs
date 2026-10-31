@@ -160,13 +160,31 @@ public sealed class App
                     : ((int)(cr.X * w.Scale), (int)(cr.Y * w.Scale),
                        Math.Max(1, (int)(cr.Width * w.Scale)), (int)(cr.Height * w.Scale)));
                 mesh.Clear();
-                root.Draw(new PaintContext(mesh, w.Atlas, input));
-                // D5 绘制序:声明树之后栈底→栈顶逐层 Draw(后进在上)。浮层根 Arrange 分层(同上):Dialog 类
-                // 每帧重排,Menu/Tooltip 打开者定格;PaintContext 为 struct,逐层构造零堆分配。
-                for (int p = 0; p < popupCount && p < popups.Count; p++)
-                    popups[p].Root.Draw(new PaintContext(mesh, w.Atlas, input));
-                w.Renderer.Submit(mesh, screen, w.Scale);
-                w.Ctx.Present();
+                // 审计修复波 I-4(A-I-1,选 b 案):绘制段守卫 —— MeshBuilder 65536 顶点上限溢出(未虚拟化的
+                // 长列表/大文档一屏 1.6 万字形即触)抛 InvalidOperationException,修复前从 root.Draw 冒穿
+                // Run 循环整进程崩;现降级为丢帧 + Console.Error 诊断,进程存活(窗口保持上一 Presented 画面)。
+                // catch 范围 = 全部 InvalidOperationException 而非按消息文本过滤:报错文案随版本演进,文本匹配
+                // 脆弱;绘制段可达的 IOE(mesh 溢出/图集字形放不进等)均为"本帧无法绘制"类,丢帧+诊断是统一
+                // 安全降级。LastTree/Tooltip 接线照走(输入连续性不因丢帧断链)。
+                bool frameDropped = false;
+                try
+                {
+                    root.Draw(new PaintContext(mesh, w.Atlas, input));
+                    // D5 绘制序:声明树之后栈底→栈顶逐层 Draw(后进在上)。浮层根 Arrange 分层(同上):Dialog 类
+                    // 每帧重排,Menu/Tooltip 打开者定格;PaintContext 为 struct,逐层构造零堆分配。
+                    for (int p = 0; p < popupCount && p < popups.Count; p++)
+                        popups[p].Root.Draw(new PaintContext(mesh, w.Atlas, input));
+                }
+                catch (InvalidOperationException ex)
+                {
+                    Console.Error.WriteLine($"[SharpUI] 帧丢弃: mesh 顶点溢出(>65536), UI 复杂度超限 ({ex.Message})");
+                    frameDropped = true;
+                }
+                if (!frameDropped)
+                {
+                    w.Renderer.Submit(mesh, screen, w.Scale);
+                    w.Ctx.Present();
+                }
                 w.LastTree = root;
                 TooltipService.Update(w.Window.SdlWindowHandle, root, in input);   // D5 T3:悬停计时/存活/孤儿清理(帧尾,Push 次帧入绘)
             }
@@ -195,6 +213,12 @@ public sealed class App
             TooltipService.Clear(w.Window.SdlWindowHandle);   // D5 T3:同上,服务记账清
             FocusManager.UnbindWindow(w.Window.SdlWindowHandle);   // D5 T3:围栏注册表解绑
             w.TextInput.Update(IntPtr.Zero, null, null);
+            // 审计修复波 A2/I-3:teardown 补齐设备侧释放(与帧中移除路径的释放序对称:Renderer→Ctx→Atlas→
+            // Window)。主窗恒走此路径 —— 修复前常规退出即泄漏 Ctx(D3D11/GL)与 Atlas(FT/HB)原生资源,
+            // 同进程多次建 App/Run(测试 harness、嵌入宿主)累积泄漏。Dispose 均幂等(_disposed 门)。
+            w.Renderer.Dispose();
+            w.Ctx.Dispose();
+            w.Atlas.Dispose();
             w.Window.Dispose();   // 生命周期归 App:退出销毁残留原生窗(主窗 Close 仅置标记;对齐旧窗口层 Close 即销毁的零泄漏语义)
         }
         return 0;
@@ -202,10 +226,14 @@ public sealed class App
 
     /// <summary>D22 键路由:构建前对上帧保留树按 FocusedId 定位聚焦元素,实现 ITextFeedable(T3 TextFieldElement)
     /// 则喂入当帧键与字符。D5 T2(已知项 A 接线):声明树未命中时逐层搜浮层栈根兜底 —— Dialog 内
-    /// TextField 的字符流(同 Interaction.FindIn 的两树路径);internal 供 DialogTests 合成驱动。</summary>
+    /// TextField 的字符流(同 Interaction.FindIn 的两树路径);internal 供 DialogTests 合成驱动。
+    /// 审计修复波 I-6(C-I-5 浮层栅门):焦点留在围栏圈外(菜单全项禁用/Dialog 无可聚焦元素时形式焦点
+    /// 保持在外部元素)→ 早退不喂入,模态期间底层输入框不可被键入(与 Tab/方向键的 InsideActiveScope
+    /// 栅门对齐,补字符通道)。</summary>
     internal static void FeedFocused(Element? lastTree, FocusManager focus, IntPtr sdlWindow, in RawInput raw)
     {
         if (focus.FocusedId is not string id) return;
+        if (focus.ActiveScopeId is not null && !focus.InsideActiveScope(id)) return;   // 浮层栅门
         ITextFeedable? feedable = lastTree is not null ? TreeWalk.Find(lastTree, id) as ITextFeedable : null;
         if (feedable is null && sdlWindow != IntPtr.Zero)
             foreach (Popup p in PopupHost.StackOf(sdlWindow))

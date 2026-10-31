@@ -85,6 +85,21 @@ public class TextAtlasTests
         Assert.Equal(18, mesh.IndexCount);
     }
 
+    /// <summary>审计修复波 I-2:DrawRun("") 空串守卫 —— 修复前 SplitRuns 首行 CodePoint(text,0) 对空串
+    /// 抛 ArgumentOutOfRangeException(空 Label 的 MenuItem 打开菜单即崩,异常冒穿 App.Run)。
+    /// 与 Measure 的空串提前返回对称。</summary>
+    [Fact]
+    [Trait("Category", "Gpu")]
+    public void DrawRun_EmptyText_NoThrow_NoVertices()
+    {
+        using var ctx = D3D11Context.CreateHeadless(64, 64);
+        using var atlas = new TextAtlas(ctx);
+        var mesh = new MeshBuilder();
+        atlas.DrawRun(mesh, "", new PointF(0, 0), 16f, bold: false, Color32.White);
+        Assert.Equal(0, mesh.VertexCount);
+        Assert.Equal(SizeF.Zero, atlas.Measure("", 16f));   // Measure 对称既有语义
+    }
+
     [Fact]
     [Trait("Category", "Gpu")]
     public void SameGlyphTwice_DoesNotReallocate()

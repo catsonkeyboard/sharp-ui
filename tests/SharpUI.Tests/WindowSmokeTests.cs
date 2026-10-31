@@ -111,8 +111,8 @@ public class WindowSmokeTests
             Assert.True(w.LastTree is not null);  // 至少一帧全路径树已构建(Ui.Text("") 绘制早退但布局/提交实走)
             if (backend == "gl") Assert.IsType<GLContext>(w.Ctx);
             else Assert.IsType<D3D11Context>(w.Ctx);
-            // Run 退出兜底只 Stop 文本输入+销毁原生窗(设备资源进程退出时随进程回收);测试宿主长驻,
-            // 补位释放防跨测试 GPU 态残留 —— 释放序同 App.Run 次窗移除路径。
+            // 审计修复波 I-3 后,Run teardown 已对称释放 Renderer/Ctx/Atlas(见 App.Run 退出兜底);
+            // 此处补位调用幂等(_disposed 门),保留作跨测试 GPU 态残留的显式防线。
             w.Renderer.Dispose();
             w.Ctx.Dispose();
             w.Atlas.Dispose();
@@ -121,6 +121,40 @@ public class WindowSmokeTests
         {
             Environment.SetEnvironmentVariable("SHARPUI_BACKEND", old);
             // App.Run 静态残留复位(App.State 新建过/Atlas 悬垂指向已释放图集;隔离纪律同 ScrollTests 惯例)
+            App.State = null;
+            App.Atlas = null;
+        }
+    }
+
+    /// <summary>审计修复波 I-4(A-I-1):mesh 顶点溢出(>65536)降级为丢帧 + 诊断,App.Run 进程存活。
+    /// 17000 个非空面板 ≈ 17000 quad(68000 顶点)> 16384 quad 上限,每帧绘制必触 Ensure 抛
+    /// InvalidOperationException —— 修复前异常从 root.Draw 冒穿 Run 循环整进程崩;修复后该帧丢弃
+    /// 绘制(不 Submit/Present,窗口保持上一画面),Run 正常走到 maxFrames 退出。</summary>
+    [Theory]
+    [InlineData("d3d11")]
+    [InlineData("gl")]
+    [Trait("Category", "Gpu")]
+    public void App_RunMeshOverflow_EveryFrameDropped_RunSurvives(string backend)
+    {
+        if (backend == "gl" && !GlSupport.Available) return;   // CI 无 GPU 环境 gl 分支早退,见 GlSupport
+        string? old = Environment.GetEnvironmentVariable("SHARPUI_BACKEND");
+        try
+        {
+            Environment.SetEnvironmentVariable("SHARPUI_BACKEND", backend);
+            App app = App.Create("sharpui-i4-overflow", 200, 150, () =>
+            {
+                PanelElement root = Ui.Column();
+                root.Style.CrossAlign = CrossAxisAlignment.Stretch;   // 全宽:子面板 Frame 非空必出 quad
+                for (int i = 0; i < 17000; i++)
+                    root.Add(new PanelElement().Fill(0x3366CC).Basis(1f));
+                return root;
+            });
+            int rc = app.Run(maxFrames: 3);   // 每帧都溢出:3 帧全程降级,进程存活返回即过
+            Assert.Equal(0, rc);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("SHARPUI_BACKEND", old);
             App.State = null;
             App.Atlas = null;
         }

@@ -225,8 +225,9 @@ public sealed class FocusManager
     }
 
     /// <summary>id 是否在栈顶围栏 scope 内(无围栏恒 true;scope 根自身=圈):前缀匹配带 "/" 分隔判断,
-    /// 防 "/scope" 误吞 "/scopeX" 形邻;StartsWith+下标查零分配。</summary>
-    bool InsideActiveScope(string? id)
+    /// 防 "/scope" 误吞 "/scopeX" 形邻;StartsWith+下标查零分配。internal 供 App.FeedFocused 的
+    /// 字符通道浮层栅门(修复波 I-6,与 Tab/方向键栅门同源)。</summary>
+    internal bool InsideActiveScope(string? id)
     {
         if (_scopes.Count == 0) return true;
         if (id is null) return false;

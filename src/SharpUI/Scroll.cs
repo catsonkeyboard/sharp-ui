@@ -103,5 +103,12 @@ public sealed class VirtualListElement : ScrollElement
             LayoutEngine.Arrange(Children[i - first],
                 new RectF(inner.X, inner.Top + i * _itemHeight - offset, inner.Width, _itemHeight));
         IdResolver.AssignChildren(this);   // 重建后重排子树 id(保自 id)
+        // 审计修复波 I-1:行是 Arrange 期才建的,建树期的 TreeWalk.Register(App.Run:BeginFrame→Register→
+        // Arrange)只见占位 Spacer —— 不补注册则行元素永不进 _byId/_tabOrder、OwnerFocus 无回链(行内 Select
+        // 点击即抛、行内控件键盘面全失效)。此处的 OwnerFocus 已是当帧注册期回链(先 Register 后 Arrange),
+        // 逐行补注册;每帧重建每帧补,BeginFrame 清表后恰为当帧行集。ScrollElement(非虚拟)建树期已覆盖,不受影响。
+        if (OwnerFocus is { } focus)
+            for (int i = 0; i < Children.Count; i++)
+                TreeWalk.Register(Children[i], focus);
     }
 }

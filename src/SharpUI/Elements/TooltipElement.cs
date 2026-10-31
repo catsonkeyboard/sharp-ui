@@ -24,7 +24,8 @@ internal sealed class TooltipElement : PanelElement
 ///    改几何判定:鼠标在锚 Frame 或提示 Frame 内即存活;移出或任意按压(LeftPressed)→ 按身份 Remove
 ///    (Tooltip 可叠于 Menu 上,盲弹会误弹 Menu)。
 /// ③ 愈合/孤儿:每帧核对在栈(Interaction 外点盲弹后同步清账)与载体仍在本帧树内(声明树重建/浮层关闭
-///    后的孤儿提示移除);悬停计时表同步剪枝(载体消失即重置,防虚拟化重建续跑旧表提前开)。</summary>
+///    后的孤儿提示移除;载体判定 = ResolvedId 比对,树每帧重建实例引用失效,修复波 C-2);悬停计时表
+///    同步剪枝(载体消失即重置,防虚拟化重建续跑旧表提前开)。</summary>
 internal static class TooltipService
 {
     internal const float HoverDelaySeconds = 0.5f;
@@ -105,7 +106,8 @@ internal static class TooltipService
     }
 
     /// <summary>愈合与孤儿:外点盲弹已 Pop 的条目清账;载体不在当帧任何树(孤儿)按身份移除;
-    /// 本窗悬停计时表同步剪枝到当帧载体集合。</summary>
+    /// 本窗悬停计时表同步剪枝到当帧载体集合。孤儿判定为 <b>id 语义</b>(与 _hoverStart 剪枝统一):
+    /// App.Run 每帧重建声明树,载体是同 id 新实例,按引用比对会把开启次帧的提示误判孤儿强删(闪 1 帧即删)。</summary>
     static void Reconcile(IntPtr window)
     {
         IReadOnlyList<Popup> stack = PopupHost.StackOf(window);
@@ -116,7 +118,7 @@ internal static class TooltipService
             bool inStack = false;
             for (int i = 0; i < stack.Count; i++)
                 if (ReferenceEquals(stack[i], kv.Value.Tip)) { inStack = true; break; }
-            if (!inStack || !_carriers.Contains(kv.Value.Anchor))
+            if (!inStack || !Seen(kv.Key.Item2))   // 修复波 C-2:载体存活按记账 id 比对(Anchor 字段仅存几何,不参与判定)
                 _prune.Add(kv.Key);
         }
         foreach ((IntPtr, string) k in _prune)

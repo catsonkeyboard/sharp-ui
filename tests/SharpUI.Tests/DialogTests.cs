@@ -290,6 +290,44 @@ public class DialogTests
         }
     }
 
+    /// <summary>审计修复波 I-5(C-I-5):浮层栅门 —— Dialog 内无可聚焦元素时焦点留在外部元素上(形式焦点),
+    /// 修复前 FeedFocused 只按 FocusedId 定位,字符流照常写入圈外底层 TextField(与模态语义冲突);
+    /// 修复后围栏非空且焦点在圈外 → 早退,合成键入不落文。</summary>
+    [Fact]
+    public void DialogWithoutFocusable_CharsToOutOfScopeTextField_Fenced()
+    {
+        (AppWindow w, IntPtr h) = Window(12);
+        TextFieldElement tf = Ui.TextField();
+        PanelElement root = Ui.Column(tf);
+        root.Style.CrossAlign = CrossAxisAlignment.Stretch;
+        LayoutEngine.Arrange(root, new RectF(0, 0, 200, 150));
+        IdResolver.Assign(root);
+        w.Focus.BeginFrame();
+        TreeWalk.Register(root, w.Focus);
+        w.Focus.SetFocus(tf);                          // 打开 Dialog 前焦点在底层输入框
+        App.State = new StateStore();
+        try
+        {
+            App.FeedFocused(root, w.Focus, h,
+                new RawInput(new PointF(-1f, -1f), Array.Empty<bool>()) { Chars = new[] { 'a' } });
+            Assert.Equal("a", tf.CurrentText);         // 前置:无浮层时字符流正常可达
+
+            w.ShowDialog("提示", p => p.Add(Ui.Text("只读内容")));   // 无按钮/无可聚焦 → 焦点留在圈外 tf
+            ComposeFrame(w, root);
+            Assert.NotNull(w.Focus.ActiveScopeId);     // 围栏在栈
+            Assert.False(w.Focus.IsFocused(PopupHost.StackOf(h)[0].Root));   // 圈内无焦点元素
+
+            App.FeedFocused(root, w.Focus, h,
+                new RawInput(new PointF(-1f, -1f), Array.Empty<bool>()) { Chars = new[] { 'b' } });
+            Assert.Equal("a", tf.CurrentText);         // 模态期间圈外键入被栅:内容不变
+        }
+        finally
+        {
+            App.State = null;
+            PopupHost.Clear(h);
+        }
+    }
+
     // ---- 已知项 B:resize 居中重算(T1 留置,T2 裁定每帧重排;元素级重复 Arrange 承证)----
 
     [Fact]

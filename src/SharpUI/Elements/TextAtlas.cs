@@ -109,6 +109,8 @@ public sealed class TextAtlas : IDisposable
 
     public void DrawRun(MeshBuilder mesh, string text, PointF topLeft, float fontSize, bool bold, Color32 color)
     {
+        if (text.Length == 0) return;   // 审计修复波 I-2:空串提前返回(与 Measure 对称)——SplitRuns 首行
+                                        // CodePoint(text,0) 对空串越界抛(空 Label MenuItem 打开即崩)
         int size = SizeKey(fontSize, _scale);
         (float ascent, _) = GetLineMetrics(size, bold);
         float xLogical = topLeft.X;

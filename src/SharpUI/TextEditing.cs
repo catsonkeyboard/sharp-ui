@@ -4,9 +4,20 @@ namespace SharpUI;
 /// 非负 Anchor 为选区另一端,选区 = [min(Cursor,Anchor), max)。锁定于 TextEditingTests 10 测试。</summary>
 public sealed record TextState(string Text = "", int Cursor = 0, int Anchor = -1);
 
-/// <summary>单行文本编辑纯函数(D22):位置语义 = 字符索引;选区 = [min(Cursor,Anchor), max)。</summary>
+/// <summary>单行文本编辑纯函数(D22):位置语义 = 字符索引;选区 = [min(Cursor,Anchor), max)。
+/// 审计修复波 I-5:BackSpace/Delete/Left/Right 按码点步进而非 UTF-16 码元 ±1 —— 代理对
+/// (emoji/BMP 外 CJK,高+低两码元)不再被光标劈开或删半。仅覆盖代理对子集(非完整 UAX#29
+/// grapheme cluster:ZWJ 序列、组合变音仍可被分开 —— emoji 与扩展汉字是覆盖面最大的实用子集)。</summary>
 public static class TextEditing
 {
+    /// <summary>光标后一个码点的码元长度(位置 i ∈ [0, len)):高+低代理对 = 2,否则 1(同 TextAtlas.UnitLen)。</summary>
+    static int NextLen(string s, int i) =>
+        char.IsHighSurrogate(s, i) && i + 1 < s.Length && char.IsLowSurrogate(s, i + 1) ? 2 : 1;
+
+    /// <summary>光标前一个码点的码元长度(位置 i ∈ [0, len]):前两码元构成代理对 = 2,否则 1。</summary>
+    static int PrevLen(string s, int i) =>
+        i >= 2 && char.IsHighSurrogate(s, i - 2) && char.IsLowSurrogate(s, i - 1) ? 2 : 1;
+
     public static (int Start, int Len) Selection(TextState s)
     {
         int anchor = s.Anchor < 0 ? s.Cursor : s.Anchor;
@@ -59,15 +70,23 @@ public static class TextEditing
                 else if (k.Key == Key.BackSpace)
                 {
                     if (len > 0) { text = text.Remove(start, len); cursor = anchor = start; }
-                    else if (cursor > 0) { text = text.Remove(cursor - 1, 1); cursor = anchor = cursor - 1; }
+                    else if (cursor > 0)
+                    {
+                        int n = PrevLen(text, cursor);   // I-5:退格删整个码点(代理对不删半,免孤立代理入文)
+                        text = text.Remove(cursor - n, n);
+                        cursor = anchor = cursor - n;
+                    }
                 }
                 else if (k.Key == Key.Delete)
                 {
                     if (len > 0) { text = text.Remove(start, len); cursor = anchor = start; }
-                    else if (cursor < text.Length) text = text.Remove(cursor, 1);
+                    else if (cursor < text.Length)
+                        text = text.Remove(cursor, NextLen(text, cursor));   // I-5:前删同样按码点取整
                 }
-                else if (k.Key == Key.Left) { int t = Math.Max(0, cursor - 1); cursor = t; if (!k.Shift) anchor = t; }
-                else if (k.Key == Key.Right) { int t = Math.Min(text.Length, cursor + 1); cursor = t; if (!k.Shift) anchor = t; }
+                else if (k.Key == Key.Left)
+                { int t = cursor > 0 ? cursor - PrevLen(text, cursor) : 0; cursor = t; if (!k.Shift) anchor = t; }
+                else if (k.Key == Key.Right)
+                { int t = cursor < text.Length ? cursor + NextLen(text, cursor) : text.Length; cursor = t; if (!k.Shift) anchor = t; }
                 else if (k.Key == Key.Home) { cursor = 0; if (!k.Shift) anchor = 0; }
                 else if (k.Key == Key.End) { cursor = text.Length; if (!k.Shift) anchor = text.Length; }
             }

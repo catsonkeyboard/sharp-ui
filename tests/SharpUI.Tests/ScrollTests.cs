@@ -133,4 +133,86 @@ public class ScrollTests
         Assert.Equal(2304f, App.State!.Get("scroll:" + list.ResolvedId!, 0f));   // 钳 2400-96
         App.State = null;
     }
+
+    // ---- 审计修复波 I-1:VirtualList 行进焦点注册表(Arrange 期重建的行从未被 Register)----
+
+    /// <summary>假句柄段 0xD50500(独立于 TooltipTests 0xD50300 / DialogTests 0xD502xx / SelectTests 0xD504C0)。</summary>
+    static IntPtr VWin(int n) => (IntPtr)(0xD50500 + n);
+
+    /// <summary>App.Run 帧序镜像(修复后序):构建树 → Assign → BeginFrame → Register(此时行尚未建,
+    /// 只有占位 Spacer)→ Arrange(行在 ArrangeChildren 内重建 + 补注册)。vlist 嵌套于容器根下(Grow(1)
+    /// 撑满视口 —— 占位 Spacer 使自身测量高度为 0,须 grow 分配;根元素 id 恒为 "" 不入注册表,故 vlist
+    /// 不可作根,与生产"根恒为容器"常态一致)。</summary>
+    static (PanelElement Root, VirtualListElement List) VFrame(AppWindow w, Action<int, PanelElement> render)
+    {
+        VirtualListElement list = Ui.VirtualList("rows", 100, 24f, render).Grow(1f);
+        PanelElement root = Ui.Column(list);
+        root.Style.CrossAlign = CrossAxisAlignment.Stretch;
+        IdResolver.Assign(root);
+        w.Focus.BeginFrame();
+        TreeWalk.Register(root, w.Focus);
+        LayoutEngine.Arrange(root, new RectF(0, 0, 200, 96));
+        return (root, list);
+    }
+
+    [Fact]
+    public void VirtualList_RowSelect_ClickOpensMenu_NoThrow()
+    {
+        App.State = new StateStore();
+        IntPtr h = VWin(1);
+        PopupHost.Clear(h);
+        FocusManager.UnbindWindow(h);
+        var w = new AppWindow();
+        w.Session.SdlWindow = h;
+        FocusManager.BindWindow(h, w.Focus);   // Select.Open 经 OwnerFocus.SdlWindow 定位浮层栈(SelectTests 同款)
+        try
+        {
+            (PanelElement root, VirtualListElement list) = VFrame(w, static (i, row) =>
+                row.Add(Ui.Select(new[] { "a", "b" }, 0, static _ => { })));
+            SelectElement sel = (SelectElement)list.Children![0].Children![0];
+
+            // 行内 Select 点击开下拉:修复前行元素从未进注册表(OwnerFocus=null)→ Open 直接抛
+            // InvalidOperationException;修复后 Arrange 期补注册,点击即开菜单。
+            PointF c = new(sel.Frame.X + sel.Frame.Width / 2f, sel.Frame.Y + sel.Frame.Height / 2f);
+            Interaction.Update(w.Session, root, new RawInput(c, new[] { true }), w.Focus);
+            Interaction.Update(w.Session, root, new RawInput(c, new[] { false }), w.Focus);
+            Assert.Equal(1, PopupHost.Count(h));
+            Assert.Equal(PopupKind.Menu, PopupHost.StackOf(h)[0].Kind);
+        }
+        finally
+        {
+            PopupHost.Clear(h);
+            FocusManager.UnbindWindow(h);
+            App.State = null;
+        }
+    }
+
+    [Fact]
+    public void VirtualList_RowButton_FocusedEnter_Activates()
+    {
+        App.State = new StateStore();
+        IntPtr h = VWin(2);
+        PopupHost.Clear(h);
+        FocusManager.UnbindWindow(h);
+        var w = new AppWindow();
+        w.Session.SdlWindow = h;
+        FocusManager.BindWindow(h, w.Focus);
+        try
+        {
+            int activated = 0;
+            (PanelElement root, VirtualListElement list) = VFrame(w, (i, row) =>
+                row.Add(new ButtonElement("B" + i, () => activated++)));
+            ButtonElement btn = (ButtonElement)list.Children![0].Children![0];
+
+            w.Focus.SetFocus(btn);                                          // 焦点落行内按钮(id 稳定)
+            w.Focus.HandleKeys(new[] { new KeyEventData(Key.Enter, true, false) }, w.Session);
+            Assert.Equal(1, activated);                                     // 修复前 _byId 无此 id → Enter 静默失效
+        }
+        finally
+        {
+            PopupHost.Clear(h);
+            FocusManager.UnbindWindow(h);
+            App.State = null;
+        }
+    }
 }
