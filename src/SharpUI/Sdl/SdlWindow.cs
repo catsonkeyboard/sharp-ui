@@ -3,16 +3,18 @@ using System.Diagnostics;
 namespace SharpUI;
 
 /// <summary>窗口 flags(T1 已按 SDL_video.h SDL_WindowFlags L104-127 实数核;计划稿 "Shown=0x10、
-/// Hidden=0x20" 系记忆值已校正 —— 0x10 实为 BORDERLESS、0x20 实为 RESIZABLE)。仅声明消费面所需五位。</summary>
+/// Hidden=0x20" 系记忆值已校正 —— 0x10 实为 BORDERLESS、0x20 实为 RESIZABLE)。</summary>
 [Flags]
 public enum SdlWindowFlags
 {
     None = 0,
-    Fullscreen = 0x1,   // SDL_WINDOW_FULLSCREEN(L104)
-    OpenGL = 0x2,       // SDL_WINDOW_OPENGL(L105)
-    Shown = 0x4,        // SDL_WINDOW_SHOWN(L106)
-    Hidden = 0x8,       // SDL_WINDOW_HIDDEN(L107)
-    Resizable = 0x20,   // SDL_WINDOW_RESIZABLE(L109)
+    Fullscreen = 0x1,        // SDL_WINDOW_FULLSCREEN(L104)
+    FullscreenDesktop = 0x1001,  // SDL_WINDOW_FULLSCREEN_DESKTOP(L115;0x1|0x1000)
+    OpenGL = 0x2,            // SDL_WINDOW_OPENGL(L105)
+    Shown = 0x4,             // SDL_WINDOW_SHOWN(L106)
+    Hidden = 0x8,            // SDL_WINDOW_HIDDEN(L107)
+    Resizable = 0x20,        // SDL_WINDOW_RESIZABLE(L109)
+    AllowHighDpi = 0x2000,   // SDL_WINDOW_ALLOW_HIGHDPI(L117;波 3A/B6:建窗时传入,见 App.CreateWindow 注)
 }
 
 /// <summary>自研 SDL 窗口(T2,W-3):替代 旧窗口封装包.Sdl2Window 的 App/AppWindow 消费面(同名成员:
@@ -29,9 +31,13 @@ public sealed class SdlWindow : IDisposable
     readonly float _scaleFactor;
     IntPtr _handle;
 
-    // 事件累积双缓冲(见类注分配纪律)
+    // 事件累积双缓冲(见类注分配纪律)。波 3A 增全按钮通道(含 clicks,B2/B10)与全键记录通道
+    // (Alt/Gui/IsRepeat 透传,B11/B12):与既有元组通道并行双写 —— 既有元组通道保留为零形变兼容面
+    // (SdlWindowTests/InputMapperTests 直接断言其形状),新通道为消费面输入。
     List<(MouseButton Button, bool Down)> _mouseEvents = new(8), _mouseEventsReleased = new(8);
+    List<MouseButtonEventData> _buttonEvents = new(8), _buttonEventsReleased = new(8);
     List<(Key Key, bool Down, ModifierKeys Modifiers)> _keyEvents = new(8), _keyEventsReleased = new(8);
+    List<KeyEventData> _keyEventsFull = new(8), _keyEventsFullReleased = new(8);
     List<char> _keyChars = new(4), _keyCharsReleased = new(4);
     PointF _mousePosition;
     ulong _mouseDownMask;
@@ -68,6 +74,7 @@ public sealed class SdlWindow : IDisposable
         if (UiThreadId == 0) UiThreadId = Environment.CurrentManagedThreadId;   // A8:首个建窗线程 = UI 线程
         Debug.Assert(Environment.CurrentManagedThreadId == UiThreadId, UiThreadAffinityMessage);
         Backends.SdlNative.EnsureVideoInit();
+        CreationFlags = flags;
         _handle = SdlEvents.CreateWindow(title, x, y, width, height, (uint)flags);
         if (_handle == IntPtr.Zero)
             throw new InvalidOperationException($"SDL_CreateWindow 失败:{SdlEvents.GetError()}");
@@ -75,6 +82,9 @@ public sealed class SdlWindow : IDisposable
         _scaleFactor = ComputeScaleFactor();
         SdlPump.Register(this);   // 构造末行:防未来可抛逻辑留下"已注册幻影窗"(当前不可达,纯防御)
     }
+
+    /// <summary>建窗时传入的 flags(B6 部分测试消费:App.CreateWindow 的 AllowHighDpi 平台策略可断言)。</summary>
+    internal SdlWindowFlags CreationFlags { get; }
 
     /// <summary>SDL 窗口原生句柄(D3D11 HWND 探测/GL 上下文等消费面)。</summary>
     public IntPtr SdlWindowHandle => _handle;
@@ -109,12 +119,133 @@ public sealed class SdlWindow : IDisposable
     /// 此属性硬编码 One,本值为行为改进非形变迁移(报告注明)。</summary>
     public float ScaleFactor => _scaleFactor;
 
+    /// <summary>窗口客户区像素尺寸(SDL_GetWindowSizeInPixels,SDL_video.h L1068,2.26.0+;波 3A/B6)。
+    /// 与 Width/Height(逻辑/屏幕坐标)的关系:SdlNative.GetDrawableSize 注 —— Windows 两值恒等(SDL
+    /// Windows 坐标即物理像素);macOS Retina/Wayland 建窗传 AllowHighDpi 时像素 &gt; 逻辑。运行时 DPI
+    /// 变更重算(DISPLAY_CHANGED 监听)留 M3e(B6 后半),ScaleFactor 定格语义本波不变。</summary>
+    public (int Width, int Height) SizeInPixels
+    {
+        get
+        {
+            if (_handle == IntPtr.Zero) return (0, 0);
+            SdlEvents.GetWindowSizeInPixels(_handle, out int w, out int h);
+            return (w, h);
+        }
+    }
+
+    // ---- 窗口管理方法(波 3A/B3):SDL_SetWindowTitle/SetWindowPosition/SetWindowSize/
+    // SetWindowMinimumSize/SetWindowMaximumSize/MaximizeWindow/MinimizeWindow/RestoreWindow/
+    // SetWindowFullscreen/SetWindowBordered/RaiseWindow/SetWindowInputFocus —— 全部经 SdlEvents
+    // 绑定(OwnerModule 纪律,符号与行号出处见各绑定注)。已 Dispose(句柄 Zero)静默返回零形变。
+
+    /// <summary>设置窗口标题(UTF-8 封送,SDL_SetWindowTitle L866)。</summary>
+    public void SetTitle(string title)
+    {
+        if (_handle != IntPtr.Zero) SdlEvents.SetWindowTitle(_handle, title);
+    }
+
+    /// <summary>读窗口标题(SDL_GetWindowTitle L880;已 Dispose 返回空串)。</summary>
+    public string Title => _handle == IntPtr.Zero ? "" : SdlEvents.GetWindowTitle(_handle);
+
+    /// <summary>设置客户区左上坐标(SDL_SetWindowPosition L940;SDL_WINDOWPOS_* 值可透传)。</summary>
+    public void SetPosition(int x, int y)
+    {
+        if (_handle != IntPtr.Zero) SdlEvents.SetWindowPosition(_handle, x, y);
+    }
+
+    /// <summary>设置客户区尺寸(SDL_SetWindowSize L984;平台最小窗宽钳制与 resize 回读语义同 Width/Height)。</summary>
+    public void SetSize(int width, int height)
+    {
+        if (_handle != IntPtr.Zero) SdlEvents.SetWindowSize(_handle, width, height);
+    }
+
+    /// <summary>设置最小客户区尺寸(SDL_SetWindowMinimumSize L1083)。</summary>
+    public void SetMinimumSize(int width, int height)
+    {
+        if (_handle != IntPtr.Zero) SdlEvents.SetWindowMinimumSize(_handle, width, height);
+    }
+
+    /// <summary>设置最大客户区尺寸(SDL_SetWindowMaximumSize L1115)。</summary>
+    public void SetMaximumSize(int width, int height)
+    {
+        if (_handle != IntPtr.Zero) SdlEvents.SetWindowMaximumSize(_handle, width, height);
+    }
+
+    /// <summary>最大化(SDL_MaximizeWindow L1232)。随后帧首 WINDOWEVENT MAXIMIZED/RESTORED 走常规
+    /// 事件通道(SIZE_CHANGED 触发 Resized,尺寸守卫过滤 0)。</summary>
+    public void Maximize()
+    {
+        if (_handle != IntPtr.Zero) SdlEvents.MaximizeWindow(_handle);
+    }
+
+    /// <summary>最小化(SDL_MinimizeWindow L1244)。</summary>
+    public void Minimize()
+    {
+        if (_handle != IntPtr.Zero) SdlEvents.MinimizeWindow(_handle);
+    }
+
+    /// <summary>还原常规尺寸/位置(SDL_RestoreWindow L1256)。</summary>
+    public void Restore()
+    {
+        if (_handle != IntPtr.Zero) SdlEvents.RestoreWindow(_handle);
+    }
+
+    /// <summary>切换全屏(SDL_SetWindowFullscreen L1275):desktop=true 用 SDL_WINDOW_FULLSCREEN_DESKTOP
+    /// (0x1001,合成的桌面分辨率全屏,false 用独占 0x1)。返回 SDL 语义成败(部分 WM 拒绝,调用方裁量;
+    /// 失败窗口状态不变)。</summary>
+    public bool SetFullscreen(bool enable, bool desktop = true)
+    {
+        if (_handle == IntPtr.Zero) return false;
+        return SdlEvents.SetWindowFullscreen(_handle,
+            enable ? (desktop ? (uint)SdlWindowFlags.FullscreenDesktop : (uint)SdlWindowFlags.Fullscreen) : 0u);
+    }
+
+    /// <summary>切换系统边框(SDL_SetWindowBordered L1151;false=无边框)。</summary>
+    public void SetBordered(bool bordered)
+    {
+        if (_handle != IntPtr.Zero) SdlEvents.SetWindowBordered(_handle, bordered);
+    }
+
+    /// <summary>置顶并激活(SDL_RaiseWindow L1220)。</summary>
+    public void Raise()
+    {
+        if (_handle != IntPtr.Zero) SdlEvents.RaiseWindow(_handle);
+    }
+
+    /// <summary>请求输入焦点(SDL_SetWindowInputFocus L1644;返回 SDL 语义成败 —— 部分 WM 拒绝跨窗
+    /// 抢焦点,调用方裁量;失败无副作用)。</summary>
+    public bool FocusInput()
+    {
+        if (_handle == IntPtr.Zero) return false;
+        return SdlEvents.SetWindowInputFocus(_handle);
+    }
+
     /// <summary>窗口尺寸变化(SDL_WINDOWEVENT RESIZED/SIZE_CHANGED 且尺寸&gt;0 —— 0 尺寸=最小化边缘,
     /// App 侧换算会除零/后端 ValidateSize 对 0 抛,故在源头上防御)。回调在 PumpAll 调用线程同步执行。</summary>
     public event Action? Resized;
 
     /// <summary>输入焦点丢失(SDL_WINDOWEVENT FOCUS_LOST;D15 失焦取消按压的触发源)。</summary>
     public event Action? FocusLost;
+
+    /// <summary>输入焦点获得(SDL_WINDOWEVENT FOCUS_GAINED,波 3A/B4 透出;泵同时维护最近聚焦簿记)。</summary>
+    public event Action? FocusGained;
+
+    /// <summary>窗口移动(SDL_WINDOWEVENT MOVED,波 3A/B4;data1/data2 = 新客户区左上坐标,
+    /// SDL_video.h L161)。跨显示器 DPI 重算消费(DISPLAY_CHANGED)留 M3e。</summary>
+    public event Action<int, int>? Moved;
+
+    /// <summary>文件拖放(SDL_DROPFILE,波 3A/B5):载荷为 UTF-8 解码后的路径(SDL 侧缓冲已由泵
+    /// SDL_free,事件对象生命周期与 string 无关)。windowID=0 的全局拖放由泵广播至主窗(见 SdlPump 注)。</summary>
+    public event Action<string>? FileDropped;
+
+    /// <summary>文本拖放(SDL_DROPTEXT,波 3A/B5):载荷语义同 FileDropped(text/plain UTF-8)。</summary>
+    public event Action<string>? TextDropped;
+
+    /// <summary>拖放开始(SDL_DROPBEGIN,波 3A/B5;无载荷 —— SDL_events.h L559 file 恒 NULL)。</summary>
+    public event Action? DropBegan;
+
+    /// <summary>拖放结束(SDL_DROPCOMPLETE,波 3A/B5;无载荷)。</summary>
+    public event Action? DropCompleted;
 
     /// <summary>窗口关闭可否决(审计修复波 2B/A3):窗口 CLOSE 事件与 SDL_QUIT 分发时逐订阅者调用,
     /// 任一返回 false 即否决该窗本次关闭(窗口存活,Exists 不变);无订阅者或全部返回 true → 放行
@@ -158,14 +289,19 @@ public sealed class SdlWindow : IDisposable
     internal InputSnapshot GetSnapshotAndReset()
     {
         InputSnapshot snapshot = new(_mousePosition, _mouseDownMask, _wheelDelta,
-            _mouseEvents, _keyEvents, _keyChars, _preedit, _preeditStart, _preeditLength);
+            _mouseEvents, _keyEvents, _keyChars, _preedit, _preeditStart, _preeditLength,
+            _buttonEvents, _keyEventsFull);
         // 已释放侧(上一快照独占,按时效契约此刻已可回收)清空并转正为新的累积侧;
         // 刚被快照包走的旧累积侧转为已释放侧,待下次取时回收 —— 每列表每两帧一次 Clear,容量保留。
         _mouseEventsReleased.Clear();
+        _buttonEventsReleased.Clear();
         _keyEventsReleased.Clear();
+        _keyEventsFullReleased.Clear();
         _keyCharsReleased.Clear();
         (_mouseEvents, _mouseEventsReleased) = (_mouseEventsReleased, _mouseEvents);
+        (_buttonEvents, _buttonEventsReleased) = (_buttonEventsReleased, _buttonEvents);
         (_keyEvents, _keyEventsReleased) = (_keyEventsReleased, _keyEvents);
+        (_keyEventsFull, _keyEventsFullReleased) = (_keyEventsFullReleased, _keyEventsFull);
         (_keyChars, _keyCharsReleased) = (_keyCharsReleased, _keyChars);
         _wheelDelta = 0f;   // MousePosition/_mouseDownMask/preedit 跨帧保留(状态语义:Clear 不复位)
         return snapshot;
@@ -181,17 +317,34 @@ public sealed class SdlWindow : IDisposable
 
     internal void RaiseResized() => Resized?.Invoke();
     internal void RaiseFocusLost() => FocusLost?.Invoke();
+    internal void RaiseFocusGained() => FocusGained?.Invoke();
+    internal void RaiseMoved(int x, int y) => Moved?.Invoke(x, y);
+    internal void RaiseFileDropped(string payload) => FileDropped?.Invoke(payload);
+    internal void RaiseTextDropped(string payload) => TextDropped?.Invoke(payload);
+    internal void RaiseDropBegan() => DropBegan?.Invoke();
+    internal void RaiseDropCompleted() => DropCompleted?.Invoke();
 
     internal void UpdateMousePosition(int x, int y) => _mousePosition = new PointF(x, y);
 
-    internal void AddMouseEvent(MouseButton button, bool down)
+    /// <summary>鼠标按钮事件入累积缓冲(波 3A/B2/B10 增 clicks):双通道并行双写 —— 元组通道为
+    /// 零形变兼容面,全按钮记录通道(MouseButtonEventData,含 clicks)为新消费面。</summary>
+    internal void AddMouseEvent(MouseButton button, bool down, int clicks)
     {
         _mouseEvents.Add((button, down));
+        _buttonEvents.Add(new MouseButtonEventData(button, down, clicks));
         if (down) _mouseDownMask |= 1ul << (int)button;
         else _mouseDownMask &= ~(1ul << (int)button);
     }
 
-    internal void AddKeyEvent(Key key, bool down, ModifierKeys modifiers) => _keyEvents.Add((key, down, modifiers));
+    /// <summary>键事件入累积缓冲(波 3A/B11/B12 增 Alt/Gui/IsRepeat):双通道并行双写 —— 元组通道
+    /// 零形变兼容,KeyEventData 记录通道为 InputMapper.MapKeys 消费面(修饰位一次解析双份复用)。</summary>
+    internal void AddKeyEvent(Key key, bool down, ModifierKeys modifiers, bool isRepeat)
+    {
+        _keyEvents.Add((key, down, modifiers));
+        _keyEventsFull.Add(new KeyEventData(key, down,
+            modifiers.HasFlag(ModifierKeys.Shift), modifiers.HasFlag(ModifierKeys.Control),
+            modifiers.HasFlag(ModifierKeys.Alt), modifiers.HasFlag(ModifierKeys.Gui), isRepeat));
+    }
 
     internal void AddWheel(float delta) => _wheelDelta += delta;
 
@@ -226,6 +379,9 @@ internal static class SdlPump
 {
     static readonly Dictionary<uint, SdlWindow> _windows = new();
     static SdlWindow? _lastFocused;   // 无归属鼠标事件的默认传播目标(见 Dispatch 注)
+    static SdlWindow? _primary;       // 主窗近似 = 首个注册且仍注册的窗(App.Create 主窗先于 OpenWindow;
+                                      // 波 3A/B5:DROP 事件 windowID=0(全局拖放)或无归属时的广播目标;
+                                      // 注销后回退到余窗首项,保持广播面不断链)
 
     /// <summary>每帧一次:排空 SDL 事件队列并按 WindowId 分发到注册窗口。</summary>
     public static void PumpAll()
@@ -240,12 +396,15 @@ internal static class SdlPump
     {
         _windows[w.WindowId] = w;
         _lastFocused ??= w;   // 首窗默认聚焦近似(未有 FOCUS_GAINED 前的传播兜底)
+        _primary ??= w;       // 首注册窗 = 主窗近似(B5 广播目标)
     }
 
     internal static void Unregister(SdlWindow w)
     {
         _windows.Remove(w.WindowId);
         if (_lastFocused == w) _lastFocused = null;
+        if (_primary == w)
+            _primary = _windows.Values.Count > 0 ? System.Linq.Enumerable.First(_windows.Values) : null;
     }
 
     /// <summary>单事件分发(PumpAll 与 SdlWindow.InjectTest 共用入口)。
@@ -280,7 +439,11 @@ internal static class SdlPump
                     keyWin.AddKeyEvent(
                         SdlEvents.KeyFromScancode(e.KeysymScancode),   // 泵键路径=scancode(旧窗口层 MapKey 基线,携带项④)
                         e.Type == SdlEvents.EventTypeKeyDown,
-                        SdlEvents.ModifiersFromMod(e.KeysymMod));
+                        SdlEvents.ModifiersFromMod(e.KeysymMod),
+                        // 波 3A/B12(A7):repeat 标记透出 —— SDL 长按重复只发 KEYDOWN(e.repeat=1,
+                        // SDL_events.h SDL_KeyboardEvent.repeat);KeyUp 恒不标。文本路径受益、
+                        // 激活/Tab 跳过策略由 FocusManager 消费侧裁量(标记本波只透出)。
+                        isRepeat: e.Type == SdlEvents.EventTypeKeyDown && e.KeyRepeat != 0);
                 return;
             case SdlEvents.EventTypeTextInput:
                 if (_windows.TryGetValue(e.WindowId, out SdlWindow? textWin))
@@ -304,16 +467,57 @@ internal static class SdlPump
                 if (_windows.TryGetValue(e.WindowId, out SdlWindow? buttonWin))
                     buttonWin.AddMouseEvent(
                         SdlEvents.MouseButtonFromId(e.MouseButtonId),
-                        e.MouseButtonState == SdlEvents.Pressed);
+                        e.MouseButtonState == SdlEvents.Pressed,
+                        e.MouseClicks);   // 波 3A/B2/B10:clicks@18(SDL 双击计数,SDL_events.h L321)透出
                 return;
             case SdlEvents.EventTypeMouseWheel:
+                // 波 3A/A6 滚轮三修复:
+                // ① 精确增量(2.0.18+,SDL_events.h L321-322):preciseY 非零即用(触控板小数增量不截断);
+                //    为 0(旧模块字段不存在 —— SDL 后端事件先 SDL_zero 再填充;或 0 增量事件)回落整型 y。
+                //    (SDL ≥2.0.18 对真实事件恒同步填 x/y 与 preciseX/Y,preciseY=0 ⟺ y=0,回落无损。)
+                // ② FLIPPED 归一(L320:FLIPPED 时值已反向,"Multiply by -1 to change them back")——
+                //    保持"上=+1"语义(macOS 自然滚动不再反向;取代 T2"基线保留忽略方向位"的过渡裁定)。
+                // ③ 自带鼠标位置(2.26.0+,L323-324):免 motion 滞后命中;0/0 视为未携带不清位
+                //    (SDL <2.26 该字段不存在,恒 0;真实原点滚轮的极端角注保留上一位置,见测试注)。
                 if (_windows.TryGetValue(e.WindowId, out SdlWindow? wheelWin))
-                    wheelWin.AddWheel(e.WheelY);   // += y,忽略 FLIPPED(旧窗口层源码实证语义)
+                {
+                    float dy = e.WheelPreciseY != 0f ? e.WheelPreciseY : e.WheelY;
+                    if (e.WheelDirection == SdlEvents.WheelFlipped) dy = -dy;
+                    wheelWin.AddWheel(dy);
+                    if (e.WheelMouseX != 0 || e.WheelMouseY != 0)
+                        wheelWin.UpdateMousePosition(e.WheelMouseX, e.WheelMouseY);
+                }
                 return;
+            case SdlEvents.EventTypeDropFile:
+            case SdlEvents.EventTypeDropText:
+            {
+                // 波 3A/B5:文件/文本拖放通道。解码 + SDL_free 必须无条件执行(SDL_events.h L559 契约,
+                // 无论有无订阅窗 —— 释放不依赖消费),payload null = file NULL(防御,SDL 对 FILE/TEXT 恒非 NULL)。
+                // 归属:windowID 命中注册窗即该窗;0(全局拖放)或无归属(注销窗尾部事件)广播至主窗近似
+                // (_primary,首个注册窗 —— App 主窗恒先建)。
+                string? payload = SdlEvents.DecodeDropPayload(in e);
+                if (payload is null) return;
+                SdlWindow? dropWin = _windows.TryGetValue(e.DropWindowId, out SdlWindow? hit) ? hit : _primary;
+                if (dropWin is null) return;
+                if (e.Type == SdlEvents.EventTypeDropFile) dropWin.RaiseFileDropped(payload);
+                else dropWin.RaiseTextDropped(payload);
+                return;
+            }
+            case SdlEvents.EventTypeDropBegin:
+            case SdlEvents.EventTypeDropComplete:
+            {
+                // 波 3A/B5:拖放生命周期(无载荷;归属同 FILE/TEXT)。
+                SdlWindow? dropWin = _windows.TryGetValue(e.DropWindowId, out SdlWindow? hit) ? hit : _primary;
+                if (dropWin is null) return;
+                if (e.Type == SdlEvents.EventTypeDropBegin) dropWin.RaiseDropBegan();
+                else dropWin.RaiseDropCompleted();
+                return;
+            }
         }
-        // 其余事件类型(拖放/游戏手柄等)T1 声明面未覆盖或不消费,安全丢弃(排空语义)。
+        // 其余事件类型(游戏手柄等)T1 声明面未覆盖或不消费,安全丢弃(排空语义)。
         // 注:SDL_TEXTEDITING 自审计修复波 2A-4(A4)起经上方 case 消费;TEXTEDITING_EXT(0x305,
-        // >32B 组合串)仍未声明,留后续波次(与 A4 修法建议同记)。
+        // >32B 组合串)仍未声明,留后续波次(与 A4 修法建议同记);SDL_DROPFILE/TEXT/BEGIN/COMPLETE
+        // 自波 3A(B5)起经上方 case 消费(DROP 事件默认即投递,SDL_events.c L642-646 实证,无需 EventState)。
     }
 
     static void DispatchWindowEvent(SdlWindow w, in SdlEvents.SdlEvent e)
@@ -327,16 +531,22 @@ internal static class SdlPump
                 return;
             case SdlEvents.WindowEventFocusGained:
                 _lastFocused = w;
+                w.RaiseFocusGained();   // 波 3A/B4:聚焦获得透出(簿记行为不变)
                 return;
             case SdlEvents.WindowEventFocusLost:
                 if (_lastFocused == w) _lastFocused = null;
                 w.RaiseFocusLost();
+                return;
+            case SdlEvents.WindowEventMoved:   // 波 3A/B4:窗口移动透出(data1/data2=新坐标,SDL_video.h L161)
+                w.RaiseMoved(e.WindowData1, e.WindowData2);
                 return;
             case SdlEvents.WindowEventClose:
                 if (w.AllowClose())   // 审计修复波 2B(A3):Closing 订阅者可否决(任一 false → 窗口存活);修复前无条件 MarkClosed
                     w.MarkClosed();   // 旧窗口层此处调 Close()(即销毁);本层仅置标记,销毁归 App(见 SdlWindow.Close 注)
                 return;
         }
-        // 其余窗口子事件(SHOWN/HIDDEN/MOVED/EXPOSED/MINIMIZED/...)不消费,安全丢弃。
+        // 其余窗口子事件(SHOWN/HIDDEN/EXPOSED/MINIMIZED/...)不消费,安全丢弃。
+        // DISPLAY_CHANGED(18,2.24+:跨显示器移动/DPI 变更)声明面就绪(SdlEvents 注),消费留 M3e
+        // (B6 后半:ScaleFactor 运行时重算 + 图集重建一体,本波不动创建定格语义)。
     }
 }

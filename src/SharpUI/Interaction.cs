@@ -1,14 +1,18 @@
 namespace SharpUI;
 
 /// <summary>键盘事件(按时间序)。Key 为自有 SharpUI.Key(T3 平移:旧窗口层同构枚举已随包退役,
-/// 值序零形变 —— T1 镜像交付);Ctrl 位供 TextEditing 编辑语义(D22)。</summary>
-public readonly record struct KeyEventData(Key Key, bool Down, bool Shift, bool Ctrl = false);
+/// 值序零形变 —— T1 镜像交付);Ctrl 位供 TextEditing 编辑语义(D22)。波 3A(B11/B12)增 Alt/Gui
+/// 修饰位与 IsRepeat 标记 —— 默认参数保既有三参调用零形变;IsRepeat=true = SDL 长按自动重复
+/// (文本路径受益,激活/Tab 跳过策略由消费侧裁量,审计 A7)。</summary>
+public readonly record struct KeyEventData(Key Key, bool Down, bool Shift, bool Ctrl = false,
+    bool Alt = false, bool Gui = false, bool IsRepeat = false);
 
 /// <summary>App 从 SDL InputSnapshot 经 InputMapper 映射;LeftHeld 为持久按键态(D15);WheelDelta 为滚轮增量(D19)。
-/// Chars 为字符通道(D22):源自 KeyCharPresses 的当帧文本输入,空则 null。</summary>
+/// Chars 为字符通道(D22):源自 KeyCharPresses 的当帧文本输入,空则 null。ButtonEvents 为全按钮事件
+/// 通道(波 3A/B2/B10,含 clicks;快照 ButtonEvents 的数组拷贝,空则 null)—— 右键/中键/双击消费接线留 3B。</summary>
 public readonly record struct RawInput(
     PointF Mouse, bool[] LeftEvents, KeyEventData[]? KeyEvents = null, bool LeftHeld = false,
-    float WheelDelta = 0f, char[]? Chars = null);
+    float WheelDelta = 0f, char[]? Chars = null, MouseButtonEventData[]? ButtonEvents = null);
 
 /// <summary>D22 键路由前瞻:聚焦元素接收当帧键与字符的通道。T3 的 TextFieldElement 实现之,App.FeedFocused 判接口分发。</summary>
 internal interface ITextFeedable

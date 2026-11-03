@@ -328,6 +328,13 @@ internal sealed class MetalContext : IRenderContext
         ThrowIfDisposed();
     }
 
+    /// <summary>垂直同步开关(波 3A/B21):headless Present no-op → 无节奏可调,保留接口位;
+    /// 窗口路径(M3e 后半)由 CAMetalLayer maximumDrawableCount/present 时序落地(注释记账)。</summary>
+    public void SetVSync(bool enabled)
+    {
+        ThrowIfDisposed();
+    }
+
     /// <summary>读回主目标(GPU 测试用):FlushFrame(wait=true)—— 图集落地 + endEncoding +
     /// commit + waitUntilCompleted(getBytes 前保证 GPU 完成;wait 先于池排空,waitUntilCompleted
     /// 消息作用于池内存活对象;getBytes 只触 _targetTexture,+1 自持,排空后安全)→

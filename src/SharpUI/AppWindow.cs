@@ -28,4 +28,64 @@ public sealed class AppWindow
         add => Window.Closing += value;
         remove => Window.Closing -= value;
     }
+
+    // ---- 窗口生命周期事件开放(波 3A/B4):SdlWindow 公共事件经本类透传(应用侧唯一入口,同 Closing)。
+
+    /// <summary>窗口尺寸变化(SDL_WINDOWEVENT RESIZED/SIZE_CHANGED 且尺寸&gt;0;回调在泵调用线程同步执行)。</summary>
+    public event Action? Resized
+    {
+        add => Window.Resized += value;
+        remove => Window.Resized -= value;
+    }
+
+    /// <summary>输入焦点丢失(D15 失焦取消按压的触发源在本类之上由 App 接线;本事件供应用层感知)。</summary>
+    public event Action? FocusLost
+    {
+        add => Window.FocusLost += value;
+        remove => Window.FocusLost -= value;
+    }
+
+    /// <summary>输入焦点获得(SDL_WINDOWEVENT FOCUS_GAINED)。</summary>
+    public event Action? FocusGained
+    {
+        add => Window.FocusGained += value;
+        remove => Window.FocusGained -= value;
+    }
+
+    /// <summary>窗口移动(data1/data2 = 新客户区左上坐标;跨显示器 DPI 重算消费留 M3e)。</summary>
+    public event Action<int, int>? Moved
+    {
+        add => Window.Moved += value;
+        remove => Window.Moved -= value;
+    }
+
+    // ---- 文件/文本拖放(波 3A/B5):载荷为 UTF-8 解码串(SDL 侧缓冲已由泵 SDL_free)。
+
+    /// <summary>文件拖放(SDL_DROPFILE;windowID=0 的全局拖放由泵广播至主窗)。</summary>
+    public event Action<string>? FileDropped
+    {
+        add => Window.FileDropped += value;
+        remove => Window.FileDropped -= value;
+    }
+
+    /// <summary>文本拖放(SDL_DROPTEXT)。</summary>
+    public event Action<string>? TextDropped
+    {
+        add => Window.TextDropped += value;
+        remove => Window.TextDropped -= value;
+    }
+
+    /// <summary>拖放开始(SDL_DROPBEGIN,无载荷)。</summary>
+    public event Action? DropBegan
+    {
+        add => Window.DropBegan += value;
+        remove => Window.DropBegan -= value;
+    }
+
+    /// <summary>拖放结束(SDL_DROPCOMPLETE,无载荷)。</summary>
+    public event Action? DropCompleted
+    {
+        add => Window.DropCompleted += value;
+        remove => Window.DropCompleted -= value;
+    }
 }

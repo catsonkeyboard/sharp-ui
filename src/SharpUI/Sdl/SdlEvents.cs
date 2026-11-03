@@ -24,12 +24,24 @@ internal static class SdlEvents
     internal const uint EventTypeMouseButtonUp = 0x402;    // SDL_MOUSEBUTTONUP(L110)
     internal const uint EventTypeMouseWheel = 0x403;       // SDL_MOUSEWHEEL(L111)
 
-    // ---- 窗口子事件(SDL_video.h SDL_WindowEventID,L155-176;声明序自 NONE=0 递增)----
+    // ---- 拖放事件(波 3A/B5;SDL_events.h L151-154)----
+    // 默认即投递:SDL_events.c SDL_StartEventLoop 对 DROPFILE/DROPTEXT 的 DISABLE 分支包在 #if 0 中
+    // (L642-646 "Leave these events enabled"),无需 SDL_EventState 放行(2.30.8 源码实证)。
+    internal const uint EventTypeDropFile = 0x1000;        // SDL_DROPFILE(L151)
+    internal const uint EventTypeDropText = 0x1001;        // SDL_DROPTEXT(L152)
+    internal const uint EventTypeDropBegin = 0x1002;       // SDL_DROPBEGIN(L153)
+    internal const uint EventTypeDropComplete = 0x1003;    // SDL_DROPCOMPLETE(L154)
+
+    // ---- 窗口子事件(SDL_video.h SDL_WindowEventID,L155-178;声明序自 NONE=0 递增)----
+    internal const byte WindowEventMoved = 4;          // SDL_WINDOWEVENT_MOVED(L161;data1/data2=新位置)
     internal const byte WindowEventResized = 5;        // SDL_WINDOWEVENT_RESIZED(L163)
     internal const byte WindowEventSizeChanged = 6;    // SDL_WINDOWEVENT_SIZE_CHANGED(L164)
     internal const byte WindowEventFocusGained = 12;   // SDL_WINDOWEVENT_FOCUS_GAINED(L173)
     internal const byte WindowEventFocusLost = 13;     // SDL_WINDOWEVENT_FOCUS_LOST(L174)
     internal const byte WindowEventClose = 14;         // SDL_WINDOWEVENT_CLOSE(L175)
+    internal const byte WindowEventDisplayChanged = 18;  // SDL_WINDOWEVENT_DISPLAY_CHANGED(L178;2.24+,data1=显示器索引)
+    // DISPLAY_CHANGED 消费留 M3e(B6 后半:跨显示器 DPI 变更 → ScaleFactor 运行时重算/图集重建一体),
+    // 本波仅声明面就绪(常量守卫测试锁值,防后续误改)。
 
     // ---- KMOD(SDL_keycode.h SDL_Keymod,L334-346,Uint16 位域)----
     internal const ushort KmodLShift = 0x0001;
@@ -49,9 +61,10 @@ internal static class SdlEvents
     internal const byte ButtonX1 = 4;      // SDL_BUTTON_X1(L448;T2 泵层消费)
     internal const byte ButtonX2 = 5;      // SDL_BUTTON_X2(L449)
     internal const byte Pressed = 1;       // SDL_PRESSED(SDL_events.h L50;SDL_RELEASED=0,L49)
-    internal const uint WheelFlipped = 1;  // SDL_MOUSEWHEEL_FLIPPED(SDL_mouse.h L67-70,NORMAL=0);T2 裁定:
-                                           // 泵 WheelDelta 忽略方向位(旧窗口层 HandleMouseWheelEvent 源码实证
-                                           // "WheelDelta += y" 无方向分支,同基线保留;Windows 恒 NORMAL)
+    internal const uint WheelFlipped = 1;  // SDL_MOUSEWHEEL_FLIPPED(SDL_mouse.h L67-70,NORMAL=0)。
+                                           // T2 曾裁定泵忽略方向位(旧窗口层基线保留);波 3A/A6 起泵按
+                                           // SDL 头文件 L320 语义归一(FLIPPED 值乘 -1 还原,"上=+1"恒成立,
+                                           // macOS 自然滚动不再反向),见 SdlPump.Dispatch 滚轮分支注。
 
     // ---- 窗口 flags(SDL_video.h SDL_WindowFlags,L104-127)----
     // 计划稿记忆值 "Shown=0x10、Hidden=0x20" 已按头文件实数校正:Shown=0x4、Hidden=0x8;
@@ -110,10 +123,27 @@ internal static class SdlEvents
         [FieldOffset(28)] public int MouseRelX;         // motion.xrel
         [FieldOffset(32)] public int MouseRelY;         // motion.yrel
 
-        // 滚轮分支:which@12(略读),x@16/y@20,direction@24;preciseX/Y@28/32、mouseX/Y@36/40 未声明(T2 需要再扩)
+        // 滚轮分支:which@12(略读),x@16/y@20,direction@24;波 3A/A6 补声明 preciseX@28/preciseY@32
+        // (float,2.0.18+,SDL_events.h L312-325)与 mouseX@36/mouseY@40(Sint32,2.26.0+)。旧模块
+        // (<2.0.18/<2.26)不写这些偏移 —— SDL 后端事件先 SDL_zero 再填充,读出为 0,泵按"0=未携带"
+        // 回落整型/保留原位置(见 SdlPump.Dispatch 滚轮分支注)。
         [FieldOffset(16)] public int WheelX;
         [FieldOffset(20)] public int WheelY;
         [FieldOffset(24)] public uint WheelDirection;   // 0=NORMAL/1=FLIPPED(SDL_mouse.h L67-70)
+        [FieldOffset(28)] public float WheelPreciseX;   // 滚轮精确横向增量(2.0.18+;B9 横向滚动消费,本波仅声明)
+        [FieldOffset(32)] public float WheelPreciseY;   // 滚轮精确纵向增量(2.0.18+)
+        [FieldOffset(36)] public int WheelMouseX;       // 滚轮时鼠标窗内 X(2.26.0+;免滞后命中)
+        [FieldOffset(40)] public int WheelMouseY;       // 滚轮时鼠标窗内 Y(2.26.0+)
+
+        // 拖放分支(SDL_DropEvent,SDL_events.h L555-561):C 结构体字段为**顺序布局**(非分支内联合):
+        // type@0/timestamp@4/file@8..15(char*,64 位指针宽,SDL_free 必须同模块释放 —— L559 明言
+        // "should be freed with SDL_free()";BEGIN/COMPLETE 恒 NULL)/windowID@16。
+        // 两个核数要点:① file 占满 8..15,windowID 顺延到 @16(初版误标 @12 系把 C 结构体当分支内
+        // 联合处理 —— 字段赋值互不重叠是 C 结构体语义;@12 会截断指针高 4B 实证 AV,已按实数校正);
+        // ② 分支级:DropEvent 整体作为 SDL_Event 联合体的一员,其 file@8 覆盖公共头 windowID@8
+        // (读拖放事件归属必须用 DropWindowId@16,不能读 WindowId)。
+        [FieldOffset(8)] public IntPtr DropFile;
+        [FieldOffset(16)] public uint DropWindowId;
 
         // 窗口分支:event@12,pad@13-15,data1@16/data2@20
         [FieldOffset(12)] public byte WindowEventCode;
@@ -420,6 +450,115 @@ internal static class SdlEvents
     internal static bool GetDisplayDpi(int index, out float ddpi, out float hdpi, out float vdpi) =>
         SdlNative.Fn<SdlGetDisplayDpiFn>(LiveModule(), "SDL_GetDisplayDPI")(index, out ddpi, out hdpi, out vdpi) == 0;
 
+    // ---- 窗口管理(波 3A/B3;SDL_video.h 函数逐个头文件核对,行号为 2.30.8 实码)----
+    // 模块纪律:全部窗口相关 → OwnerModule(裁定#38:窗口调用问属主)。
+
+    /// <summary>设置窗口标题(SDL_SetWindowTitle,L866;const char* 为 UTF-8 —— L861 文档明言,
+    /// 封送同 CreateWindow 的手工 UTF-8 模式,非英文代码页下 CharSet.Ansi 必 mojibake)。</summary>
+    internal static void SetWindowTitle(IntPtr window, string title)
+    {
+        byte[] utf8 = Encoding.UTF8.GetBytes(title);
+        IntPtr p = Marshal.AllocHGlobal(utf8.Length + 1);   // 含 0 终止
+        try
+        {
+            Marshal.Copy(utf8, 0, p, utf8.Length);
+            Marshal.WriteByte(p, utf8.Length, 0);
+            SdlNative.Fn<SdlSetWindowTitleFn>(SdlNative.OwnerModule(window), "SDL_SetWindowTitle")(window, p);
+        }
+        finally { Marshal.FreeHGlobal(p); }
+    }
+
+    /// <summary>读窗口标题(SDL_GetWindowTitle,L880;返回 const char* UTF-8 归 SDL 所有,拷贝即走)。</summary>
+    internal static string GetWindowTitle(IntPtr window) =>
+        Marshal.PtrToStringUTF8(SdlNative.Fn<SdlGetWindowTitleFn>(SdlNative.OwnerModule(window), "SDL_GetWindowTitle")(window)) ?? "";
+
+    internal static void SetWindowPosition(IntPtr window, int x, int y) =>
+        SdlNative.Fn<SdlSetWindowPositionFn>(SdlNative.OwnerModule(window), "SDL_SetWindowPosition")(window, x, y);   // L940
+
+    internal static void SetWindowSize(IntPtr window, int w, int h) =>
+        SdlNative.Fn<SdlSetWindowSizeFn>(SdlNative.OwnerModule(window), "SDL_SetWindowSize")(window, w, h);   // L984
+
+    internal static void SetWindowMinimumSize(IntPtr window, int w, int h) =>
+        SdlNative.Fn<SdlSetWindowMinimumSizeFn>(SdlNative.OwnerModule(window), "SDL_SetWindowMinimumSize")(window, w, h);   // L1083
+
+    internal static void SetWindowMaximumSize(IntPtr window, int w, int h) =>
+        SdlNative.Fn<SdlSetWindowMaximumSizeFn>(SdlNative.OwnerModule(window), "SDL_SetWindowMaximumSize")(window, w, h);   // L1115
+
+    internal static void MaximizeWindow(IntPtr window) =>
+        SdlNative.Fn<SdlMaximizeWindowFn>(SdlNative.OwnerModule(window), "SDL_MaximizeWindow")(window);   // L1232
+
+    internal static void MinimizeWindow(IntPtr window) =>
+        SdlNative.Fn<SdlMinimizeWindowFn>(SdlNative.OwnerModule(window), "SDL_MinimizeWindow")(window);   // L1244
+
+    internal static void RestoreWindow(IntPtr window) =>
+        SdlNative.Fn<SdlRestoreWindowFn>(SdlNative.OwnerModule(window), "SDL_RestoreWindow")(window);    // L1256
+
+    /// <summary>切换全屏(SDL_SetWindowFullscreen,L1275;flags=SDL_WINDOW_FULLSCREEN(0x1) 或
+    /// _FULLSCREEN_DESKTOP(0x1001);返回 0=成功/负数=失败)。</summary>
+    internal static bool SetWindowFullscreen(IntPtr window, uint flags) =>
+        SdlNative.Fn<SdlSetWindowFullscreenFn>(SdlNative.OwnerModule(window), "SDL_SetWindowFullscreen")(window, flags) == 0;
+
+    /// <summary>切换边框(SDL_SetWindowBordered,L1151;SDL_bool 于 2.30.8 为 enum{SDL_FALSE=0,SDL_TRUE=1}
+    /// (SDL_stdinc.h L180-184),C# 侧按 int 0/1 传 —— enum 定宽 int,与指针架构一致)。</summary>
+    internal static void SetWindowBordered(IntPtr window, bool bordered) =>
+        SdlNative.Fn<SdlSetWindowBorderedFn>(SdlNative.OwnerModule(window), "SDL_SetWindowBordered")(window, bordered ? 1 : 0);
+
+    internal static void RaiseWindow(IntPtr window) =>
+        SdlNative.Fn<SdlRaiseWindowFn>(SdlNative.OwnerModule(window), "SDL_RaiseWindow")(window);   // L1220
+
+    /// <summary>聚焦窗口(SDL_SetWindowInputFocus,L1644;返回 0=成功/负数=失败,部分 WM 拒绝,调用方裁量)。</summary>
+    internal static bool SetWindowInputFocus(IntPtr window) =>
+        SdlNative.Fn<SdlSetWindowInputFocusFn>(SdlNative.OwnerModule(window), "SDL_SetWindowInputFocus")(window) == 0;
+
+    /// <summary>窗口客户区像素尺寸(SDL_GetWindowSizeInPixels,L1068;2.26.0+)。与 GetWindowSize(逻辑/
+    /// 屏幕坐标)的关系同 SdlNative.GetDrawableSize 注:Windows 两值恒等;macOS/Wayland 传 ALLOW_HIGHDPI
+    /// 时像素 > 逻辑(Retina 2x 类)。</summary>
+    internal static void GetWindowSizeInPixels(IntPtr window, out int w, out int h) =>
+        SdlNative.Fn<SdlGetWindowSizeInPixelsFn>(SdlNative.OwnerModule(window), "SDL_GetWindowSizeInPixels")(window, out w, out h);
+
+    // ---- 拖放(波 3A/B5)----
+
+    /// <summary>解码 SDL_DropEvent.file 并 SDL_free(同一活模块 —— 事件来自被泵的模块,其分配器即
+    /// 该模块的 SDL_malloc/free)。SDL_events.h L559 明言 "should be freed with SDL_free()"。
+    /// 返回 null = file 为 NULL(BEGIN/COMPLETE 恒 NULL,无载荷);否则返回解码串(可能为空串)。
+    /// 无论有无订阅窗都必须调用本方法 —— 泵侧无条件消费即无条件释放,防拖放泄漏。</summary>
+    internal static string? DecodeDropPayload(in SdlEvent e)
+    {
+        IntPtr file = e.DropFile;
+        if (file == IntPtr.Zero) return null;
+        string payload = Marshal.PtrToStringUTF8(file) ?? "";
+        SdlNative.Fn<SdlFreeFn>(LiveModule(), "SDL_free")(file);   // 同模块释放(LiveModule=泵队列属主)
+        return payload;
+    }
+
+    /// <summary>SDL_malloc(SDL_stdinc.h L444;size_t)。仅测试合成 DROP 事件用 —— file 缓冲必须以
+    /// SDL 自身分配器分配,SDL_free 释放才合法(Marshal.AllocHGlobal 与 ucrt malloc 混堆属 UB)。
+    /// 生产路径不需要(真实 DROP 事件的 file 由 SDL/OS 分配)。</summary>
+    internal static IntPtr SdlMalloc(nuint size) =>
+        SdlNative.Fn<SdlMallocFn>(LiveModule(), "SDL_malloc")(size);
+
+    // ---- 系统游标(波 3A/B13;SDL_mouse.h;进程全局态非窗口参数 → LiveModule)----
+
+    /// <summary>创建系统游标(SDL_CreateSystemCursor,L351;id = SDL_SystemCursor 声明序 0..11;
+    /// 失败返回 Zero —— 调用方(SdlCursor.Apply)对 Zero 跳过保持当前形状)。返回游标须 SDL_FreeCursor
+    /// 释放(L290 文档);本库按 12 项有界集进程级缓存,不逐次销毁(见 SdlCursor 注)。</summary>
+    internal static IntPtr CreateSystemCursor(int id) =>
+        SdlNative.Fn<SdlCreateSystemCursorFn>(LiveModule(), "SDL_CreateSystemCursor")(id);
+
+    /// <summary>置活动游标(SDL_SetCursor,L369;进程级全局态)。</summary>
+    internal static void SetCursor(IntPtr cursor) =>
+        SdlNative.Fn<SdlSetCursorFn>(LiveModule(), "SDL_SetCursor")(cursor);
+
+    /// <summary>取默认游标(SDL_GetDefaultCursor,L397;归 SDL 库所有 —— L388 明言不必 SDL_FreeCursor)。</summary>
+    internal static IntPtr GetDefaultCursor() =>
+        SdlNative.Fn<SdlGetDefaultCursorFn>(LiveModule(), "SDL_GetDefaultCursor")();
+
+    /// <summary>销毁游标(SDL_FreeCursor,L413 —— 任务稿"SDL_DestroyCursor"系记忆值,SDL_mouse.h 实名
+    /// SDL_FreeCursor,已按头文件校正)。当前消费面为空:SdlCursor 缓存按进程级生存(12 项有界,
+    /// SDL_Quit 兜底),绑定保留给未来显式销毁路径(如游标缓存收缩)。</summary>
+    internal static void FreeCursor(IntPtr cursor) =>
+        SdlNative.Fn<SdlFreeCursorFn>(LiveModule(), "SDL_FreeCursor")(cursor);
+
     static IntPtr LiveModule()
     {
         foreach (IntPtr h in SdlNative.Candidates())
@@ -451,4 +590,69 @@ internal static class SdlEvents
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate IntPtr SdlGetErrorFn();
+
+    // ---- 波 3A 委托(SDLCALL = cdecl;窗口管理走 OwnerModule,游标/内存走 LiveModule)----
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
+    private delegate void SdlSetWindowTitleFn(IntPtr window, IntPtr titleUtf8);   // 手工 UTF-8 封送(同 CreateWindow)
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate IntPtr SdlGetWindowTitleFn(IntPtr window);   // const char* 归 SDL 所有
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void SdlSetWindowPositionFn(IntPtr window, int x, int y);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void SdlSetWindowSizeFn(IntPtr window, int w, int h);
+
+    // 委托类型与导出名 1:1(SdlNative.FnCache<T> 以 (模块, 委托类型) 为键 —— 同型二用会命中错误
+    // 缓存项,SdlNative 类注"新增同型二用调用前必须复核";Minimum/Maximum 与 Maximize/Minimize/
+    // Restore/Raise 同签名但不得共用类型):
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void SdlSetWindowMinimumSizeFn(IntPtr window, int w, int h);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void SdlSetWindowMaximumSizeFn(IntPtr window, int w, int h);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void SdlMaximizeWindowFn(IntPtr window);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void SdlMinimizeWindowFn(IntPtr window);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void SdlRestoreWindowFn(IntPtr window);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void SdlRaiseWindowFn(IntPtr window);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate int SdlSetWindowFullscreenFn(IntPtr window, uint flags);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void SdlSetWindowBorderedFn(IntPtr window, int bordered);   // SDL_bool(enum int 宽)
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate int SdlSetWindowInputFocusFn(IntPtr window);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void SdlGetWindowSizeInPixelsFn(IntPtr window, out int w, out int h);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate IntPtr SdlMallocFn(nuint size);   // size_t(指针宽)
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void SdlFreeFn(IntPtr mem);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate IntPtr SdlCreateSystemCursorFn(int id);   // SDL_SystemCursor(enum int 宽)
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void SdlSetCursorFn(IntPtr cursor);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate IntPtr SdlGetDefaultCursorFn();
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void SdlFreeCursorFn(IntPtr cursor);
 }

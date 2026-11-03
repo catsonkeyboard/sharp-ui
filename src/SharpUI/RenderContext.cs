@@ -41,6 +41,12 @@ public interface IRenderContext : IDisposable
     /// <summary>呈现(窗口路径 Present(1,0) VSync;headless no-op)。</summary>
     void Present();
 
+    /// <summary>垂直同步开关(波 3A/B21 部分):D3D11 = 后续 Present 的 SyncInterval(1↔0,下一帧起
+    /// 生效);GL = MakeCurrent 后 SDL_GL_SetSwapInterval(1↔0)(SdlNative.SetSwapInterval 既有绑定,
+    /// 构造期已设 1 —— 本方法为运行时开关);Metal headless Present no-op → 保留接口位,窗口路径
+    /// (M3e 后半)落地。默认 true(各后端构造语义零形变)。</summary>
+    void SetVSync(bool enabled);
+
     /// <summary>设备丢失(审计修复波 2B/A10):后端帧路径(Present/Map 等)检出设备丢失类错误时触发
     /// 恰一次,之后该上下文的一切帧操作静默失败(设备已死,等待应用层重建或退出)—— 触发不抛异常,
     /// 修复前 D3D11 的裸 InvalidOperationException 冒穿 App.Run 整进程崩溃。订阅方(App 建窗接线)负责

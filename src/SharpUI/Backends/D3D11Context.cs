@@ -126,6 +126,8 @@ public sealed class D3D11Context : IRenderContext
     PresentFn _present = null!;
     ResizeBuffersFn _resizeBuffers = null!;
 
+    bool _vsync = true;   // Present SyncInterval(波 3A/B21):默认 1 = 既有 Present(1,0) VSync 语义
+
     readonly List<(string Name, uint FinalCount)> _releaseTrace = new();
 
     /// <summary>Dispose 释放轨迹(名称 → 末次 Release 返回值),测试/诊断观测(模式照抄 D3D11Spike)。</summary>
@@ -336,7 +338,8 @@ public sealed class D3D11Context : IRenderContext
         _drawIndexed(_context, indexCount, 0, 0);   // 分段已重定基到缓冲头,偏移恒 0
     }
 
-    /// <summary>呈现:窗口 Present(1,0) VSync;headless no-op。设备丢失(审计修复波 2B/A10):
+    /// <summary>呈现:窗口路径按 _vsync 决定 SyncInterval(默认 1 = 既有 Present(1,0) VSync 语义零形变;
+    /// 波 3A/B21 起经 SetVSync 运行时开关);headless no-op。设备丢失(审计修复波 2B/A10):
     /// hr ∈ {DEVICE_REMOVED/HUNG/RESET/DRIVER_INTERNAL_ERROR} → 触发 DeviceLost 事件并不再抛
     /// (设备已死,等应用层响应;后续帧操作经 _deviceLost 门静默失败);其余 hr 维持显式抛出。</summary>
     public void Present()
@@ -344,12 +347,20 @@ public sealed class D3D11Context : IRenderContext
         ThrowIfDisposed();
         if (_deviceLost) return;                 // A10:设备已死,静默失败
         if (_swapChain == IntPtr.Zero) return;   // headless no-op
-        int hr = _present(_swapChain, 1, 0);
+        int hr = _present(_swapChain, _vsync ? 1u : 0u, 0);
         if (hr < 0)
         {
             if (IsDeviceLostHr(hr)) { OnDeviceLost(hr, nameof(Present)); return; }
-            throw new InvalidOperationException($"IDXGISwapChain::Present(1,0) 失败 hr=0x{hr:X8}");
+            throw new InvalidOperationException($"IDXGISwapChain::Present 失败 hr=0x{hr:X8}");
         }
+    }
+
+    /// <summary>垂直同步开关(波 3A/B21):仅置 Present SyncInterval 标志,下一帧起生效(不需要帧边界
+    /// 同步 —— DXGI SyncInterval 每次调用独立取值)。默认 true = 既有 Present(1,0) 语义零形变。</summary>
+    public void SetVSync(bool enabled)
+    {
+        ThrowIfDisposed();
+        _vsync = enabled;
     }
 
     /// <summary>读回主目标(GPU 测试用):惰性 staging 纹理 + CopyResource + Map READ,按 RowPitch 逐行拷

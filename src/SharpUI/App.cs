@@ -18,6 +18,12 @@ public sealed class App
     /// <summary>窗口表(主窗恒为 [0]);internal 供簿记检查(OpenWindow 入队即可查 Count,无需启动 Run)。</summary>
     internal readonly List<AppWindow> Windows = new();
 
+    // ---- 波 3A/B21:静态 VSync 面。_vsyncRequested 为建窗期望值(CreateWindow 应用到新上下文);
+    // _liveWindows 为活窗静态簿记(VSync(bool) 对已存在窗立即生效;入列=CreateWindow,出列=帧尾
+    // 移除路径+teardown —— 与 App.Windows 的差异:静态方法无法到达实例表,且 VSync 是进程级意图)。
+    static readonly List<AppWindow> _liveWindows = new();
+    static bool _vsyncRequested = true;
+
     readonly Stopwatch _stopwatch = new();
 
     AppWindow Main => Windows[0];
@@ -59,14 +65,22 @@ public sealed class App
         bool useGl = backend == "gl" || (backend == "default" && !OperatingSystem.IsWindows() && !OperatingSystem.IsMacOS());
         if (useGl)
             GLContext.SetCoreProfileAttributes();   // 时序:EnsureVideoInit 后、建窗前(3.3 core + 双缓冲;见其注释)
-        var window = new SdlWindow(title, 100, 100, width, height,
-            SdlWindowFlags.Resizable | SdlWindowFlags.Shown | (useGl ? SdlWindowFlags.OpenGL : SdlWindowFlags.None));
+        // 波 3A/B6 部分:ALLOW_HIGHDPI(0x2000)仅 macOS/Linux 传 —— Retina/Wayland 上高分原生渲染。
+        // Windows **不**传:高 DPI 行为已由 DPI-aware 进程路径覆盖(manifest PerMonitorV2 + ScaleFactor
+        // 逻辑换算),而 SDL Windows 坐标即物理像素(SdlNative.GetDrawableSize 注),传 flag 后窗口进入
+        // "逻辑≠像素"语义只会反向破坏现网换算(MousePosition/Frame 全按逻辑坐标除 ScaleFactor)。
+        // 真机效果(macOS Retina 2x/Wayland)待 CI 实机验证。DISPLAY_CHANGED 运行时 DPI 重算留 M3e。
+        SdlWindowFlags windowFlags = SdlWindowFlags.Resizable | SdlWindowFlags.Shown
+            | (useGl ? SdlWindowFlags.OpenGL : SdlWindowFlags.None)
+            | (OperatingSystem.IsWindows() ? SdlWindowFlags.None : SdlWindowFlags.AllowHighDpi);
+        var window = new SdlWindow(title, 100, 100, width, height, windowFlags);
         IRenderContext ctx = useMetal
             ? MetalContext.CreateForWindow(window.SdlWindowHandle, (uint)window.Width, (uint)window.Height)   // 当前必抛 NotImplementedException(M3e 后半接 NSView.layer);抛 NIE 前已建窗、句柄随进程退出回收——CI 待验清单⑧记账(评审 Minor#6)
             : useGl
             ? GLContext.CreateForWindow(window.SdlWindowHandle, (uint)window.Width, (uint)window.Height)   // SwapWindow 节奏=构造期 SetSwapInterval(1)
             : D3D11Context.CreateForWindow(SdlNative.GetWin32Hwnd(window.SdlWindowHandle),
-                (uint)window.Width, (uint)window.Height);   // 交换链 Present(1,0) 即 VSync(spec §7,每窗)
+                (uint)window.Width, (uint)window.Height);   // 交换链 Present SyncInterval 由 _vsyncRequested 决定(默认 1=VSync,spec §7,每窗)
+        ctx.SetVSync(_vsyncRequested);   // 波 3A/B21:建链期望值(GL 构造期已设 1,此处幂等;D3D11/Metal 各自落地)
         // 0 尺寸 = 最小化边缘,两后端 ValidateSize 对 0 抛 ArgumentException,异常从 SDL 事件处理器
         // 冒出会击穿 Run 循环整窗崩溃(旧栈 ResizeMainWindow(0,0) 容忍 0)——忽略本帧 resize。
         window.Resized += () => { if (window.Width > 0 && window.Height > 0) ctx.Resize((uint)window.Width, (uint)window.Height); };
@@ -94,7 +108,26 @@ public sealed class App
         w.Session.SdlWindow = window.SdlWindowHandle;   // D5:浮层命中优先/外点消费按窗接线(PopupHost 服务定位)
         w.Focus.ScreenSize = new SizeF(window.Width / scale, window.Height / scale);   // D6 T1:菜单默认翻转钳制基准
         FocusManager.BindWindow(window.SdlWindowHandle, w.Focus);   // D6 T2:同步置 w.Focus.SdlWindow 唯一真相 + _byWindow 入口桥
+        _liveWindows.Add(w);   // 波 3A/B21:VSync 静态面的活窗簿记(出列=帧尾移除/teardown 两路)
         return w;
+    }
+
+    /// <summary>垂直同步开关(波 3A/B21 部分):D3D11 = Present SyncInterval(1↔0);GL = 交换间隔
+    /// SDL_GL_SetSwapInterval(1↔0,MakeCurrent 语义由后端处理);Metal 窗口路径待 M3e(headless no-op)。
+    /// 静态面原因:CreateWindow 静态链先于 App 实例存在,新窗建链须能取到期望值;已存在窗经 _liveWindows
+    /// 立即生效。已关闭/已直接 Dispose 的窗(App 簿记外的 harness/测试直 Dispose 路径不经 _liveWindows
+    /// 出列)在此惰性出列并跳过 —— Ctx 生命周期不后于 Window(两移除路径 Dispose 序恒 Ctx→Window),
+    /// !Exists 即 Ctx 已死,调用其 SetVSync 会 ObjectDisposedException。UI 线程调用(_liveWindows 无锁,
+    /// 与 Windows 表同线程约定)。</summary>
+    public static void VSync(bool enabled)
+    {
+        _vsyncRequested = enabled;
+        for (int i = _liveWindows.Count - 1; i >= 0; i--)
+        {
+            AppWindow w = _liveWindows[i];
+            if (!w.Window.Exists) { _liveWindows.RemoveAt(i); continue; }   // 惰性出列(见方法注)
+            w.Ctx.SetVSync(enabled);
+        }
     }
 
     /// <summary>后端名归一(SHARPUI_BACKEND):trim + 小写;"gl"/"opengl"→gl、"d3d11"/"d3d"→d3d11、
@@ -109,7 +142,10 @@ public sealed class App
         _ => "default",
     };
 
-    public int Run(int maxFrames = 0)
+    /// <summary>运行主循环直至主窗关闭(或 maxFrames 上限)。返回 exit code(波 3A/B21 部分):默认 0
+    /// 与既有语义零形变;正常退出路径返回调用方提供的 exitCode —— 应用可在 Run 前决定成败码,或经
+    /// Closing 否决/派生逻辑(派生方案需泵层原因记录,本波取最小参数面)。</summary>
+    public int Run(int maxFrames = 0, int exitCode = 0)
     {
         Debug.Assert(SdlWindow.UiThreadId == 0 || Environment.CurrentManagedThreadId == SdlWindow.UiThreadId,
             SdlWindow.UiThreadAffinityMessage);   // A8:Run 循环(泵/快照/静态簿记)单线程契约
@@ -225,6 +261,7 @@ public sealed class App
                     Windows[i].Ctx.Dispose();
                     Windows[i].Atlas.Dispose();   // M1 复审补漏:文本图集原生资源随窗释放,防反复开关泄漏(D3 T4 起 FT/HB)
                     Windows[i].Window.Dispose();  // T2 强制交接:Close 事件仅 MarkClosed,Dispose 负责 Unregister+SDL_DestroyWindow(缺此即次窗原生窗泄漏)
+                    _liveWindows.Remove(Windows[i]);   // 波 3A/B21:VSync 静态面簿记随窗出列
                     Windows.RemoveAt(i);
                 }
             if (maxFrames > 0 && ++frames >= maxFrames)
@@ -243,8 +280,9 @@ public sealed class App
             w.Ctx.Dispose();
             w.Atlas.Dispose();
             w.Window.Dispose();   // 生命周期归 App:退出销毁残留原生窗(主窗 Close 仅置标记;对齐旧窗口层 Close 即销毁的零泄漏语义)
+            _liveWindows.Remove(w);   // 波 3A/B21:VSync 静态面簿记随窗出列
         }
-        return 0;
+        return exitCode;
     }
 
     /// <summary>D22 键路由:构建前对上帧保留树按 FocusedId 定位聚焦元素,实现 ITextFeedable(T3 TextFieldElement)

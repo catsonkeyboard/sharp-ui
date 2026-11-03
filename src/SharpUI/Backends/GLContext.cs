@@ -273,13 +273,23 @@ public sealed class GLContext : IRenderContext
         GL.DrawElements(GL.Triangles, (int)indexCount, GL.UnsignedShort, (IntPtr)(startIndex * sizeof(ushort)));
     }
 
-    /// <summary>呈现:窗口路径 SwapWindow(VSync 节奏已由构造期 SetSwapInterval(1) 设定);
-    /// headless no-op(接口契约 —— 不交换,后备缓冲保持可读回)。</summary>
+    /// <summary>呈现:窗口路径 SwapWindow(VSync 节奏由构造期 SetSwapInterval(1) + SetVSync 运行时
+    /// 开关控制);headless no-op(接口契约 —— 不交换,后备缓冲保持可读回)。</summary>
     public void Present()
     {
         ThrowIfDisposed();
         if (_ownsWindow) return;   // headless:隐藏窗 no-op
         SdlNative.SwapWindow(_window);
+    }
+
+    /// <summary>垂直同步开关(波 3A/B21):交换间隔是当前上下文属性(SDL_video.h L2127 语义),
+    /// 须先 MakeCurrent 本窗上下文再 SDL_GL_SetSwapInterval(SdlNative.SetSwapInterval 既有绑定)。
+    /// 失败忽略(同构造期先例:驱动不支持时保持现节奏)。</summary>
+    public void SetVSync(bool enabled)
+    {
+        ThrowIfDisposed();
+        MakeCurrent();
+        _ = SdlNative.SetSwapInterval(enabled ? 1 : 0);
     }
 
     /// <summary>读回主目标(GPU 测试用):glReadPixels 全帧(默认读缓冲 BACK,即本帧绘制目标)+
