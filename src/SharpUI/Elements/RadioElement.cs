@@ -61,6 +61,9 @@ public sealed class RadioElement : PanelElement, IActivatable
     /// <summary>IActivatable:禁用或已选中拒激活(指针/键盘统一门,已选中再点 ClickedIds 账本与回调一致不记 —— 闭合 D4 终审 M5)。</summary>
     public bool CanActivate => Enabled && !_isSelected;
 
+    /// <summary>可点击控件 → Hand(波 3B/B13;帧尾按 Hovered/Focused 元素声明统一消费)。</summary>
+    public override CursorShape CursorShape => CursorShape.Hand;
+
     /// <summary>激活语义:未选中时触发 onSelected 一次;已选中再激活 = 值未变化,不回调。</summary>
     public void InvokeClick()
     {

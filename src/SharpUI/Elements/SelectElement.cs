@@ -63,6 +63,10 @@ public sealed class SelectElement : PanelElement, IActivatable, IKeySteerable
     /// <summary>IActivatable:禁用拒激活(指针/键盘统一门,账本与回调一致);激活语义 = 打开下拉菜单。</summary>
     public bool CanActivate => _enabled;
 
+    /// <summary>可点击控件 → Hand(波 3B/B13;帧尾按 Hovered/Focused 元素声明统一消费。任务稿字面把
+    /// Select 列入 IBeam 组,按"按钮/可点击→Hand"语义归 Hand —— 下拉为按钮形态控件,报告写明)。</summary>
+    public override CursorShape CursorShape => CursorShape.Hand;
+
     /// <summary>激活漏斗(指针按下+松开同元素 / 聚焦+Enter/Space):打开锚定菜单,当前项为初始焦点(高亮)。</summary>
     public void InvokeClick()
     {

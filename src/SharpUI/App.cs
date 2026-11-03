@@ -31,6 +31,11 @@ public sealed class App
     /// <summary>主窗 DPI 缩放比(0.5–4 夹紧);鼠标/文本/剪裁统一换算基准(D18)。单窗 API 保持。</summary>
     public float ScaleFactor => Main.Scale;
 
+    /// <summary>主窗应用面(波 3B/B5 接线):生命周期/拖放事件订阅与窗口管理 API 的主窗入口 ——
+    /// OpenWindow 返回次窗 AppWindow,主窗此前无公共获取点(FileDropped 等事件订阅无从接线,
+    /// demo 实证);主窗恒为窗口表 [0]。</summary>
+    public AppWindow MainWindow => Windows[0];
+
     App(AppWindow main) => Windows.Add(main);
 
     public static App Create(string title, int width, int height, Func<Element>? render = null) =>
@@ -239,6 +244,10 @@ public sealed class App
                     Console.Error.WriteLine($"[SharpUI] 帧丢弃: mesh 顶点溢出(>65536), UI 复杂度超限 ({ex.Message})");
                     frameDropped = true;
                 }
+                // 波 3B/B13:指针形状帧尾统一消费 —— 按当帧 Hovered(悬停形优先,指针跟手)/ Focused
+                // (聚焦形兜底)元素声明的 CursorShape 落 UiCursor(同形去重;声明树与浮层输入态都在
+                // InputState)。丢帧路径也照常应用(游标面不随丢帧冻结)。
+                UiCursor.ApplyFrameTail(input.Hovered, input.Focused);
                 if (!frameDropped)
                 {
                     w.Renderer.Submit(mesh, screen, w.Scale);
@@ -282,6 +291,9 @@ public sealed class App
             w.Window.Dispose();   // 生命周期归 App:退出销毁残留原生窗(主窗 Close 仅置标记;对齐旧窗口层 Close 即销毁的零泄漏语义)
             _liveWindows.Remove(w);   // 波 3A/B21:VSync 静态面簿记随窗出列
         }
+        Atlas = null;   // 波 3B:teardown 复位静态服务定位 —— 上行已 Dispose 图集,静态引用悬挂(dangling);
+                        // Run 退出后任何文本度量(同进程顺序二次建 App 前的间隙、测试 harness)将触已释放
+                        // 原生句柄(实测 FreeType 0xC0000005)。Run 帧首/每窗均重赋,下次 Run 语义不变。
         return exitCode;
     }
 

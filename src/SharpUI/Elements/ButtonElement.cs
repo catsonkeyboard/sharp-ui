@@ -23,6 +23,9 @@ public sealed class ButtonElement : PanelElement, IActivatable
     /// <summary>IActivatable:按钮无禁用态,恒可激活。</summary>
     public bool CanActivate => true;
 
+    /// <summary>可点击控件 → Hand(波 3B/B13;帧尾按 Hovered/Focused 元素声明统一消费)。</summary>
+    public override CursorShape CursorShape => CursorShape.Hand;
+
     public override void Draw(in PaintContext pc)
     {
         string? id = ResolvedId;

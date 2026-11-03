@@ -88,4 +88,37 @@ public sealed class AppWindow
         add => Window.DropCompleted += value;
         remove => Window.DropCompleted -= value;
     }
+
+    // ---- 窗口管理 API 开放(波 3B/B3/B4):SdlWindow 公共方法透传(Window 为 internal 字段,
+    // 本类是应用侧唯一入口,同事件面)。已 Dispose 的窗由 SdlWindow 侧静默返回(句柄 Zero 门)。
+    // 任务稿 "Focus()" 与既有 internal 字段 AppWindow.Focus(FocusManager,多窗焦点管理)同名冲突
+    // (CS0102 成员重名),按实码取 SdlWindow 同名方法 FocusInput 透传(报告写明)。
+
+    /// <summary>设置窗口标题(SDL_SetWindowTitle,UTF-8 封送)。</summary>
+    public void SetTitle(string title) => Window.SetTitle(title);
+
+    /// <summary>设置客户区左上坐标(SDL_SetWindowPosition;SDL_WINDOWPOS_* 值可透传)。</summary>
+    public void SetPosition(int x, int y) => Window.SetPosition(x, y);
+
+    /// <summary>设置客户区尺寸(SDL_SetWindowSize;平台最小窗宽钳制与 resize 回读语义同 Width/Height)。</summary>
+    public void SetSize(int width, int height) => Window.SetSize(width, height);
+
+    /// <summary>最小化(SDL_MinimizeWindow)。</summary>
+    public void Minimize() => Window.Minimize();
+
+    /// <summary>最大化(SDL_MaximizeWindow)。</summary>
+    public void Maximize() => Window.Maximize();
+
+    /// <summary>还原常规尺寸/位置(SDL_RestoreWindow)。</summary>
+    public void Restore() => Window.Restore();
+
+    /// <summary>切换全屏(SDL_SetWindowFullscreen):desktop 模式(合成的桌面分辨率全屏),返回 SDL
+    /// 语义成败(部分 WM 拒绝,调用方裁量;失败窗口状态不变)。</summary>
+    public bool SetFullscreen(bool enable) => Window.SetFullscreen(enable);
+
+    /// <summary>请求输入焦点(SDL_SetWindowInputFocus;返回 SDL 语义成败 —— 部分 WM 拒绝跨窗抢焦点)。</summary>
+    public bool FocusInput() => Window.FocusInput();
+
+    /// <summary>置顶并激活(SDL_RaiseWindow)。</summary>
+    public void Raise() => Window.Raise();
 }

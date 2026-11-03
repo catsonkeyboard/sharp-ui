@@ -107,12 +107,16 @@ public sealed class FocusManager
     public bool IsFocused(Element e) =>
         e.ResolvedId is not null && e.ResolvedId == _focusedId;
 
-    /// <summary>键路由(Tab/Escape/激活/Radio 方向键/Slider 方向微调)。session 为 null 时激活仍触发 InvokeClick,但跳过 QueueClick(纯焦点单测免会话)。</summary>
+    /// <summary>键路由(Tab/Escape/激活/Radio 方向键/Slider 方向微调)。session 为 null 时激活仍触发 InvokeClick,但跳过 QueueClick(纯焦点单测免会话)。
+    /// 波 3B(B12/A7):长按自动重复跳过激活/Tab/导航分支 —— 重复 Tab 不移焦、重复 Enter/Space 不重复激活、
+    /// 重复方向键/Home/End 不重导航(Radio 环移/Slider 微调同门)。文本编辑(BackSpace/方向键经
+    /// FeedFocused → TextEditing.Apply)不经本方法,repeat 语义保留。</summary>
     public void HandleKeys(ReadOnlySpan<KeyEventData> keys, InputSession? session = null)
     {
         foreach (KeyEventData ke in keys)
         {
             if (!ke.Down) continue;
+            if (ke.IsRepeat && IsRepeatGated(ke.Key)) continue;   // 波 3B/B12/A7(见方法注)
             switch (ke.Key)
             {
                 case Key.Tab:
@@ -173,6 +177,12 @@ public sealed class FocusManager
             ? cur
             : null;
     }
+
+    /// <summary>repeat 门(波 3B/B12):UI 导航/激活语义键集合 —— 长按自动重复跳过对应分支。
+    /// Escape 不在集合(重复 Esc 的浮层弹出/清焦为既有行为,任务口径仅"激活/Tab/导航分支")。</summary>
+    static bool IsRepeatGated(Key key) =>
+        key is Key.Tab or Key.Enter or Key.KeypadEnter or Key.Space
+            or Key.Left or Key.Up or Key.Right or Key.Down or Key.Home or Key.End;
 
     /// <summary>方向键/Home/End 微调路由(T3):聚焦元素实现 IKeySteerable(SliderElement)则先予消费,
     /// 返回 true 即短路 —— Slider 聚焦时方向键调值不移焦;非 Steerable(Radio/Button/Checkbox)保持

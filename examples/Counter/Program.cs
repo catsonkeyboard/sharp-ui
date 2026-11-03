@@ -15,6 +15,9 @@ internal sealed class CounterState
 
     // D6 菜单/子菜单演示回显状态(裁定#47)
     public string MenuPicked = "none";
+
+    // 波 3B/B5:文件拖放回显(app.MainWindow.FileDropped 接线演示)
+    public string? DroppedFile;
 }
 
 internal static class Program
@@ -34,6 +37,7 @@ internal static class Program
                 new MenuSub("More",
                     new MenuItem("+100", () => { state.Count += 100; state.MenuPicked = "+100"; }),
                     new MenuItem("Zero", () => { state.Count = 0; state.MenuPicked = "Zero"; }))));
+            app.MainWindow.FileDropped += path => state.DroppedFile = path;   // 波 3B/B5:拖放接线演示(主窗应用面)
             return Column(
                 Ui.Text("Counter").Size(28).Bold().Color(0xE8E8EC),
                 Ui.Text(state.Count.ToString()).Size(48).Color(0x7AA2F7),
@@ -63,7 +67,8 @@ internal static class Program
                 Ui.VirtualList("ticks", 1000, 22f, static (i, row) =>
                     row.Add(Ui.Text($"tick {i:0000}").Size(13).Color(0x7AA2F7))).Basis(110f).Fill(0x101014).Radius(8f),
                 Ui.Text("你好 SharpUI 😀").Size(15).Color(0x9AA2B3),
-                Ui.TextField("type here…").Key("edit").FocusOnStart(),
+                Ui.Text(state.DroppedFile is { } df ? $"drop = {df}" : "drop a file onto the window").Size(13).Color(0x9AA2B3),
+                Ui.TextField("type here… (Ctrl+Z undo / Ctrl+Y redo)").Key("edit").FocusOnStart(),
                 Ui.Immediate("debug", ui =>
                 {
                     ui.Text($"count = {state.Count}", 14, 0x9AA2B3);

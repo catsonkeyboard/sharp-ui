@@ -89,6 +89,9 @@ internal sealed class MenuItemElement : Element, IActivatable, IKeySteerable
     /// <summary>IActivatable:禁用拒激活(点击账本与回调一致)。</summary>
     public bool CanActivate => _enabled;
 
+    /// <summary>菜单项可点击 → Hand(波 3B/B13;帧尾按 Hovered/Focused 元素声明统一消费)。</summary>
+    public override CursorShape CursorShape => CursorShape.Hand;
+
     /// <summary>激活漏斗:MenuSub 父项展开子菜单;叶子 MenuItem 用户回调先行(回调内可再开浮层),随后收起整棵菜单树。</summary>
     public void InvokeClick()
     {

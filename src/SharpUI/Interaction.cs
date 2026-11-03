@@ -9,7 +9,9 @@ public readonly record struct KeyEventData(Key Key, bool Down, bool Shift, bool 
 
 /// <summary>App 从 SDL InputSnapshot 经 InputMapper 映射;LeftHeld 为持久按键态(D15);WheelDelta 为滚轮增量(D19)。
 /// Chars 为字符通道(D22):源自 KeyCharPresses 的当帧文本输入,空则 null。ButtonEvents 为全按钮事件
-/// 通道(波 3A/B2/B10,含 clicks;快照 ButtonEvents 的数组拷贝,空则 null)—— 右键/中键/双击消费接线留 3B。</summary>
+/// 通道(波 3A/B2/B10,含 clicks;快照 ButtonEvents 的数组拷贝,空则 null)。波 3B(B2/B10)消费接线:
+/// 右键 → Interaction 的 RightClickedIds 账本(ContextRequested 语义);clicks&gt;1 → DoubleClickedIds;
+/// 中键/X1/X2 记账(全通道透传至本字段)不消费。</summary>
 public readonly record struct RawInput(
     PointF Mouse, bool[] LeftEvents, KeyEventData[]? KeyEvents = null, bool LeftHeld = false,
     float WheelDelta = 0f, char[]? Chars = null, MouseButtonEventData[]? ButtonEvents = null);
@@ -54,9 +56,25 @@ public readonly record struct InputState(
     /// <summary>拖拽捕获原语(T2):捕获中的元素稳定 id;null=无。LeftDown 命中 CapturesDrag 元素时置位,
     /// LeftUp 释放;捕获期间 HoveredId 锁定捕获者(HitTest 路径旁路),新 LeftDown 覆盖旧捕获。
     /// 按窗口会话隔离(同 PressedOn),本字段为当帧快照。</summary>
-    string? CapturedId = null)
+    string? CapturedId = null,
+    /// <summary>本帧右键点击(按下+松开同元素)的 id 账本(波 3B/B2,ContextRequested 语义)。
+    /// 独立于左键按压/激活/焦点语义(独立通道)。调用方不得跨帧持有该列表(别名复用内部缓冲)。</summary>
+    IReadOnlyList<string>? RightClickedIds = null,
+    /// <summary>本帧完成双击(clicks&gt;1 的松开完成按下+松开同元素)的 id 账本(波 3B/B10)。
+    /// 不设 IActivatable 门 —— 词选等消费面(TextField 非 IActivatable)亦入账。调用方不得跨帧持有。</summary>
+    IReadOnlyList<string>? DoubleClickedIds = null)
 {
     public static readonly InputState Empty = new(new PointF(-1f, -1f), false, false, false, null);
+
+    /// <summary>右键上下文请求语义(波 3B/B2):id 是否在本帧右键点击账本(按下+松开同元素)。
+    /// 右键通道独立于左键按压语义 —— 上下文菜单消费方据此帧内开菜单;无账本/未命中恒 false(零分配)。</summary>
+    public bool ContextRequested(string id)
+    {
+        if (RightClickedIds is null) return false;
+        foreach (string clicked in RightClickedIds)
+            if (string.Equals(clicked, id, StringComparison.Ordinal)) return true;
+        return false;
+    }
 }
 
 /// <summary>每窗输入会话(T6 多窗):按下目标/捕获者/点击账本/键盘激活队列按窗口隔离,取代 Interaction 静态字段。
@@ -68,6 +86,9 @@ public sealed class InputSession
     internal string? PressedOn;   // 按下瞬间的命中元素稳定 id;点击 = 按下与松开同 id(规格书 D10)
     internal string? CapturedId;  // 捕获中的元素稳定 id(T2 捕获原语);null=无 —— LeftUp 释放,新 LeftDown 覆盖
     internal readonly List<string> Clicks = new();
+    internal readonly List<string> RightClicks = new();    // 波 3B/B2:右键点击账本(独立通道,见 InputState.RightClickedIds)
+    internal readonly List<string> DoubleClicks = new();   // 波 3B/B10:双击账本(clicks>1 完成的点击)
+    internal string? RightPressedOn;   // 右键按下瞬间的命中元素稳定 id(独立通道,不与 PressedOn 交互)
     internal readonly List<string> Queued = new();   // 键盘激活排队:下一帧 Update 开头并入账本(裁定#18)
 }
 
@@ -101,13 +122,21 @@ public static class Interaction
             : root.HitTest(raw.Mouse);
         string? capturedAtFrameStart = session.CapturedId;   // 上帧遗留捕获(跨帧拖拽)
         session.Clicks.Clear();
+        session.RightClicks.Clear();
+        session.DoubleClicks.Clear();
         if (session.Queued.Count > 0)   // 键盘激活(裁定#18):先清当帧再并入上一帧队列
         {
             session.Clicks.AddRange(session.Queued);
             session.Queued.Clear();
         }
-        foreach (bool down in raw.LeftEvents)
+        // 波 3B/B10:左键事件序对齐的 SDL clicks 计数(ButtonEvents 与 LeftEvents 同源同序 —— InputMapper
+        // 从同一全按钮通道派生左键序)。Update 路径仅在帧内有按钮事件时分配一次对齐数组(点击帧,非稳态)。
+        int[]? leftClicks = raw.ButtonEvents is null ? null : LeftClicksAligned(raw.ButtonEvents);
+        bool[] leftEvents = raw.LeftEvents;
+        for (int leftIndex = 0; leftIndex < leftEvents.Length; leftIndex++)
         {
+            bool down = leftEvents[leftIndex];
+            int clicks = leftClicks is not null && leftIndex < leftClicks.Length ? leftClicks[leftIndex] : 1;
             if (down)
             {
                 pressed = true;
@@ -145,16 +174,41 @@ public static class Interaction
                 Element? routed = session.CapturedId is not null
                     ? FindIn(root, top, session.CapturedId) ?? hovered
                     : hovered;
-                if (session.PressedOn is not null && routed?.ResolvedId == session.PressedOn
-                    && routed is IActivatable act && act.CanActivate)
+                if (session.PressedOn is not null && routed?.ResolvedId == session.PressedOn)
                 {
-                    act.InvokeClick();
-                    if (routed.ResolvedId is string id) session.Clicks.Add(id);
+                    if (routed is IActivatable act && act.CanActivate)
+                    {
+                        act.InvokeClick();
+                        if (routed.ResolvedId is string id) session.Clicks.Add(id);
+                    }
+                    // 波 3B/B10:clicks>1(第二次/三次松开完成按下+松开同元素)→ 双击账本。
+                    // 不设 IActivatable 门:词选消费面(TextField 非 IActivatable)亦入账;
+                    // 激活回调仍只走 IActivatable 既有门(账本与回调一致的约束仅约束 ClickedIds)。
+                    if (routed?.ResolvedId is string dblId && clicks > 1) session.DoubleClicks.Add(dblId);
                 }
                 session.PressedOn = null;
                 session.CapturedId = null;   // LeftUp 释放捕获
             }
         }
+        // 波 3B/B2:右键独立通道 —— 不触发左键按压语义(不置 PressedOn/CapturedId、不 SetFocus);
+        // 按下+松开同元素 → RightClickedIds 账本(ContextRequested 语义)。中键/X1/X2 不入账
+        // (全按钮通道已透传至 RawInput.ButtonEvents 记账,消费留后续)。
+        if (raw.ButtonEvents is not null)
+            foreach (MouseButtonEventData be in raw.ButtonEvents)
+            {
+                if (be.Button != MouseButton.Right) continue;
+                if (be.Down)
+                {
+                    session.RightPressedOn = hovered?.ResolvedId;
+                }
+                else
+                {
+                    if (session.RightPressedOn is not null && hovered?.ResolvedId == session.RightPressedOn
+                        && hovered?.ResolvedId is string rightId)
+                        session.RightClicks.Add(rightId);
+                    session.RightPressedOn = null;
+                }
+            }
         bool leftDown = (raw.LeftHeld && !released) || pressed;
         // 捕获期间 HoveredId 锁定捕获者:捕获进行中按捕获者报告(HitTest 旁路的 Motion 面);
         // 本帧 Up 收尾的释放帧仍按捕获期报告(捕获持续到 Up 生效),下一帧回归空间命中。
@@ -170,7 +224,20 @@ public static class Interaction
             HoveredId: hoverEffective?.ResolvedId,
             ClickedIds: session.Clicks.Count > 0 ? session.Clicks : null,
             WheelDelta: raw.WheelDelta,
-            CapturedId: session.CapturedId);
+            CapturedId: session.CapturedId,
+            RightClickedIds: session.RightClicks.Count > 0 ? session.RightClicks : null,
+            DoubleClickedIds: session.DoubleClicks.Count > 0 ? session.DoubleClicks : null);
+    }
+
+    /// <summary>全按钮通道 → 左键序对齐的 clicks 数组(波 3B/B10):第 n 个左键事件(按下或松开)的
+    /// SDL clicks 计数,与 LeftEvents 的左键过滤序一一对应。</summary>
+    static int[] LeftClicksAligned(MouseButtonEventData[] events)
+    {
+        var clicks = new int[events.Length];
+        int n = 0;
+        foreach (MouseButtonEventData e in events)
+            if (e.Button == MouseButton.Left) clicks[n++] = e.Clicks;
+        return clicks;
     }
 
     /// <summary>id 定位:声明树优先,栈顶浮层树兜底(D5 —— 浮层内捕获/悬停锁定的 Find 路径;

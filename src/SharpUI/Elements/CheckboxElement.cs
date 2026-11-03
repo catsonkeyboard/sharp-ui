@@ -54,6 +54,9 @@ public sealed class CheckboxElement : PanelElement, IActivatable
     /// <summary>IActivatable:禁用拒激活(指针/键盘统一门,账本与回调一致)。</summary>
     public bool CanActivate => _enabled;
 
+    /// <summary>可点击控件 → Hand(波 3B/B13;帧尾按 Hovered/Focused 元素声明统一消费)。</summary>
+    public override CursorShape CursorShape => CursorShape.Hand;
+
     /// <summary>切换语义:指针 = 按下+松开同元素;键盘 = 聚焦+Space/Enter。各触发一次 onChanged(!isChecked)。</summary>
     public void InvokeClick()
     {
