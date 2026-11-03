@@ -33,6 +33,8 @@ public sealed class App
     /// <summary>开新窗并入队(帧中调用则下一帧纳入 Run 循环);每窗独立设备/上下文/图集/焦点/输入会话。</summary>
     public AppWindow OpenWindow(string title, int w, int h, Func<Element> render)
     {
+        Debug.Assert(SdlWindow.UiThreadId == 0 || Environment.CurrentManagedThreadId == SdlWindow.UiThreadId,
+            SdlWindow.UiThreadAffinityMessage);   // A8:与 Run 迭代/泵同线程(List 撕裂 + SDL 亲和)
         AppWindow window = CreateWindow(title, w, h, render);
         Windows.Add(window);
         return window;
@@ -79,6 +81,16 @@ public sealed class App
             Render = render ?? (static () => new Spacer(SizeF.Zero)),   // null render:Spacer 兜底(单窗语义保持)
         };
         window.FocusLost += () => Interaction.CancelPress(w.Session);   // D15:失焦取消该窗按压
+        // 审计修复波 2B(A10):设备丢失事件化接线(仅 D3D11 触发;GL/Metal 恒不触发,平台机制不同)。
+        // 修复前 Present/Map 检出 DXGI 设备丢失类 hr 即抛 InvalidOperationException 冒穿 Run 整进程崩;
+        // 现上下文触发 DeviceLost 并进入静默失败态,本订阅负责应用响应:诊断 + 置该窗 closing —— 主窗
+        // 丢失 → Run 循环优雅退出(任务"置主窗 closing"语义);次窗丢失 → 帧尾移除路径正常销毁,破坏面
+        // 收窄到单窗。设备热重建恢复留后续波次。仅建窗即订一次(CreateWindow 为唯一建窗路径)。
+        w.Ctx.DeviceLost += () =>
+        {
+            Console.Error.WriteLine($"[SharpUI] 设备丢失响应:窗 #{window.WindowId} 置 closing(优雅退出;设备热重建恢复留后续波次)");
+            window.Close();
+        };
         w.Session.SdlWindow = window.SdlWindowHandle;   // D5:浮层命中优先/外点消费按窗接线(PopupHost 服务定位)
         w.Focus.ScreenSize = new SizeF(window.Width / scale, window.Height / scale);   // D6 T1:菜单默认翻转钳制基准
         FocusManager.BindWindow(window.SdlWindowHandle, w.Focus);   // D6 T2:同步置 w.Focus.SdlWindow 唯一真相 + _byWindow 入口桥
@@ -99,6 +111,8 @@ public sealed class App
 
     public int Run(int maxFrames = 0)
     {
+        Debug.Assert(SdlWindow.UiThreadId == 0 || Environment.CurrentManagedThreadId == SdlWindow.UiThreadId,
+            SdlWindow.UiThreadAffinityMessage);   // A8:Run 循环(泵/快照/静态簿记)单线程契约
         State = new StateStore();
         var mesh = new MeshBuilder();
         AppWindow main = Main;

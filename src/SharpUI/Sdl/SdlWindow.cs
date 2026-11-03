@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace SharpUI;
 
 /// <summary>窗口 flags(T1 已按 SDL_video.h SDL_WindowFlags L104-127 实数核;计划稿 "Shown=0x10、
@@ -45,11 +47,26 @@ public sealed class SdlWindow : IDisposable
     bool _closing;   // Close() 请求(App 移除路径随后 Dispose)
     bool _closed;    // QUIT/窗口 Close 事件(MarkClosed)或已 Dispose
 
+    // ---- 审计修复波 2B(A8):UI 线程亲和契约 ----
+    // SDL 事件队列线程亲和(macOS 严格主线程;Windows/Linux 亦须与建窗线程一致 poll)+ 全部静态簿记
+    // (SdlPump._windows/PopupHost._stacks/FocusManager._byWindow/App.Windows 均普通容器)依赖单线程
+    // 约定(类注"线程模型"原为纯注释,零强制)。首个 SdlWindow 构造线程即 UI 线程;Debug.Assert 于
+    // SdlWindow 构造/SdlPump.PumpAll/App.Run/App.OpenWindow 四入口 —— Release 编译消除零成本,Debug
+    // 下偏离即 FailFast(运行时强制/抛异常为后续波次选项)。
+    internal const string UiThreadAffinityMessage =
+        "SharpUI: UI 操作必须在创建首个窗口的线程上执行(SDL 事件队列线程亲和,macOS 严格主线程)";
+
+    /// <summary>UI 线程 id(A8 契约锚点):首个 SdlWindow 构造线程被记录;0 = 尚未建窗(无可违反的
+    /// 亲和,断言放行)。internal 供 SdlPump/App 断言与测试文档性验证。</summary>
+    internal static int UiThreadId { get; private set; }
+
     /// <summary>创建窗口(经 SdlEvents.CreateWindow → 活模块;视频子系统初始化幂等全候选)。失败抛
     /// InvalidOperationException(附 SDL_GetError)。窗口坐标 x/y 传 SDL_WINDOWPOS_* 常量值亦可
     /// (SDL_video.h L801-802:0x1FFF0000 系列,直接透传)。</summary>
     public SdlWindow(string title, int x, int y, int width, int height, SdlWindowFlags flags)
     {
+        if (UiThreadId == 0) UiThreadId = Environment.CurrentManagedThreadId;   // A8:首个建窗线程 = UI 线程
+        Debug.Assert(Environment.CurrentManagedThreadId == UiThreadId, UiThreadAffinityMessage);
         Backends.SdlNative.EnsureVideoInit();
         _handle = SdlEvents.CreateWindow(title, x, y, width, height, (uint)flags);
         if (_handle == IntPtr.Zero)
@@ -98,6 +115,24 @@ public sealed class SdlWindow : IDisposable
 
     /// <summary>输入焦点丢失(SDL_WINDOWEVENT FOCUS_LOST;D15 失焦取消按压的触发源)。</summary>
     public event Action? FocusLost;
+
+    /// <summary>窗口关闭可否决(审计修复波 2B/A3):窗口 CLOSE 事件与 SDL_QUIT 分发时逐订阅者调用,
+    /// 任一返回 false 即否决该窗本次关闭(窗口存活,Exists 不变);无订阅者或全部返回 true → 放行
+    /// MarkClosed。编辑器"未保存更改"场景拦截点(回调内可弹对话框/置延迟关闭标记,窗口保持存活);
+    /// 回调在泵调用线程同步执行。Close() 主动关闭不经此点(应用自请关闭即已知意图);AppWindow.Closing
+    /// 透传本事件(Window 为 internal,应用侧唯一入口)。</summary>
+    public event Func<bool>? Closing;
+
+    /// <summary>关闭放行判定(A3):无订阅者 → 放行;逐订阅者调用,任一返回 false → 否决。</summary>
+    internal bool AllowClose()
+    {
+        Func<bool>? closing = Closing;
+        if (closing is null) return true;
+        foreach (Func<bool> handler in closing.GetInvocationList())
+            if (!handler())
+                return false;
+        return true;
+    }
 
     /// <summary>请求关闭:置 closing 标记(Exists→false),原生窗口不动 —— 销毁随 App 移除路径 Dispose
     /// (与旧窗口层 Close 即销毁不同:所有权归 App 生命周期,避免泵回调中销毁的重入风险)。</summary>
@@ -185,7 +220,8 @@ public sealed class SdlWindow : IDisposable
 /// 事件吞吐由队列自限)—— 未注册 WindowId 的事件(前序测试窗口残留/已注销窗口尾部事件)安全丢弃,
 /// 等价于 T1 冒烟实证的"泵前遗留对本泵可见且必须排空"约束;仅无归属 MOUSEMOTION 默认传播(见
 /// Dispatch 注)。QUIT → 全部注册窗口 MarkClosed(进程级退出语义,旧窗口层逐窗 Close 的全局化)。
-/// 线程模型:UI 单线程(App.Run 帧)调用,不加锁(与 SDL 事件队列的线程约定一致)。</summary>
+/// 线程模型:UI 单线程(App.Run 帧)调用,不加锁(与 SDL 事件队列的线程约定一致;审计修复波 2B/A8
+/// 起 PumpAll 入口 Debug.Assert 强制 —— UI 线程 = 首个 SdlWindow 构造线程,见 SdlWindow.UiThreadId)。</summary>
 internal static class SdlPump
 {
     static readonly Dictionary<uint, SdlWindow> _windows = new();
@@ -194,6 +230,8 @@ internal static class SdlPump
     /// <summary>每帧一次:排空 SDL 事件队列并按 WindowId 分发到注册窗口。</summary>
     public static void PumpAll()
     {
+        Debug.Assert(SdlWindow.UiThreadId == 0 || Environment.CurrentManagedThreadId == SdlWindow.UiThreadId,
+            SdlWindow.UiThreadAffinityMessage);   // A8:事件 poll 线程亲和(macOS 严格主线程)
         while (SdlEvents.PollEvent(out SdlEvents.SdlEvent e))
             Dispatch(in e);
     }
@@ -226,8 +264,11 @@ internal static class SdlPump
         switch (e.Type)
         {
             case SdlEvents.EventTypeQuit:
-                foreach (SdlWindow w in _windows.Values)   // MarkClosed 不改字典,安全直接枚举
-                    w.MarkClosed();
+                // 审计修复波 2B(A3):QUIT 逐窗经 Closing 可否决 —— 部分允许时只对允许窗 MarkClosed
+                // (否决窗存活;主窗否决则 App.Run 循环不退出),全部允许即广播语义与修复前一致。
+                foreach (SdlWindow w in _windows.Values)   // AllowClose/MarkClosed 不改字典,安全直接枚举
+                    if (w.AllowClose())
+                        w.MarkClosed();
                 return;
             case SdlEvents.EventTypeWindow:
                 if (_windows.TryGetValue(e.WindowId, out SdlWindow? win))
@@ -292,7 +333,8 @@ internal static class SdlPump
                 w.RaiseFocusLost();
                 return;
             case SdlEvents.WindowEventClose:
-                w.MarkClosed();   // 旧窗口层此处调 Close()(即销毁);本层仅置标记,销毁归 App(见 SdlWindow.Close 注)
+                if (w.AllowClose())   // 审计修复波 2B(A3):Closing 订阅者可否决(任一 false → 窗口存活);修复前无条件 MarkClosed
+                    w.MarkClosed();   // 旧窗口层此处调 Close()(即销毁);本层仅置标记,销毁归 App(见 SdlWindow.Close 注)
                 return;
         }
         // 其余窗口子事件(SHOWN/HIDDEN/MOVED/EXPOSED/MINIMIZED/...)不消费,安全丢弃。

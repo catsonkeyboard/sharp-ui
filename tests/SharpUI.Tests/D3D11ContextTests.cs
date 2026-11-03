@@ -158,4 +158,36 @@ public class D3D11ContextTests
         using IRenderContext ctx = D3D11Context.CreateHeadless(64, 64);
         Assert.Equal(1024u, ctx.AtlasSize);
     }
+
+    // ---- 审计修复波 2B(A10):D3D11 设备丢失事件化 ----
+    // 修复前:Present/Map 检出 DXGI 设备丢失类 hr 即抛裸 InvalidOperationException 冒穿 App.Run;
+    // 现触发 IRenderContext.DeviceLost 事件并进入静默失败态(设备已死,等待应用层响应)。
+    // headless 上无法模拟真实设备移除(TDR/驱动升级)—— 完整触发路径验证留 CI/实机;本机最小验证 =
+    // 正常路径零误触发 + 判定面 hr 常量与 winerror.h 实数一致。
+
+    [Fact]
+    [Trait("Category", "Gpu")]
+    public void Headless_Present_NormalPath_DeviceLostNeverFires()
+    {
+        using IRenderContext ctx = D3D11Context.CreateHeadless(64, 64);
+        int fired = 0;
+        ctx.DeviceLost += () => fired++;
+        ctx.BeginFrame(0.07f, 0.07f, 0.08f, 1f);
+        ctx.Present();   // headless no-op:正常路径,不得误触发
+        Assert.Equal(0, fired);
+    }
+
+    [Fact]
+    public void IsDeviceLostHr_MatchesDxgiHeaderValues()   // 无 GPU 依赖:纯常量判定面
+    {
+        // 本机 Windows SDK 10.0.26100.0 winerror.h L59408-59471 实数(简报原稿 "DEVICE_RESET=
+        // 0x887A0006" 系笔误 —— 0x887A0006 实为 DEVICE_HUNG,RESET=0x887A0007)
+        Assert.True(D3D11Context.IsDeviceLostHr(unchecked((int)0x887A0005L)));   // DXGI_ERROR_DEVICE_REMOVED
+        Assert.True(D3D11Context.IsDeviceLostHr(unchecked((int)0x887A0006L)));   // DXGI_ERROR_DEVICE_HUNG
+        Assert.True(D3D11Context.IsDeviceLostHr(unchecked((int)0x887A0007L)));   // DXGI_ERROR_DEVICE_RESET
+        Assert.True(D3D11Context.IsDeviceLostHr(unchecked((int)0x887A0020L)));   // DXGI_ERROR_DRIVER_INTERNAL_ERROR
+        Assert.False(D3D11Context.IsDeviceLostHr(0));                            // S_OK 不误判
+        Assert.False(D3D11Context.IsDeviceLostHr(unchecked((int)0x887A0001L)));  // DXGI_ERROR_INVALID_CALL 不误判
+        Assert.False(D3D11Context.IsDeviceLostHr(unchecked((int)0x80070057L)));  // E_INVALIDARG 不误判
+    }
 }

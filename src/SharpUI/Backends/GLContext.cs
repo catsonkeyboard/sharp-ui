@@ -30,6 +30,13 @@ public sealed class GLContext : IRenderContext
     public uint TargetWidth { get; private set; }
     public uint TargetHeight { get; private set; }
 
+    /// <summary>设备丢失(IRenderContext 契约,审计修复波 2B/A10):GL 后端恒不触发 —— 无 DXGI 式
+    /// 进程内设备移除信号(GL 对象/上下文随平台显示会话生死,故障形态为 MakeCurrent/GL 调用失败抛
+    /// 异常,维持现状);设备热重建恢复同样留后续波次。</summary>
+#pragma warning disable CS0067   // 恒不触发为有意契约(接口成员实现;订阅侧 App 建窗接线统一接线,无副作用)
+    public event Action? DeviceLost;
+#pragma warning restore CS0067
+
     bool _disposed;
     readonly IntPtr _window;                 // SDL 窗口句柄(headless=自建持有;窗口路径=调用方窗口,不持有)
     readonly bool _ownsWindow;               // headless=true:Dispose 关窗;窗口路径=false(T4 持窗)

@@ -127,6 +127,14 @@ internal static class D3D11Native
     internal const uint DeviceFlagBgraSupport = 0x20;        // D3D11_CREATE_DEVICE_BGRA_SUPPORT
     internal const uint SdkVersion = 7;                      // D3D11_SDK_VERSION
 
+    // ---- 设备丢失 hr(winerror.h DXGI_ERROR 实数;本机 Windows SDK 10.0.26100.0 winerror.h
+    //      L59408-59471 核对,审计修复波 2B/A10。注:任务简报原稿 "DEVICE_RESET=0x887A0006" 系笔误
+    //      —— 0x887A0006 实为 DEVICE_HUNG,RESET=0x887A0007;DRIVER_INTERNAL_ERROR=0x887A0020) ----
+    internal const int DxgiErrorDeviceRemoved = unchecked((int)0x887A0005L);        // DXGI_ERROR_DEVICE_REMOVED
+    internal const int DxgiErrorDeviceHung = unchecked((int)0x887A0006L);           // DXGI_ERROR_DEVICE_HUNG
+    internal const int DxgiErrorDeviceReset = unchecked((int)0x887A0007L);          // DXGI_ERROR_DEVICE_RESET
+    internal const int DxgiErrorDriverInternalError = unchecked((int)0x887A0020L);  // DXGI_ERROR_DRIVER_INTERNAL_ERROR
+
     // GUID(dxgi.h L3119 / d3d11.h L15171 DEFINE_GUID 实字)
     internal static readonly Guid IidDxgiFactory1 = new("770aae78-f26f-4dba-a829-253c83d1b387");   // IID_IDXGIFactory1
     internal static readonly Guid IidTexture2D = new("6f15aaf2-d208-4e89-9ab4-489535d34f9c");       // IID_ID3D11Texture2D

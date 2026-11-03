@@ -28,7 +28,34 @@ public sealed class D3D11Context : IRenderContext
     internal uint FeatureLevel => _featureLevel;
 
     bool _disposed;
+    bool _deviceLost;   // 审计修复波 2B/A10:设备丢失后的静默失败态门(见 OnDeviceLost 注)
     uint _featureLevel;
+
+    // ---- 设备丢失事件化(审计修复波 2B/A10) ----
+
+    /// <summary>设备丢失(IRenderContext 契约):Present/Map 帧路径检出 DXGI 设备丢失类 hr 时触发恰一次
+    /// —— 设备已死,上下文进入静默失败态(后续帧操作 no-op,等待应用层响应:App 建窗接线置窗 closing
+    /// 优雅退出;设备热重建恢复留后续波次)。修复前 hr 失败即抛裸 InvalidOperationException 冒穿
+    /// App.Run 整进程崩溃;非设备丢失 hr 维持抛出。</summary>
+    public event Action? DeviceLost;
+
+    /// <summary>设备丢失 hr 判定(D3D11Native 常量,winerror.h 实数):REMOVED/HUNG/RESET/
+    /// DRIVER_INTERNAL_ERROR 四类 —— 驱动升级/TDR/睡眠恢复/显示器拓扑变化/驱动内部错误的全部形态。</summary>
+    internal static bool IsDeviceLostHr(int hr) =>
+        hr == D3D11Native.DxgiErrorDeviceRemoved || hr == D3D11Native.DxgiErrorDeviceHung ||
+        hr == D3D11Native.DxgiErrorDeviceReset || hr == D3D11Native.DxgiErrorDriverInternalError;
+
+    /// <summary>进入设备丢失态:置门 → 诊断 → 触发事件(恰一次;触发后本上下文不再抛设备丢失类
+    /// 错误,后续帧操作经 _deviceLost 门静默失败)。UpdateSubresource/ClearRenderTargetView 等无返回值
+    /// API 在丢失态静默无效(D-5 已知限制),其输出同样随本门 no-op。</summary>
+    void OnDeviceLost(int hr, string where)
+    {
+        if (_deviceLost) return;
+        _deviceLost = true;
+        Console.Error.WriteLine(
+            $"[SharpUI] D3D11 设备丢失 hr=0x{hr:X8}({where}):DeviceLost 事件已触发,后续帧操作静默失败直至应用层响应");
+        DeviceLost?.Invoke();
+    }
 
     // ---- COM 对象(引用计数经 ReleaseTrace 公平退场) ----
     IntPtr _factory, _adapter, _device, _context;
@@ -161,6 +188,7 @@ public sealed class D3D11Context : IRenderContext
     public void Resize(uint width, uint height)
     {
         ThrowIfDisposed();
+        if (_deviceLost) return;   // A10:设备已死,静默失败(等应用层响应)
         ValidateSize(width, height);
         if (_swapChain == IntPtr.Zero)
             throw new NotSupportedException("headless 上下文不支持 Resize(离屏目标尺寸随重建变更)");
@@ -180,6 +208,7 @@ public sealed class D3D11Context : IRenderContext
     public void UpdateAtlasRegion(byte[] rgba, uint x, uint y, uint width, uint height)
     {
         ThrowIfDisposed();
+        if (_deviceLost) return;   // A10:设备已死,静默失败
         ArgumentNullException.ThrowIfNull(rgba);
         if (width == 0 || height == 0) return;
         if (x + width > AtlasSize || y + height > AtlasSize)
@@ -200,6 +229,7 @@ public sealed class D3D11Context : IRenderContext
     public void BeginFrame(float r, float g, float b, float a)
     {
         ThrowIfDisposed();
+        if (_deviceLost) return;   // A10:设备已死,静默失败
         _rtvSlot[0] = _rtv;
         _omSetRenderTargets(_context, 1, _rtvPin.AddrOfPinnedObject(), IntPtr.Zero);
         _viewportArr[0] = new D3D11Native.Viewport
@@ -215,6 +245,7 @@ public sealed class D3D11Context : IRenderContext
     public void SetScreenSize(float logicalWidth, float logicalHeight)
     {
         ThrowIfDisposed();
+        if (_deviceLost) return;   // A10:设备已死,静默失败
         _cb[0] = logicalWidth;
         _cb[1] = logicalHeight;
         _updateSubresource(_context, _constantBuffer, 0, IntPtr.Zero, _cbPin.AddrOfPinnedObject(), 0, 0);
@@ -224,6 +255,7 @@ public sealed class D3D11Context : IRenderContext
     public void SetScissor(uint x, uint y, uint w, uint h)
     {
         ThrowIfDisposed();
+        if (_deviceLost) return;   // A10:设备已死,静默失败
         _scissorRect[0] = (int)x;
         _scissorRect[1] = (int)y;
         _scissorRect[2] = checked((int)(x + w));
@@ -248,6 +280,7 @@ public sealed class D3D11Context : IRenderContext
     public void Draw(UiVertex[] vertices, int vertexCount, ushort[] indices, uint indexCount, uint startIndex)
     {
         ThrowIfDisposed();
+        if (_deviceLost) return;   // A10:设备已死,静默失败
         ArgumentNullException.ThrowIfNull(vertices);
         ArgumentNullException.ThrowIfNull(indices);
         if (vertexCount < 0 || vertexCount > vertices.Length)
@@ -265,7 +298,12 @@ public sealed class D3D11Context : IRenderContext
             int hrVb = _map(_context, _vertexBuffer, 0, D3D11Native.MapWriteDiscard, 0,
                 out D3D11Native.MappedSubresource mappedVb);
             if (hrVb < 0 || mappedVb.Data == IntPtr.Zero)
+            {
+                // A10:设备丢失类 hr 触发事件并不再抛(修复前 ThrowHr 冒穿 App.Run);finally 释放 pins,
+                // 无 Unmap 残留(Map 失败无映射)。其余失败维持显式抛出。
+                if (hrVb < 0 && IsDeviceLostHr(hrVb)) { OnDeviceLost(hrVb, "Draw/Map(vertex)"); return; }
                 ThrowHr("ID3D11DeviceContext::Map(vertex, WRITE_DISCARD)", hrVb, D3D11Native.SlotCtxMap);
+            }
             D3D11Native.CopyMemory(mappedVb.Data, vp.AddrOfPinnedObject(),
                 (UIntPtr)((long)vertexCount * UiVertex.SizeInBytes));
             _unmap(_context, _vertexBuffer, 0);   // 映射中的缓冲不得被管线消费,先解映射再落地状态
@@ -273,7 +311,10 @@ public sealed class D3D11Context : IRenderContext
             int hrIb = _map(_context, _indexBuffer, 0, D3D11Native.MapWriteDiscard, 0,
                 out D3D11Native.MappedSubresource mappedIb);
             if (hrIb < 0 || mappedIb.Data == IntPtr.Zero)
+            {
+                if (hrIb < 0 && IsDeviceLostHr(hrIb)) { OnDeviceLost(hrIb, "Draw/Map(index)"); return; }
                 ThrowHr("ID3D11DeviceContext::Map(index, WRITE_DISCARD)", hrIb, D3D11Native.SlotCtxMap);
+            }
             D3D11Native.CopyMemory(mappedIb.Data,
                 IntPtr.Add(ip.AddrOfPinnedObject(), (int)(startIndex * sizeof(ushort))),
                 (UIntPtr)((long)indexCount * sizeof(ushort)));
@@ -295,14 +336,20 @@ public sealed class D3D11Context : IRenderContext
         _drawIndexed(_context, indexCount, 0, 0);   // 分段已重定基到缓冲头,偏移恒 0
     }
 
-    /// <summary>呈现:窗口 Present(1,0) VSync,hr 失败抛(设备丢失显式失败);headless no-op。</summary>
+    /// <summary>呈现:窗口 Present(1,0) VSync;headless no-op。设备丢失(审计修复波 2B/A10):
+    /// hr ∈ {DEVICE_REMOVED/HUNG/RESET/DRIVER_INTERNAL_ERROR} → 触发 DeviceLost 事件并不再抛
+    /// (设备已死,等应用层响应;后续帧操作经 _deviceLost 门静默失败);其余 hr 维持显式抛出。</summary>
     public void Present()
     {
         ThrowIfDisposed();
+        if (_deviceLost) return;                 // A10:设备已死,静默失败
         if (_swapChain == IntPtr.Zero) return;   // headless no-op
         int hr = _present(_swapChain, 1, 0);
         if (hr < 0)
-            throw new InvalidOperationException($"IDXGISwapChain::Present(1,0) 失败 hr=0x{hr:X8}(设备丢失显式失败)");
+        {
+            if (IsDeviceLostHr(hr)) { OnDeviceLost(hr, nameof(Present)); return; }
+            throw new InvalidOperationException($"IDXGISwapChain::Present(1,0) 失败 hr=0x{hr:X8}");
+        }
     }
 
     /// <summary>读回主目标(GPU 测试用):惰性 staging 纹理 + CopyResource + Map READ,按 RowPitch 逐行拷
@@ -310,6 +357,8 @@ public sealed class D3D11Context : IRenderContext
     public byte[] ReadBackMainFramebuffer()
     {
         ThrowIfDisposed();
+        if (_deviceLost)
+            throw new InvalidOperationException("设备已丢失(DeviceLost 已触发),读回不可用 —— 测试/诊断路径显式失败,非静默");   // A10:读回无"静默空结果"语义,显式报
         IntPtr source = _mainTexture != IntPtr.Zero ? _mainTexture : _backBuffer;
         if (source == IntPtr.Zero)
             throw new InvalidOperationException("主目标不可用(headless 与窗口路径二选一)");

@@ -40,4 +40,11 @@ public interface IRenderContext : IDisposable
 
     /// <summary>呈现(窗口路径 Present(1,0) VSync;headless no-op)。</summary>
     void Present();
+
+    /// <summary>设备丢失(审计修复波 2B/A10):后端帧路径(Present/Map 等)检出设备丢失类错误时触发
+    /// 恰一次,之后该上下文的一切帧操作静默失败(设备已死,等待应用层重建或退出)—— 触发不抛异常,
+    /// 修复前 D3D11 的裸 InvalidOperationException 冒穿 App.Run 整进程崩溃。订阅方(App 建窗接线)负责
+    /// 优雅退出。仅 D3D11 实现;GL/Metal 恒不触发(GL 无进程内设备移除信号,故障形态为 GL 调用失败
+    /// 抛异常维持现状;Metal MTLDevice 失效随系统会话,恢复路径待 CI 实机)。</summary>
+    event Action? DeviceLost;
 }

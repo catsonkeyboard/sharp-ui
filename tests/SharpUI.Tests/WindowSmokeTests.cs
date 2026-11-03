@@ -203,4 +203,48 @@ public class WindowSmokeTests
             App.Atlas = null;
         }
     }
+
+    /// <summary>审计修复波 2B(A3):AppWindow.Closing 透传 SdlWindow.Closing(Window 为 internal 字段,
+    /// 本事件为应用侧唯一关闭否决入口)。订阅返回 false → 合成 CLOSE 事件后底层窗存活;移除订阅 → 放行。
+    /// (SdlWindow.Closing 本体的否决/放行/无订阅者矩阵由 SdlWindowTests 承证,此处锁 AppWindow 透传面。)</summary>
+    [Fact]
+    [Trait("Category", "Gpu")]
+    public void AppWindow_Closing_ForwardsVetoToUnderlyingWindow()
+    {
+        string? old = Environment.GetEnvironmentVariable("SHARPUI_BACKEND");
+        try
+        {
+            Environment.SetEnvironmentVariable("SHARPUI_BACKEND", "d3d11");
+            AppWindow w = App.CreateWindow("sharpui-2b-apw-closing", 200, 150, null);
+            try
+            {
+                Func<bool> veto = () => false;
+                w.Closing += veto;
+                w.Window.InjectTest(new SdlEvents.SdlEvent
+                {
+                    Type = SdlEvents.EventTypeWindow,
+                    WindowId = w.Window.WindowId,
+                    WindowEventCode = SdlEvents.WindowEventClose,
+                });
+                Assert.True(w.Window.Exists);   // 经 AppWindow 订阅的否决生效
+
+                w.Closing -= veto;
+                w.Window.InjectTest(new SdlEvents.SdlEvent
+                {
+                    Type = SdlEvents.EventTypeWindow,
+                    WindowId = w.Window.WindowId,
+                    WindowEventCode = SdlEvents.WindowEventClose,
+                });
+                Assert.False(w.Window.Exists);  // 订阅移除 → 放行(默认关闭语义不变)
+            }
+            finally
+            {
+                w.Renderer.Dispose();
+                w.Ctx.Dispose();
+                w.Atlas.Dispose();
+                w.Window.Dispose();
+            }
+        }
+        finally { Environment.SetEnvironmentVariable("SHARPUI_BACKEND", old); }
+    }
 }

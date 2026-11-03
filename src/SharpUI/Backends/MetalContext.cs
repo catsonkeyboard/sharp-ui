@@ -32,6 +32,13 @@ internal sealed class MetalContext : IRenderContext
     public uint TargetWidth { get; private set; }
     public uint TargetHeight { get; private set; }
 
+    /// <summary>设备丢失(IRenderContext 契约,审计修复波 2B/A10):Metal 后端恒不触发 —— MTLDevice
+    /// 无进程内"移除"事件(设备失效随系统显示会话,重连走平台通知);恢复路径待 CI 实机(M2b 记账),
+    /// 届时随窗口路径一并落地。</summary>
+#pragma warning disable CS0067   // 恒不触发为有意契约(接口成员实现;订阅侧 App 建窗接线统一接线,无副作用)
+    public event Action? DeviceLost;
+#pragma warning restore CS0067
+
     bool _disposed;
 
     // ---- Metal 对象(new*/C 导出 +1 持有,Dispose 经 SelRelease 配对; autorelease 族 +0 不持) ----

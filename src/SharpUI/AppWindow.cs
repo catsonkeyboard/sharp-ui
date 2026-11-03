@@ -19,4 +19,13 @@ public sealed class AppWindow
 
     /// <summary>构建闭包;App.Create/OpenWindow 的 null render 以空 Spacer 兜底(单窗语义保持)。</summary>
     public Func<Element> Render = static () => new Spacer(SizeF.Zero);
+
+    /// <summary>窗口关闭可否决(审计修复波 2B/A3,透传 SdlWindow.Closing —— Window 为 internal 字段,
+    /// 本事件为应用侧唯一关闭否决入口):窗口 CLOSE 事件/SDL_QUIT 分发时逐订阅者调用,任一返回 false
+    /// 即否决该窗本次关闭(窗口存活);无订阅者/全部 true → 放行。编辑器"未保存更改"场景钩子。</summary>
+    public event Func<bool> Closing
+    {
+        add => Window.Closing += value;
+        remove => Window.Closing -= value;
+    }
 }

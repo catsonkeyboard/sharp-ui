@@ -219,6 +219,7 @@ public class TextAtlasTests
         public void SetScissor(uint x, uint y, uint w, uint h) { }
         public void Draw(UiVertex[] vertices, int vertexCount, ushort[] indices, uint indexCount, uint startIndex) { }
         public void Present() { }
+        public event Action? DeviceLost;   // 审计修复波 2B/A10:接口新增成员,假上下文恒不触发
         public void Dispose() { }
     }
 

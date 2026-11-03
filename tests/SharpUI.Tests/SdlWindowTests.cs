@@ -306,4 +306,113 @@ public class SdlWindowTests
         }
         finally { w1.Dispose(); w2.Dispose(); }
     }
+
+    // ---- 审计修复波 2B(A3):窗口关闭可否决(Closing 事件)----
+    // 修复前:WindowEventClose/QUIT → MarkClosed 无条件(编辑器"未保存更改"无拦截点);现分发先逐
+    // 订阅者咨询 Closing,任一返回 false 即否决该窗关闭(窗口存活);无订阅者/全部 true → 放行。
+
+    [Fact]
+    [Trait("Category", "Gpu")]
+    public void Close_VetoedByClosingSubscriber_WindowSurvives()
+    {
+        var w = new SdlWindow("sharpui-2b-veto", 60, 60, 64, 64, SdlWindowFlags.Hidden);
+        try
+        {
+            int asked = 0;
+            w.Closing += () => { asked++; return false; };   // 否决("未保存更改"场景)
+            w.InjectTest(WindowEv(w.WindowId, SdlEvents.WindowEventClose));
+            Assert.True(w.Exists);      // 修复前无条件 MarkClosed → Exists=false
+            Assert.Equal(1, asked);     // 订阅者确实被咨询
+            // 窗口存活性:否决后再次 CLOSE 事件继续咨询(可反复请求关闭)
+            w.InjectTest(WindowEv(w.WindowId, SdlEvents.WindowEventClose));
+            Assert.Equal(2, asked);
+            Assert.True(w.Exists);
+        }
+        finally { w.Dispose(); }
+    }
+
+    [Fact]
+    [Trait("Category", "Gpu")]
+    public void Close_AllowedByClosingSubscriber_WindowMarksClosed()
+    {
+        var w = new SdlWindow("sharpui-2b-allow", 60, 60, 64, 64, SdlWindowFlags.Hidden);
+        try
+        {
+            w.Closing += () => true;
+            w.InjectTest(WindowEv(w.WindowId, SdlEvents.WindowEventClose));
+            Assert.False(w.Exists);   // 订阅者放行 → 照常 MarkClosed
+        }
+        finally { w.Dispose(); }
+    }
+
+    [Fact]
+    [Trait("Category", "Gpu")]
+    public void Close_NoSubscriber_DefaultAllows()
+    {
+        var w = new SdlWindow("sharpui-2b-default", 60, 60, 64, 64, SdlWindowFlags.Hidden);
+        try
+        {
+            w.InjectTest(WindowEv(w.WindowId, SdlEvents.WindowEventClose));
+            Assert.False(w.Exists);   // 无订阅者 = 放行(默认关闭,与修复前行为一致)
+        }
+        finally { w.Dispose(); }
+    }
+
+    [Fact]
+    [Trait("Category", "Gpu")]
+    public void Close_MultipleSubscribers_AnyFalseVetoes_AllTrueAllows()
+    {
+        var w = new SdlWindow("sharpui-2b-multi", 60, 60, 64, 64, SdlWindowFlags.Hidden);
+        Func<bool> veto = () => false;
+        try
+        {
+            w.Closing += () => true;
+            w.Closing += veto;
+            w.InjectTest(WindowEv(w.WindowId, SdlEvents.WindowEventClose));
+            Assert.True(w.Exists);   // 多订阅者逐个调用:任一 false → 否决
+
+            w.Closing -= veto;
+            w.InjectTest(WindowEv(w.WindowId, SdlEvents.WindowEventClose));
+            Assert.False(w.Exists);  // 否决订阅者移除后 → 全部 true → 放行
+        }
+        finally { w.Dispose(); }
+    }
+
+    [Fact]
+    [Trait("Category", "Gpu")]
+    public void Quit_VetoPerWindow_OnlyAllowedWindowsMarkClosed()
+    {
+        var w1 = new SdlWindow("sharpui-2b-q1", 60, 60, 64, 64, SdlWindowFlags.Hidden);
+        var w2 = new SdlWindow("sharpui-2b-q2", 120, 60, 64, 64, SdlWindowFlags.Hidden);
+        Func<bool> veto = () => false;
+        try
+        {
+            w1.Closing += veto;
+            w1.InjectTest(new SdlEvents.SdlEvent { Type = SdlEvents.EventTypeQuit });
+            Assert.True(w1.Exists);    // w1 否决 → 存活
+            Assert.False(w2.Exists);   // w2 无订阅者 → 放行(QUIT 部分允许时只对允许窗 MarkClosed)
+
+            w1.Closing -= veto;
+            w1.InjectTest(new SdlEvents.SdlEvent { Type = SdlEvents.EventTypeQuit });
+            Assert.False(w1.Exists);   // 全部允许 → 广播照常(w2 已关,MarkClosed 幂等)
+        }
+        finally { w1.Dispose(); w2.Dispose(); }
+    }
+
+    // ---- 审计修复波 2B(A8):UI 线程亲和契约(文档性验证)----
+    // 强制面为 Debug.Assert(SdlWindow 构造/PumpAll/App.Run/App.OpenWindow 四入口),Release 编译
+    // 消除、Debug 下失败即 FailFast —— 单测无法跨线程断言且不应让主机崩,故仅锁定"记录契约":
+    // 首个 SdlWindow 构造线程被记为 UI 线程(测试主机禁并行 = 全程单线程,记录值必为本线程)。
+
+    [Fact]
+    [Trait("Category", "Gpu")]
+    public void UiThreadId_RecordsFirstWindowConstructionThread()
+    {
+        var w = new SdlWindow("sharpui-2b-thread", 60, 60, 64, 64, SdlWindowFlags.Hidden);
+        try
+        {
+            Assert.Equal(Environment.CurrentManagedThreadId, SdlWindow.UiThreadId);
+        }
+        finally { w.Dispose(); }
+    }
 }
