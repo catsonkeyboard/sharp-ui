@@ -58,7 +58,7 @@ public class InputMapperTests
     static InputSnapshot Snapshot(char[]? chars = null) => new(   // internal 构造器经 InternalsVisibleTo
         new PointF(0f, 0f), 0ul, 0f,
         Array.Empty<(MouseButton, bool)>(), Array.Empty<(Key, bool, ModifierKeys)>(),
-        chars ?? Array.Empty<char>());
+        chars ?? Array.Empty<char>(), "", 0, 0);   // preedit 三参(波 2A-4):默认无组合
 
     [Fact]
     public void Map_CharsFromKeyCharPresses_EmptyIsNull()

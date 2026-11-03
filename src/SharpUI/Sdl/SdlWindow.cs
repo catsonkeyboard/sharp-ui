@@ -35,6 +35,13 @@ public sealed class SdlWindow : IDisposable
     ulong _mouseDownMask;
     float _wheelDelta;
 
+    // 审计修复波 2A-4(A4):IME 组合串(preedit)状态 —— 持久语义(同 _mousePosition,跨帧保留):
+    // SDL 每个 TEXTEDITING 事件携带**当前完整组合串**(逐事件整串替换,非增量追加),组合取消/提交后
+    // 平台投递空串事件清位;组合停顿的无事件帧保持既有值(未来内联渲染消费方免闪断)。
+    // string 不可变,快照持引用安全,GetSnapshotAndReset 无需为其轮换/清空。
+    string _preedit = "";
+    int _preeditStart, _preeditLength;
+
     bool _closing;   // Close() 请求(App 移除路径随后 Dispose)
     bool _closed;    // QUIT/窗口 Close 事件(MarkClosed)或已 Dispose
 
@@ -116,7 +123,7 @@ public sealed class SdlWindow : IDisposable
     internal InputSnapshot GetSnapshotAndReset()
     {
         InputSnapshot snapshot = new(_mousePosition, _mouseDownMask, _wheelDelta,
-            _mouseEvents, _keyEvents, _keyChars);
+            _mouseEvents, _keyEvents, _keyChars, _preedit, _preeditStart, _preeditLength);
         // 已释放侧(上一快照独占,按时效契约此刻已可回收)清空并转正为新的累积侧;
         // 刚被快照包走的旧累积侧转为已释放侧,待下次取时回收 —— 每列表每两帧一次 Clear,容量保留。
         _mouseEventsReleased.Clear();
@@ -125,7 +132,7 @@ public sealed class SdlWindow : IDisposable
         (_mouseEvents, _mouseEventsReleased) = (_mouseEventsReleased, _mouseEvents);
         (_keyEvents, _keyEventsReleased) = (_keyEventsReleased, _keyEvents);
         (_keyChars, _keyCharsReleased) = (_keyCharsReleased, _keyChars);
-        _wheelDelta = 0f;   // MousePosition/_mouseDownMask 跨帧保留(旧窗口层同语义:Clear 不复位二者)
+        _wheelDelta = 0f;   // MousePosition/_mouseDownMask/preedit 跨帧保留(状态语义:Clear 不复位)
         return snapshot;
     }
 
@@ -154,6 +161,15 @@ public sealed class SdlWindow : IDisposable
     internal void AddWheel(float delta) => _wheelDelta += delta;
 
     internal void AppendTextChars(in SdlEvents.SdlEvent e) => SdlEvents.AppendTextChars(in e, _keyChars);
+
+    /// <summary>IME 组合串更新(SDL_TEXTEDITING;审计修复波 2A-4/A4):SDL 每事件携带当前完整组合串,
+    /// 整串替换(空串 = 清位)。快照经 GetSnapshotAndReset 透出 Preedit/PreeditStart/PreeditLength。</summary>
+    internal void SetPreedit(string text, int start, int length)
+    {
+        _preedit = text ?? "";
+        _preeditStart = start;
+        _preeditLength = length;
+    }
 
     float ComputeScaleFactor()
     {
@@ -229,6 +245,13 @@ internal static class SdlPump
                 if (_windows.TryGetValue(e.WindowId, out SdlWindow? textWin))
                     textWin.AppendTextChars(in e);
                 return;
+            case SdlEvents.EventTypeTextEditing:
+                // 审计修复波 2A-4(A4):SDL_TEXTEDITING(IME 组合串)不再落入泵尾静默丢弃 —— 解码整串
+                // + start/length 透传窗口累积(preedit 状态,快照经 InputSnapshot.Preedit* 透出)。
+                // 键盘/文本不传播(输入语义归属精确,无归属即丢弃,同 TextInput)。
+                if (_windows.TryGetValue(e.WindowId, out SdlWindow? editWin))
+                    editWin.SetPreedit(SdlEvents.DecodeUtf8Text(in e), e.TextEditingStart, e.TextEditingLength);
+                return;
             case SdlEvents.EventTypeMouseMotion:
                 if (_windows.TryGetValue(e.WindowId, out SdlWindow? motionWin))
                     motionWin.UpdateMousePosition(e.MouseX, e.MouseY);
@@ -247,7 +270,9 @@ internal static class SdlPump
                     wheelWin.AddWheel(e.WheelY);   // += y,忽略 FLIPPED(旧窗口层源码实证语义)
                 return;
         }
-        // 其余事件类型(TEXTEDITING/拖放/游戏手柄等)T1 声明面未覆盖或不消费,安全丢弃(排空语义)。
+        // 其余事件类型(拖放/游戏手柄等)T1 声明面未覆盖或不消费,安全丢弃(排空语义)。
+        // 注:SDL_TEXTEDITING 自审计修复波 2A-4(A4)起经上方 case 消费;TEXTEDITING_EXT(0x305,
+        // >32B 组合串)仍未声明,留后续波次(与 A4 修法建议同记)。
     }
 
     static void DispatchWindowEvent(SdlWindow w, in SdlEvents.SdlEvent e)

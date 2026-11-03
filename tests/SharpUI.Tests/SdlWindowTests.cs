@@ -56,6 +56,23 @@ public class SdlWindowTests
         Type = SdlEvents.EventTypeWindow, WindowId = win, WindowEventCode = code, WindowData1 = d1, WindowData2 = d2,
     };
 
+    /// <summary>SDL_TEXTEDITING 合成(text@12 起 32B UTF-8 + start@44/length@48,SDL_events.h
+    /// SDL_TextEditingEvent;审计修复波 2A-4/A4)。</summary>
+    static SdlEvents.SdlEvent EditingEv(uint win, string text, int start, int length)
+    {
+        byte[] utf8 = Encoding.UTF8.GetBytes(text);
+        Assert.True(utf8.Length < 32, "SDL_TextEditingEvent.text[32] 容量上限");
+        SdlEvents.SdlEvent e = new()
+        {
+            Type = SdlEvents.EventTypeTextEditing, WindowId = win,
+            TextEditingStart = start, TextEditingLength = length,
+        };
+        Span<byte> raw = MemoryMarshal.AsBytes(MemoryMarshal.CreateSpan(ref e, 1));
+        raw.Slice(12, 32).Fill(0);          // 0 终止 + 余量清零
+        utf8.CopyTo(raw.Slice(12, 32));     // text@12(与 TextInput 分支同偏共享)
+        return e;
+    }
+
     // ---- 真窗口生命周期(Gpu:SDL_CreateWindow/GetWindowSize/GetWindowDisplayIndex/GetDisplayDPI/DestroyWindow)----
 
     [Fact]
@@ -135,6 +152,69 @@ public class SdlWindowTests
             Assert.Equal(new[] { '你', '好' }, w.GetSnapshotAndReset().KeyCharPresses);
         }
         finally { w.Dispose(); }
+    }
+
+    // ---- 审计修复波 2A-4(A4):SDL_TEXTEDITING 泵层通道(preedit 快照,不做内联渲染)----
+
+    [Fact]
+    [Trait("Category", "Gpu")]
+    public void Inject_TextEditing_PreeditSnapshot_DecodesUtf8_AndCarriesStartLength()
+    {
+        var w = new SdlWindow("sharpui-t2-preedit", 60, 60, 64, 64, SdlWindowFlags.Hidden);
+        try
+        {
+            w.InjectTest(EditingEv(w.WindowId, "你好", 2, 3));   // 修复前 0x302 落入泵尾静默丢弃
+            InputSnapshot s = w.GetSnapshotAndReset();
+            Assert.Equal("你好", s.Preedit);
+            Assert.Equal(2, s.PreeditStart);
+            Assert.Equal(3, s.PreeditLength);
+        }
+        finally { w.Dispose(); }
+    }
+
+    [Fact]
+    [Trait("Category", "Gpu")]
+    public void Preedit_PersistsAcrossSnapshots_UntilEmptyEditingEvent()
+    {
+        var w = new SdlWindow("sharpui-t2-preedit2", 60, 60, 64, 64, SdlWindowFlags.Hidden);
+        try
+        {
+            w.InjectTest(EditingEv(w.WindowId, "nihao", 0, 5));
+            Assert.Equal("nihao", w.GetSnapshotAndReset().Preedit);
+            // 组合中停顿的无事件帧:preedit 是状态(同 MousePosition 跨帧保留),不得取快照即清
+            Assert.Equal("nihao", w.GetSnapshotAndReset().Preedit);
+            // 同帧多事件整串替换(SDL 语义:每个事件携带当前完整组合串,最后者赢)
+            w.InjectTest(EditingEv(w.WindowId, "ni", 0, 2));
+            w.InjectTest(EditingEv(w.WindowId, "nihao", 0, 5));
+            Assert.Equal("nihao", w.GetSnapshotAndReset().Preedit);
+            // 空串事件 = 组合取消/提交后的清位
+            w.InjectTest(EditingEv(w.WindowId, "", 0, 0));
+            InputSnapshot cleared = w.GetSnapshotAndReset();
+            Assert.Equal("", cleared.Preedit);
+            Assert.Equal(0, cleared.PreeditStart);
+            Assert.Equal(0, cleared.PreeditLength);
+        }
+        finally { w.Dispose(); }
+    }
+
+    [Fact]
+    [Trait("Category", "Gpu")]
+    public void TextEditing_RoutesByWindowId_NoPropagation()
+    {
+        var w1 = new SdlWindow("sharpui-t2-pe-r1", 60, 60, 64, 64, SdlWindowFlags.Hidden);
+        var w2 = new SdlWindow("sharpui-t2-pe-r2", 120, 60, 64, 64, SdlWindowFlags.Hidden);
+        try
+        {
+            w2.InjectTest(EditingEv(w2.WindowId, "组合", 1, 2));
+            w2.InjectTest(EditingEv(0xDEADBEEF, "异窗", 0, 2));   // 无归属:丢弃,不传播(输入归属精确)
+            InputSnapshot s1 = w1.GetSnapshotAndReset();
+            InputSnapshot s2 = w2.GetSnapshotAndReset();
+            Assert.Equal("", s1.Preedit);
+            Assert.Equal("组合", s2.Preedit);
+            Assert.Equal(1, s2.PreeditStart);
+            Assert.Equal(2, s2.PreeditLength);
+        }
+        finally { w1.Dispose(); w2.Dispose(); }
     }
 
     [Fact]

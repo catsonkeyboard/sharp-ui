@@ -66,6 +66,29 @@ public class TextEditingTests
         Assert.Equal(s, TextEditing.Apply(s, new[] { Key(SharpUI.Key.F5), new KeyEventData(SharpUI.Key.Enter, false, false) }, null));
     }
 
+    // ---- 审计修复波 2A-1(I-4):字符通道控制符过滤 ----
+    // SDL_TEXTINPUT 在部分平台/版本(Windows WM_CHAR 路径、X11 路径)把 Ctrl+字母 的控制码
+    // (C0 0x01..0x1A)作为文本投递 —— 无过滤时 Ctrl+A 全选同帧 \x01 先入正文,Ctrl+Z 注入 0x1A。
+
+    [Fact] public void Chars_ControlCodesFiltered_LettersKept()
+    {
+        var s = TextEditing.Apply(new TextState("", 0), null, new[] { '\x01', 'a', '\x1a', 'b', '\x7f' });
+        Assert.Equal(new TextState("ab", 2), s);   // C0(0x01/0x1A)与 DEL(0x7F)全滤,仅剩正文
+    }
+
+    [Fact] public void Chars_TabAndNewlinePreserved()
+    {
+        var s = TextEditing.Apply(new TextState("", 0), null, new[] { '\t', 'a', '\n', 'b', '\r' });
+        Assert.Equal(new TextState("\ta\nb\r", 5), s);   // Tab/CR/LF 保留(未来多行需要)
+    }
+
+    [Fact] public void Chars_ControlCode_DoesNotDisturbSelection()
+    {
+        // 有选区时控制码不得替换选区(过滤发生在选区替换之前,控制码直接跳过)
+        var s = TextEditing.Apply(new TextState("abcd", 1, 3), null, new[] { '\x02' });
+        Assert.Equal(new TextState("abcd", 1, 3), s);
+    }
+
     [Fact] public void Chars_EmptyIsNoop_CursorClamped()
     {
         var s = new TextState("ab", 9);

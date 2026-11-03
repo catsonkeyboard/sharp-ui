@@ -46,17 +46,37 @@ internal sealed class MetalContext : IRenderContext
     IntPtr _sampler;                // newSamplerStateWithDescriptor:(+1)
     IntPtr _atlasTexture;           // newTextureWithDescriptor:(+1;1024² Shared)
     IntPtr _targetTexture;          // 同上(离屏主目标,Resize 重建)
-    IntPtr _vertexBuffer;           // newBufferWithLength:options:(+1;容量 ×2 增长即重建)
-    IntPtr _indexBuffer;            // 同上
-    IntPtr _constantBuffer;         // 同上(16B 屏幕尺寸常量,写前 8B)
+    // ---- MT-1(审计修复波 2C,Critical):Shared 顶点/索引/常量缓冲三槽环化 —— 修复前单份缓冲在
+    //      BeginFrame(wait=false)提交上一帧后立即被新帧 CPU 覆写,与在途 GPU 执行零同步(帧撕裂)。
+    //      三槽=执行中/已提交/空闲各一:BeginFrame 推进 _ringIndex,新帧 CPU 写与在途 GPU 读至少
+    //      错开一帧;容量增长按槽重建(其余槽轮到时按需自长),Dispose 逐槽 release。 ----
+    static readonly int RingSize = 3;
+    readonly IntPtr[] _vertexRing = new IntPtr[RingSize];
+    readonly IntPtr[] _indexRing = new IntPtr[RingSize];
+    readonly IntPtr[] _constantRing = new IntPtr[RingSize];
+    int _ringIndex;
     IntPtr _passDescriptor;         // MTLRenderPassDescriptor.new(+1;每帧改写 attachment 0 后建 encoder)
 
     // ---- 当前帧编码态(commandBuffer/encoder 为 +0 autorelease,字段仅记账不作所有权) ----
     IntPtr _commandBuffer;
     IntPtr _encoder;
 
-    // ---- 上传缓冲容量(首 256KB/512KB,×2 增长,同 GL/D3D11;Metal 缓冲不可重分配,超容重建) ----
-    uint _vbCapacityBytes = 256 * 1024, _ibCapacityBytes = 512 * 1024;
+    // ---- MT-1 图集面(审计修复波 2C):replaceRegion 的 CPU 直写对在途采样有竞态,单张图集不可
+    //      环化,取延迟方案 —— 当帧 UpdateAtlasRegion 入队,FlushFrame 提交前逐个落地
+    //      (ApplyPendingAtlasUpdates;GPU 执行晚于 commit,上传先于 commit 即先行可见)。 ----
+    readonly List<(byte[] Rgba, uint X, uint Y, uint Width, uint Height)> _pendingAtlasUpdates = new();
+
+    // ---- MT-3(审计修复波 2C):帧级 NSAutoreleasePool —— 每帧 ≥4 个 +0 autorelease 对象
+    //      (commandBuffer/encoder/附件 getter)在无泵线程的循环中线性累积;创建于 BeginFrame、
+    //      排空于 FlushFrame 尾(对位 SDL metal 后端 @autoreleasepool 包裹策略)。 ----
+    IntPtr _autoreleasePool;
+
+    // ---- 上传缓冲容量(首 256KB/512KB,×2 增长,同 GL/D3D11;Metal 缓冲不可重分配,超容按槽重建;
+    //      三槽环化后逐槽记账,见 RingSize 注) ----
+    const uint VbSlotCapacity0 = 256 * 1024;
+    const uint IbSlotCapacity0 = 512 * 1024;
+    readonly uint[] _vbSlotBytes = new uint[RingSize];
+    readonly uint[] _ibSlotBytes = new uint[RingSize];
 
     /// <summary>屏幕尺寸常量(MSL constant float2&amp; 槽 0;写 Shared 缓冲前 8 字节,
     /// Marshal.Copy float[] 重载零钉扎)。 </summary>
@@ -124,10 +144,11 @@ internal sealed class MetalContext : IRenderContext
         TargetHeight = height;
     }
 
-    /// <summary>图集区域上传(RGBA 字节,左上原点 —— Metal 纹理行 0=首行,与 UV (0,0) 对应,无翻转):
-    /// pin rgba + replaceRegion:mipmapLevel:withBytes:bytesPerRow:(MTLRegion 按值)。
-    /// Shared 图集的 CPU 直写语义:与在途 GPU 采样并发属竞态(ImGui-Metal 同款逐帧上传模式,
-    /// 帧边界使用安全;CI 实测异常再议 in-flight 栅栏)。</summary>
+    /// <summary>图集区域上传(RGBA 字节,左上原点 —— Metal 纹理行 0=首行,与 UV (0,0) 对应,无翻转)。
+    /// MT-1 图集面(审计修复波 2C):CPU 直写 Shared 图集与在途 GPU 采样并发属竞态 —— 本方法仅做
+    /// 校验并入队(_pendingAtlasUpdates),实际 replaceRegion 延迟至 FlushFrame 提交前逐个落地
+    /// (ApplyPendingAtlasUpdates;ImGui-Metal 同款帧边界上传模式的收紧形)。构造期全零初始化同经
+    /// 此路径:首帧 BeginFrame 的 FlushFrame 落地,先于任何编码采样。</summary>
     public void UpdateAtlasRegion(byte[] rgba, uint x, uint y, uint width, uint height)
     {
         ThrowIfDisposed();
@@ -137,14 +158,42 @@ internal sealed class MetalContext : IRenderContext
             throw new ArgumentOutOfRangeException($"图集区域越界({x}+{width} x {y}+{height} > {AtlasSize})");
         if (rgba.Length < checked(width * height * 4))
             throw new ArgumentException($"rgba 长度不足:需 {width * height * 4},实有 {rgba.Length}", nameof(rgba));
-        GCHandle pin = GCHandle.Alloc(rgba, GCHandleType.Pinned);
-        try
+        _pendingAtlasUpdates.Add((rgba, x, y, width, height));
+    }
+
+    /// <summary>落地待上传图集区域(MT-1 图集面;FlushFrame 提交前调用):pin rgba +
+    /// replaceRegion:mipmapLevel:withBytes:bytesPerRow:(MTLRegion 按值)。replaceRegion 为 CPU 侧
+    /// 阻塞上传、不入命令缓冲 —— 于 endEncoding/commit 前执行即保证本帧 GPU 执行时新内容已就位。</summary>
+    void ApplyPendingAtlasUpdates()
+    {
+        if (_pendingAtlasUpdates.Count == 0) return;
+        foreach ((byte[] rgba, uint x, uint y, uint width, uint height) in _pendingAtlasUpdates)
         {
-            var region = new MetalNative.Region { X = x, Y = y, Z = 0, Width = width, Height = height, Depth = 1 };
-            ObjectiveC.MsgSendVoidRegionNUIntPtrNUInt(_atlasTexture, MetalNative.SelReplaceRegion,
-                region, 0, pin.AddrOfPinnedObject(), (nuint)(width * 4));
+            GCHandle pin = GCHandle.Alloc(rgba, GCHandleType.Pinned);
+            try
+            {
+                var region = new MetalNative.Region { X = x, Y = y, Z = 0, Width = width, Height = height, Depth = 1 };
+                ObjectiveC.MsgSendVoidRegionNUIntPtrNUInt(_atlasTexture, MetalNative.SelReplaceRegion,
+                    region, 0, pin.AddrOfPinnedObject(), (nuint)(width * 4));
+            }
+            finally { pin.Free(); }
         }
-        finally { pin.Free(); }
+        _pendingAtlasUpdates.Clear();
+    }
+
+    /// <summary>帧级 autorelease 池创建(MT-3;BeginFrame 于编码对象之前调用):NSAutoreleasePool.new
+    /// (+1 持有)—— 本帧 commandBuffer/encoder/附件 getter 等 +0 autorelease 对象悉数入池。</summary>
+    void CreateAutoreleasePool() =>
+        _autoreleasePool = ObjectiveC.MsgSend(GetClassOrThrow("NSAutoreleasePool"), MetalNative.SelNew);
+
+    /// <summary>池排空(MT-3;FlushFrame 尾、commit/wait 之后):drain 释放池内全部 autorelease 对象
+    /// 与池本体(new 的 +1 与 drain 配对,不再另行 release)。已 commit 的 commandBuffer 由队列自持
+    /// 执行引用,排空安全(对位 SDL metal 后端每帧 @autoreleasepool{...} 的 encode+commit 包裹)。</summary>
+    void DrainAutoreleasePool()
+    {
+        if (_autoreleasePool == IntPtr.Zero) return;
+        ObjectiveC.MsgSendVoid(_autoreleasePool, MetalNative.SelDrain);
+        _autoreleasePool = IntPtr.Zero;
     }
 
     /// <summary>帧起始:FlushFrame 提交上一帧 → 改写 renderPassDescriptor(attachment 0:
@@ -160,7 +209,11 @@ internal sealed class MetalContext : IRenderContext
     public void BeginFrame(float r, float g, float b, float a)
     {
         ThrowIfDisposed();
-        FlushFrame(waitForCompletion: false);
+        FlushFrame(waitForCompletion: false);   // 提交上一帧 + 排空上一帧池(MT-3)
+        _ringIndex = (_ringIndex + 1) % RingSize;   // MT-1:新帧起新槽,CPU 写与在途 GPU 读错开
+        CreateAutoreleasePool();                    // MT-3:本帧 +0 对象的池先于一切编码对象就位
+        IntPtr cbContents = ObjectiveC.MsgSend(_constantRing[_ringIndex], MetalNative.SelContents);
+        Marshal.Copy(_cb, 0, cbContents, 2);        // 常量随槽推进重灌(SetScreenSize 先于/后于本方法两序皆就位)
         IntPtr attachments = ObjectiveC.MsgSend(_passDescriptor, MetalNative.SelColorAttachments);
         IntPtr att = ObjectiveC.MsgSendNUInt(attachments, MetalNative.SelObjectAtIndexedSubscript, 0);
         ObjectiveC.MsgSendVoidPtr(att, MetalNative.SelSetTexture, _targetTexture);
@@ -174,7 +227,7 @@ internal sealed class MetalContext : IRenderContext
         ObjectiveC.MsgSendVoidPtr(_encoder, MetalNative.SelSetRenderPipelineState, _pipelineState);
         ObjectiveC.MsgSendVoidPtrNUInt(_encoder, MetalNative.SelSetFragmentTexture, _atlasTexture, 0);
         ObjectiveC.MsgSendVoidPtrNUInt(_encoder, MetalNative.SelSetFragmentSamplerState, _sampler, 0);
-        BindVertexBuffer(_constantBuffer, 0);   // 常量独占 slot 0 —— 三参统一落位点(评审 Critical#1 勘正,见 BindVertexBuffer)
+        BindVertexBuffer(_constantRing[_ringIndex], 0);   // 常量独占 slot 0 —— 三参统一落位点(评审 Critical#1 勘正,见 BindVertexBuffer)
     }
 
     /// <summary>setVertexBuffer:offset:atIndex: **三实参**统一落位点(评审 Critical#1 勘正):selector
@@ -188,15 +241,15 @@ internal sealed class MetalContext : IRenderContext
         ObjectiveC.MsgSendVoidPtrNUIntNUInt(_encoder, MetalNative.SelSetVertexBuffer, buffer, 0, index);
 
     /// <summary>顶点着色器屏幕尺寸常量(逻辑像素):MSL `constant float2&amp; uSize [[buffer(0)]]`
-    /// —— 写 constantBuffer(Shared)前 8 字节。缓冲对象帧首已绑 slot 0(见 BeginFrame),
-    /// 此处只写 contents(对在途已提交缓冲的写并发属 Shared 缓冲标准竞态面,帧边界使用安全,
-    /// CI 实测背书;MTLBuffer.h:didModifyRange 仅 Managed 需要,Shared 写即 CPU 可见)。</summary>
+    /// —— 更新 _cb 缓存并直写**当前槽**(MT-1 环化后 SetScreenSize 先于 BeginFrame 的既有序
+    /// 写当前槽;BeginFrame 推进槽位后自 _cb 重灌新槽 —— 两种调用序下当帧编码读到的恒为本帧值)。
+    /// MTLBuffer.h:didModifyRange 仅 Managed 需要,Shared 写即 CPU 可见。</summary>
     public void SetScreenSize(float logicalWidth, float logicalHeight)
     {
         ThrowIfDisposed();
         _cb[0] = logicalWidth;
         _cb[1] = logicalHeight;
-        IntPtr contents = ObjectiveC.MsgSend(_constantBuffer, MetalNative.SelContents);
+        IntPtr contents = ObjectiveC.MsgSend(_constantRing[_ringIndex], MetalNative.SelContents);
         Marshal.Copy(_cb, 0, contents, 2);   // 2×float = 8B,零钉扎(重载内部瞬时固定)
     }
 
@@ -239,8 +292,10 @@ internal sealed class MetalContext : IRenderContext
         EnsureEncoder();
 
         EnsureCapacity(vertexCount, checked((int)(startIndex + indexCount)));
-        IntPtr vbContents = ObjectiveC.MsgSend(_vertexBuffer, MetalNative.SelContents);
-        IntPtr ibContents = ObjectiveC.MsgSend(_indexBuffer, MetalNative.SelContents);
+        IntPtr vertexBuffer = _vertexRing[_ringIndex];   // MT-1:本帧槽(槽集帧首固定,Draw 只取不换)
+        IntPtr indexBuffer = _indexRing[_ringIndex];
+        IntPtr vbContents = ObjectiveC.MsgSend(vertexBuffer, MetalNative.SelContents);
+        IntPtr ibContents = ObjectiveC.MsgSend(indexBuffer, MetalNative.SelContents);
         GCHandle vp = GCHandle.Alloc(vertices, GCHandleType.Pinned);
         GCHandle ip = GCHandle.Alloc(indices, GCHandleType.Pinned);
         try
@@ -252,10 +307,10 @@ internal sealed class MetalContext : IRenderContext
         }
         finally { ip.Free(); vp.Free(); }   // 句柄表操作,无 GC 堆分配(同 GL/D3D11 Draw 注)
 
-        BindVertexBuffer(_vertexBuffer, 1);   // 几何 slot 1 —— 与常量落位同走三参统一落位点(评审 Critical#1 锚)
+        BindVertexBuffer(vertexBuffer, 1);   // 几何 slot 1 —— 与常量落位同走三参统一落位点(评审 Critical#1 锚)
         ObjectiveC.MsgSendVoidNUIntNUIntNUIntPtrNUInt(_encoder, MetalNative.SelDrawIndexedPrimitives,
             MetalNative.PrimitiveTypeTriangle, indexCount, MetalNative.IndexTypeUInt16,
-            _indexBuffer, (nuint)(startIndex * sizeof(ushort)));
+            indexBuffer, (nuint)(startIndex * sizeof(ushort)));
     }
 
     /// <summary>呈现:headless 严格 no-op(接口契约;不取 CAMetalLayer drawable,离屏 texture 供
@@ -266,9 +321,10 @@ internal sealed class MetalContext : IRenderContext
         ThrowIfDisposed();
     }
 
-    /// <summary>读回主目标(GPU 测试用):FlushFrame(wait=true)—— endEncoding + commit +
-    /// waitUntilCompleted(getBytes 前保证 GPU 完成;+0 commandBuffer 引用在本调用栈存续期内
-    /// 无 pool 排空风险)→ getBytes:bytesPerRow:fromRegion:mipmapLevel: 全帧。**行序/字节序**:
+    /// <summary>读回主目标(GPU 测试用):FlushFrame(wait=true)—— 图集落地 + endEncoding +
+    /// commit + waitUntilCompleted(getBytes 前保证 GPU 完成;wait 先于池排空,waitUntilCompleted
+    /// 消息作用于池内存活对象;getBytes 只触 _targetTexture,+1 自持,排空后安全)→
+    /// getBytes:bytesPerRow:fromRegion:mipmapLevel: 全帧。**行序/字节序**:
     /// Metal 纹理行 0=顶行、原点左上,getBytes 自顶向下逐行 —— 与 GL ReadBack 翻转后同向,
     /// **无需再翻**(简报括注"行序上翻同 GL"指产出同向,非字面翻转);RGBA8Unorm 字节序
     /// R,G,B,A 同 GL 断言形(D3D11 BGRA 异)。测试路径,分配允许。</summary>
@@ -397,13 +453,16 @@ internal sealed class MetalContext : IRenderContext
         if (_atlasTexture == IntPtr.Zero)
             throw new InvalidOperationException("newTextureWithDescriptor:(atlas) 返回 nil —— 待 CI macOS 实机验证");
 
-        // 8) Shared 缓冲三件(newBufferWithLength:options: 0=Shared+DefaultCache,+1):
-        //    顶点/索引(容量 ×2 增长重建)+ 屏幕尺寸常量(16B 槽写前 8B —— MSL 只读 float2)。
-        _vertexBuffer = CreateBuffer(_vbCapacityBytes);
-        _indexBuffer = CreateBuffer(_ibCapacityBytes);
-        _constantBuffer = CreateBuffer(16);
-        if (_vertexBuffer == IntPtr.Zero || _indexBuffer == IntPtr.Zero || _constantBuffer == IntPtr.Zero)
-            throw new InvalidOperationException("newBufferWithLength:options: 返回 nil —— 待 CI macOS 实机验证");
+        // 8) Shared 缓冲三件 × 三槽环(MT-1:顶点/索引按槽容量 ×2 增长重建 + 屏幕尺寸常量
+        //    16B 槽写前 8B —— MSL 只读 float2;环化语义见 RingSize 字段注):
+        for (int i = 0; i < RingSize; i++)
+        {
+            _vertexRing[i] = CreateBuffer(_vbSlotBytes[i] = VbSlotCapacity0);
+            _indexRing[i] = CreateBuffer(_ibSlotBytes[i] = IbSlotCapacity0);
+            _constantRing[i] = CreateBuffer(16);
+            if (_vertexRing[i] == IntPtr.Zero || _indexRing[i] == IntPtr.Zero || _constantRing[i] == IntPtr.Zero)
+                throw new InvalidOperationException("newBufferWithLength:options: 返回 nil —— 待 CI macOS 实机验证");
+        }
 
         // 9) renderPassDescriptor(+1 驻留,每帧改写):attachment 0 = 离屏目标 + LoadAction=Clear +
         //    StoreAction=Store(读回目标必须 Store —— DontCare 会弃内容;T2 注释勘正后常量
@@ -506,35 +565,39 @@ internal sealed class MetalContext : IRenderContext
         ObjectiveC.MsgSendVoidNUInt(attr, MetalNative.SelSetBufferIndex, 1);   // slot 1:让位常量 buffer(0)
     }
 
-    /// <summary>上传容量保障:超容(×2,同 GL/D3D11)时**重建**缓冲(Metal 缓冲不可重分配 ——
-    /// 无 GL BufferData 孤儿化/名字不变之便;旧缓冲 release,在途命令缓冲自持引用安全;
-    /// Draw 每 call 重绑 slot 1,重建对象下一 Draw 即生效)。</summary>
+    /// <summary>上传容量保障(MT-1 环化后按槽):超容(×2,同 GL/D3D11)时**重建当前槽**缓冲
+    /// (Metal 缓冲不可重分配 —— 无 GL BufferData 孤儿化/名字不变之便;旧缓冲 release,在途命令
+    /// 缓冲自持引用安全;Draw 每 call 重绑 slot 1,重建对象下一 Draw 即生效)。其余槽不动,轮到时
+    /// 按各自记账自长 —— 稳态帧尺寸相近时三槽容量收敛,极端交替帧仅多一次重建。</summary>
     void EnsureCapacity(int vertexCount, int totalIndexCount)
     {
+        int slot = _ringIndex;
         uint vbNeed = (uint)((long)vertexCount * UiVertex.SizeInBytes);
-        uint ibNeed = (uint)((long)totalIndexCount * sizeof(ushort));
-        if (vbNeed > _vbCapacityBytes)
+        if (vbNeed > _vbSlotBytes[slot])
         {
-            _vbCapacityBytes = Math.Max(_vbCapacityBytes * 2, vbNeed);
-            IntPtr nb = CreateBuffer(_vbCapacityBytes);
-            Release(ref _vertexBuffer);
-            _vertexBuffer = nb;
+            _vbSlotBytes[slot] = Math.Max(_vbSlotBytes[slot] * 2, vbNeed);
+            IntPtr nb = CreateBuffer(_vbSlotBytes[slot]);
+            Release(ref _vertexRing[slot]);
+            _vertexRing[slot] = nb;
         }
-        if (ibNeed > _ibCapacityBytes)
+        uint ibNeed = (uint)((long)totalIndexCount * sizeof(ushort));
+        if (ibNeed > _ibSlotBytes[slot])
         {
-            _ibCapacityBytes = Math.Max(_ibCapacityBytes * 2, ibNeed);
-            IntPtr nb = CreateBuffer(_ibCapacityBytes);
-            Release(ref _indexBuffer);
-            _indexBuffer = nb;
+            _ibSlotBytes[slot] = Math.Max(_ibSlotBytes[slot] * 2, ibNeed);
+            IntPtr nb = CreateBuffer(_ibSlotBytes[slot]);
+            Release(ref _indexRing[slot]);
+            _indexRing[slot] = nb;
         }
     }
 
-    /// <summary>帧落地:endEncoding(一 commandBuffer 同时至多一活动 encoder —— 新帧前必先封旧)
-    /// → commit →(wait=true 时)waitUntilCompleted。BeginFrame/Dispose 取 false(提交即可),
-    /// ReadBack 取 true(getBytes 前保证 GPU 完成)。+0 对象的字段仅记账:本方法同步存续期内
-    /// 无 autorelease pool 排空,waitUntilCompleted 作用于存活对象,安全。</summary>
+    /// <summary>帧落地:ApplyPendingAtlasUpdates(MT-1 图集面:CPU 侧上传先行,不入编码)→
+    /// endEncoding(一 commandBuffer 同时至多一活动 encoder —— 新帧前必先封旧)→ commit →
+    /// (wait=true 时)waitUntilCompleted → DrainAutoreleasePool(MT-3:排空帧级池,commit 后
+    /// 队列自持执行引用,安全)。BeginFrame/Dispose 取 false(提交即可),ReadBack 取 true
+    /// (getBytes 前保证 GPU 完成,wait 先于排空 —— waitUntilCompleted 消息作用于池内存活对象)。</summary>
     void FlushFrame(bool waitForCompletion)
     {
+        ApplyPendingAtlasUpdates();
         if (_encoder != IntPtr.Zero)
         {
             ObjectiveC.MsgSendVoid(_encoder, MetalNative.SelEndEncoding);
@@ -547,6 +610,7 @@ internal sealed class MetalContext : IRenderContext
                 ObjectiveC.MsgSendVoid(_commandBuffer, MetalNative.SelWaitUntilCompleted);
             _commandBuffer = IntPtr.Zero;
         }
+        DrainAutoreleasePool();
     }
 
     void EnsureEncoder()
@@ -558,9 +622,8 @@ internal sealed class MetalContext : IRenderContext
     // ---- 释放 ----
 
     /// <summary>FlushFrame(尽力)→ 全部 +1 对象经 release 配对释放(new* 族所有权规约,见
-    /// ObjectiveC/MetalNative 类头;+0 的 commandBuffer/encoder 不持不放)。autorelease 族
-    /// (commandBuffer/encoder/nextDrawable/getter)在无 pool 线程的逐帧累积为 CI 内存观测项
-    /// —— 类头所有权注;修法预留 @autoreleasepool 包裹策略(对位 SDL metal 后端)。</summary>
+    /// ObjectiveC/MetalNative 类头;+0 的 commandBuffer/encoder 不持不放;帧级 autorelease 池
+    /// 经 FlushFrame 尾的 drain 排空 —— MT-3 落地,类头所有权注的 CI 内存观测项随之关闭)。</summary>
     public void Dispose()
     {
         if (_disposed) return;
@@ -574,9 +637,12 @@ internal sealed class MetalContext : IRenderContext
         Release(ref _sampler);
         Release(ref _atlasTexture);
         Release(ref _targetTexture);
-        Release(ref _vertexBuffer);
-        Release(ref _indexBuffer);
-        Release(ref _constantBuffer);
+        for (int i = 0; i < RingSize; i++)   // MT-1:三槽环逐槽 release
+        {
+            Release(ref _vertexRing[i]);
+            Release(ref _indexRing[i]);
+            Release(ref _constantRing[i]);
+        }
         Release(ref _passDescriptor);
         Release(ref _queue);
         Release(ref _layer);

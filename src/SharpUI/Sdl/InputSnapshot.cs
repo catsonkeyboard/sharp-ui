@@ -16,7 +16,10 @@ public sealed class InputSnapshot
         float wheelDelta,
         IReadOnlyList<(MouseButton Button, bool Down)> mouseEvents,
         IReadOnlyList<(Key Key, bool Down, ModifierKeys Modifiers)> keyEvents,
-        IReadOnlyList<char> keyCharPresses)
+        IReadOnlyList<char> keyCharPresses,
+        string preedit,
+        int preeditStart,
+        int preeditLength)
     {
         MousePosition = mousePosition;
         _mouseDownMask = mouseDownMask;
@@ -24,6 +27,9 @@ public sealed class InputSnapshot
         MouseEvents = mouseEvents;
         KeyEvents = keyEvents;
         KeyCharPresses = keyCharPresses;
+        Preedit = preedit;
+        PreeditStart = preeditStart;
+        PreeditLength = preeditLength;
     }
 
     /// <summary>窗口坐标下鼠标位置(最近一次 MOUSEMOTION 更新;初始 Zero,跨帧保留,同旧窗口层)。</summary>
@@ -39,6 +45,18 @@ public sealed class InputSnapshot
     public float WheelDelta { get; }
 
     public IReadOnlyList<char> KeyCharPresses { get; }
+
+    /// <summary>IME 组合串(preedit,SDL_TEXTEDITING 整串替换;""=无组合)。审计修复波 2A-4(A4):
+    /// 泵层通道 —— 修复前 SDL_TEXTEDITING 在泵中被静默丢弃,组合串对框架不可达(Windows 靠系统 IME
+    /// 自绘组合窗兜底,Linux/macOS 完全不可见)。跨帧保留的状态语义(组合停顿的无事件帧不闪断),
+    /// 取快照不清空。内联渲染消费方(TextField 下划线组合段)留后续波次。</summary>
+    public string Preedit { get; }
+
+    /// <summary>组合串内编辑光标起点(SDL_TextEditingEvent.start 透传,SDL 语义原样)。</summary>
+    public int PreeditStart { get; }
+
+    /// <summary>组合串内编辑选中长(SDL_TextEditingEvent.length 透传,SDL 语义原样)。</summary>
+    public int PreeditLength { get; }
 
     /// <summary>持久按键态:MOUSEBUTTONDOWN/UP 维护、跨帧保留(旧窗口层 MouseDown 数组同语义)。</summary>
     public bool IsMouseDown(MouseButton b) => (_mouseDownMask & (1ul << (int)b)) != 0;

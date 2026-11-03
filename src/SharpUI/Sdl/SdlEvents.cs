@@ -93,6 +93,12 @@ internal static class SdlEvents
         // 文本输入分支:text@12(char[32] UTF-8,0 终止)
         [FieldOffset(12)] public byte TextInputByte0;   // 全串解码经 Marshal.PtrToStringAnsi(事件基址+12)或逐字节读
 
+        // 组合编辑分支(SDL_TextEditingEvent,SDL_events.h L253-262;审计修复波 2A-4/A4):text@12..43
+        // (char[32] UTF-8 0 终止,与 TextInput 分支同偏共享 —— 解码共用 DecodeUtf8Text)、
+        // start@44(Sint32,组合串内编辑光标起点)、length@48(Sint32,编辑选中长)。有效 52B,联合体 56B 尾 padding。
+        [FieldOffset(44)] public int TextEditingStart;
+        [FieldOffset(48)] public int TextEditingLength;
+
         // 鼠标按钮分支:which@12(略读),button@16/state@17/clicks@18/pad@19,x@20/y@24
         [FieldOffset(16)] public byte MouseButtonId;
         [FieldOffset(17)] public byte MouseButtonState;
@@ -374,18 +380,24 @@ internal static class SdlEvents
     internal static string GetError() =>
         Marshal.PtrToStringAnsi(SdlNative.Fn<SdlGetErrorFn>(LiveModule(), "SDL_GetError")()) ?? "";
 
-    /// <summary>解码 SDL_TextInputEvent.text(char[32] UTF-8,0 终止,@12)并逐字符追加。零 unsafe:56B 联合体
-    /// 栈拷贝后 MemoryMarshal 取字节视图(联合体不能含引用字段,AsBytes 合法);文本输入非热路径,UTF-8 解码
-    /// 中间 string 分配可接受(对齐 旧窗口层 HandleTextInputEvent 的 GetCharCount/GetChars 语义)。</summary>
-    internal static void AppendTextChars(in SdlEvent e, List<char> into)
+    /// <summary>解码事件基址+12 起 32B UTF-8 串(SDL_TextInputEvent.text 与 SDL_TextEditingEvent.text
+    /// 同偏共享,SDL_events.h L253-274;审计修复波 2A-4 提取共用):0 终止,无终止按满 32B 截断(SDL 同
+    /// 上限)。零 unsafe:56B 联合体栈拷贝后 MemoryMarshal 取字节视图(联合体不能含引用字段,AsBytes 合法);
+    /// 文本路径非热帧,UTF-8 解码中间 string 分配可接受(对齐 旧窗口层 HandleTextInputEvent 语义)。</summary>
+    internal static string DecodeUtf8Text(in SdlEvent e)
     {
         SdlEvent copy = e;   // in 参数不可直接 CreateSpan,按值栈拷贝
         ReadOnlySpan<byte> bytes = MemoryMarshal.AsBytes(MemoryMarshal.CreateSpan(ref copy, 1));
         ReadOnlySpan<byte> text = bytes.Slice(12, 32);
         int len = text.IndexOf((byte)0);    // 0 终止符;无终止按满 32B 截断(SDL 同上限)
         if (len < 0) len = text.Length;
-        if (len == 0) return;
-        foreach (char c in Encoding.UTF8.GetString(text[..len]))
+        return len == 0 ? "" : Encoding.UTF8.GetString(text[..len]);
+    }
+
+    /// <summary>解码 SDL_TextInputEvent.text 并逐字符追加(语义同 旧窗口层 HandleTextInputEvent)。</summary>
+    internal static void AppendTextChars(in SdlEvent e, List<char> into)
+    {
+        foreach (char c in DecodeUtf8Text(in e))
             into.Add(c);
     }
 

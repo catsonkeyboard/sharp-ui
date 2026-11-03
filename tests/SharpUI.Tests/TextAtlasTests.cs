@@ -198,4 +198,90 @@ public class TextAtlasTests
             atlas.Measure($"unique-{i}", 12f);      // 超容量全清,不抛不漏
         Assert.True(atlas.Measure("unique-0", 12f).Width > 0f);
     }
+
+    // ---- 审计修复波 2A-3(I-7):图集满 Reset 延迟覆写 ----
+    // 修复前:Rasterize 分配失败即原地 Reset+清缓存+重分配+UpdateAtlasRegion —— 本帧已 AddQuad 的字形
+    // 仍引用旧 UV,新字形光栅化覆写同一纹理区域,当帧提交采样错位(整屏文本一帧花屏,每次图集填满触发一轮)。
+
+    /// <summary>记录 UpdateAtlasRegion 的假上下文:TextAtlas 仅消费 AtlasSize/UpdateAtlasRegion,字形仍经
+    /// 真 FT 光栅化(依赖本机字体与 vendored FT/HB,Gpu trait 与 GlyphRasterizerTests 同宿主约定;无 GPU 设备)。
+    /// AtlasSize 可任意调小(如 64),几字形即逼出"图集满"。</summary>
+    sealed class RecordingContext : IRenderContext
+    {
+        public uint AtlasSize { get; set; } = 64;
+        public uint TargetWidth => 64;
+        public uint TargetHeight => 64;
+        public readonly List<(uint X, uint Y, uint W, uint H)> Uploads = new();
+        public void Resize(uint width, uint height) { }
+        public void UpdateAtlasRegion(byte[] rgba, uint x, uint y, uint width, uint height) => Uploads.Add((x, y, width, height));
+        public void BeginFrame(float r, float g, float b, float a) { }
+        public void SetScreenSize(float logicalWidth, float logicalHeight) { }
+        public void SetScissor(uint x, uint y, uint w, uint h) { }
+        public void Draw(UiVertex[] vertices, int vertexCount, ushort[] indices, uint indexCount, uint startIndex) { }
+        public void Present() { }
+        public void Dispose() { }
+    }
+
+    /// <summary>64 图集 + 40px 唯一 CJK(16 字形需 ~16×41² ≈ 27k px² ≫ 4096)必耗尽:满后新字形当帧跳过
+    /// (quad 数 &lt; 字形数),且**帧内任意两次上传区域不相交** —— 修复前 Reset 后重分配从 (0,0) 重走,
+    /// 与本帧早期字形区域重叠(覆写),本断言即拦。</summary>
+    [Fact]
+    [Trait("Category", "Gpu")]
+    public void AtlasFull_ExhaustedGlyphsSkipped_NoUploadOverlapWithinFrame()
+    {
+        var ctx = new RecordingContext { AtlasSize = 64 };
+        using var atlas = new TextAtlas(ctx);
+        string text = string.Concat(Enumerable.Range(0, 16).Select(i => (char)(0x4E00 + i)));
+        var mesh = new MeshBuilder();
+        atlas.DrawRun(mesh, text, new PointF(0, 0), 40f, bold: false, color: Color32.White);
+        int quads = mesh.VertexCount / 4;
+        Assert.True(quads > 0 && quads < 16, $"quads={quads}(应有产出且满后字形缺席)");
+        for (int i = 0; i < ctx.Uploads.Count; i++)
+            for (int j = i + 1; j < ctx.Uploads.Count; j++)
+            {
+                (uint xi, uint yi, uint wi, uint hi) = ctx.Uploads[i];
+                (uint xj, uint yj, uint wj, uint hj) = ctx.Uploads[j];
+                bool overlap = xi < xj + wj && xj < xi + wi && yi < yj + hj && yj < yi + hi;
+                Assert.False(overlap, $"upload#{i} {ctx.Uploads[i]} 与 #{j} {ctx.Uploads[j]} 帧内重叠(I-7 当帧覆写)");
+            }
+    }
+
+    /// <summary>耗尽后经 BeginFrame(帧首统一失效,此刻上一帧网格已提交)下帧重光栅化自愈;白点槽位由
+    /// shelf 首分配重占,WhiteUv 数值恒定(修复前靠 SeedWhitePixel 重播恰好同位的巧合)。</summary>
+    [Fact]
+    [Trait("Category", "Gpu")]
+    public void AtlasFull_DeferredReset_NextFrameRecovers_WhiteUvStable()
+    {
+        var ctx = new RecordingContext { AtlasSize = 64 };
+        using var atlas = new TextAtlas(ctx);
+        RectF whiteBefore = atlas.WhiteUv;
+        var m1 = new MeshBuilder();
+        atlas.DrawRun(m1, "一丁丂七丄丅丆万丈三", new PointF(0, 0), 40f, bold: false, color: Color32.White);   // 必耗尽
+        Assert.True(m1.VertexCount / 4 < 8);
+        int uploadsFrame1 = ctx.Uploads.Count;
+
+        atlas.BeginFrame();   // 帧首维护(App.Run 每窗帧首调用):Reset 只清 packer/缓存,不触纹理
+        Assert.Equal(whiteBefore, atlas.WhiteUv);
+
+        var m2 = new MeshBuilder();
+        atlas.DrawRun(m2, "一", new PointF(0, 0), 12f, bold: false, color: Color32.White);   // 小字形,空图集必容纳
+        Assert.Equal(1, m2.VertexCount / 4);                          // 下帧全量重光栅化自愈
+        Assert.True(ctx.Uploads.Count > uploadsFrame1);              // 重光栅化真实上传
+    }
+
+    /// <summary>I-7.3:单字形超图集(宽/高 +1 padding 超边长,空图集也放不下)—— 修复前二次分配失败抛
+    /// InvalidOperationException 击穿帧循环;现优雅跳过,且不标记 Reset(避免每帧全量重光栅化颠簸)。</summary>
+    [Fact]
+    [Trait("Category", "Gpu")]
+    public void OversizedGlyph_SkippedGracefully_DoesNotPoisonCache()
+    {
+        var ctx = new RecordingContext { AtlasSize = 64 };
+        using var atlas = new TextAtlas(ctx);
+        var m1 = new MeshBuilder();
+        atlas.DrawRun(m1, "丁", new PointF(0, 0), 80f, bold: false, color: Color32.White);   // 80px ≫ 64 图集
+        Assert.Equal(0, m1.VertexCount / 4);
+        var m2 = new MeshBuilder();
+        atlas.DrawRun(m2, "丁", new PointF(0, 0), 12f, bold: false, color: Color32.White);   // 无 BeginFrame 也正常
+        Assert.Equal(1, m2.VertexCount / 4);
+    }
 }

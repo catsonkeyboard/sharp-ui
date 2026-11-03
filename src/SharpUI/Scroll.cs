@@ -8,10 +8,18 @@ public class ScrollElement : PanelElement
 
     internal float StateOffset() => App.State?.Get("scroll:" + ResolvedId, 0f) ?? 0f;
 
-    internal void ScrollBy(float delta)
+    /// <summary>滚动 delta(正 = 内容上移/向下翻)。审计修复波 2A-2(I-6):返回是否**实际消费**(钳制前后
+    /// 偏移确有变化,容差 1e-4 防 0+delta 浮点直等误判)—— 边界处钳制 no-op 返回 false,供
+    /// Scroll.DispatchDeep 向祖先链传播同向增量(嵌套滚动"内层滚到头,外层接棒"语义)。</summary>
+    internal bool ScrollBy(float delta)
     {
+        if (App.State is not { } state) return false;   // 无状态存储:偏移不可能实际变化
         float max = MathF.Max(0f, ContentMain - ViewportMain);
-        App.State?.Set("scroll:" + ResolvedId, Math.Clamp(StateOffset() + delta, 0f, max));
+        float before = state.Get("scroll:" + ResolvedId, 0f);
+        float after = Math.Clamp(before + delta, 0f, max);
+        if (MathF.Abs(after - before) < 1e-4f) return false;
+        state.Set("scroll:" + ResolvedId, after);
+        return true;
     }
 
     protected internal override void ArrangeChildren(RectF inner)
@@ -61,8 +69,10 @@ public static class Scroll
                 if (DispatchDeep(e.Children[i], mouse, delta)) return true;
         if (e is ScrollElement { ContentMain: > 0 } s && s.ContentMain > s.ViewportMain)
         {
-            s.ScrollBy(delta * 40f);
-            return true;
+            // 审计修复波 2A-2(I-6):仅当内层实际消费(偏移变化)才拦截;边界钳制 no-op 时返回 false,
+            // 增量沿递归栈继续向祖先链传播(修复前无条件 return true —— 内层滚到顶/底后同向滚轮被吞,
+            // 外层永远收不到)。子级返回 false 后落回本层 ScrollElement 分支,祖先链天然逐层接棒。
+            return s.ScrollBy(delta * 40f);
         }
         return false;
     }

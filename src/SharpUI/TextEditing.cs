@@ -54,6 +54,11 @@ public static class TextEditing
         string text = s.Text;
         foreach (char c in chars ?? Array.Empty<char>())
         {
+            // 审计修复波 2A-1(I-4):控制符过滤。SDL_TEXTINPUT 在部分平台/版本把 Ctrl+字母 的控制码
+            // (C0 0x01..0x1A,Windows WM_CHAR 路径与 X11 路径的历史行为,SDL3 才收紧)作为文本投递 ——
+            // 不过滤则 Ctrl+A 全选同帧 \x01 先入正文、Ctrl+Z 注入 0x1A,剪贴板往返后外溢。
+            // 过滤范围 = char.IsControl(C0 + DEL + C1),保留 Tab/CR/LF(未来多行编辑需要)。
+            if (char.IsControl(c) && c != '\t' && c != '\n' && c != '\r') continue;
             (int start, int len) = Selection(new TextState(text, cursor, anchor));
             text = text.Remove(start, len).Insert(start, c.ToString());
             cursor = anchor = start + 1;

@@ -81,6 +81,11 @@ internal static class MetalNative
     //   `- (void)commit;`
     internal static readonly IntPtr SelCommit;
 
+    // NSAutoreleasePool(Foundation/NSAutoreleasePool.h;审计修复波 2C MT-3 帧级池):
+    //   `- (void)drain;`(排空即释放池内全部 autorelease 对象;池本体经 new +1 持有,drain 对
+    //   自有池等价 release —— 配对即止,不再另行 SelRelease,防双重释放)
+    internal static readonly IntPtr SelDrain;
+
     // MTLRenderCommandEncoder(MTLRenderCommandEncoder.h):
     //   `- (void)setVertexBuffer:(nullable id&lt;MTLBuffer&gt;)buffer offset:(NSUInteger)offset atIndex:(NSUInteger)index;`
     internal static readonly IntPtr SelSetVertexBuffer;
@@ -351,6 +356,8 @@ internal static class MetalNative
         SelCommandBuffer = ObjectiveC.RegisterSel("commandBuffer");
         SelRenderCommandEncoder = ObjectiveC.RegisterSel("renderCommandEncoderWithDescriptor:");
         SelCommit = ObjectiveC.RegisterSel("commit");
+        // 审计修复波 2C(MT-3):帧级 autorelease 池排空(契约锁见 ObjectiveCTests.ExpectedSelectors)
+        SelDrain = ObjectiveC.RegisterSel("drain");
         SelSetVertexBuffer = ObjectiveC.RegisterSel("setVertexBuffer:offset:atIndex:");
         SelSetFragmentTexture = ObjectiveC.RegisterSel("setFragmentTexture:atIndex:");
         SelSetFragmentSamplerState = ObjectiveC.RegisterSel("setFragmentSamplerState:atIndex:");

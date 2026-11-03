@@ -116,6 +116,9 @@ public sealed class App
                 Atlas = w.Atlas;   // 每窗切换服务定位:TextElement 度量读当前窗图集。置于 Update 前
                 // (D5 T4 顺带①收账,原在 FeedFocused 后):点击回调内开浮层(ShowMenu/Select 下拉)即以
                 // 本窗图集度量 —— 多窗 DPI 不同时不再用上一窗图集估宽;单窗赋值相同仅时点提前,零行为差。
+                w.Atlas.BeginFrame();   // 审计修复波 2A-3(I-7):帧首统一执行上一帧标记的图集失效 —— 此刻
+                // 上一帧网格已提交(Present 后),Reset 清 packer/缓存后下帧重光栅化的覆写不再波及在途 quad;
+                // 无耗尽标记时零开销直返。
                 InputState input = w.LastTree is not null
                     ? Interaction.Update(w.Session, w.LastTree, in raw, w.Focus)
                     : InputState.Empty;
@@ -125,7 +128,13 @@ public sealed class App
                 UiContext.CurrentInput = input;
 
                 Element root = w.Render();
+                // 审计修复波 2C(I-2 跨窗 id 作用域):Assign 前冠本窗 SDL WindowId 前缀、Assign 后即清 ——
+                // 两窗同构树的 ResolvedId("1:/ScrollElement0" vs "2:/ScrollElement0")互不相同,StateStore
+                // 全局单份下 "scroll:"+id 等状态键按窗隔离(修复前同键单向串扰:窗 A 滚动带动窗 B)。
+                // 测试直调 Assign 的路径保持 null 无前缀基线语义;浮层根 id 由 PopupHost.Push 直接指派,不经此面。
+                IdResolver.CurrentScope = w.Window.WindowId.ToString();
                 IdResolver.Assign(root);
+                IdResolver.CurrentScope = null;
                 // D5 浮层栈帧中快照(Update 后取):指针路径的 Push 发生于 Interaction.Update(本快照前)
                 // —— 当帧即注册并绘制;Update 的外点 Pop 亦已生效。注册/绘制都以本帧此点为准;
                 // 键盘路径(HandleKeys 在快照后)Push 的新浮层下一帧纳入(同 liveCount 惯例),帧中 Esc-Pop 以 min 钳制不越界。

@@ -134,6 +134,96 @@ public class ScrollTests
         App.State = null;
     }
 
+    // ---- 审计修复波 2A-2(I-6):嵌套滚动边界传播 ----
+    // 修复前:内层 ScrollBy 在边界处钳制为 no-op,但 DispatchDeep 仍无条件 return true 拦截 ——
+    // 同向增量被吞,外层永远收不到(经典嵌套滚动缺陷:内层滚到头,外层该接棒)。
+
+    [Fact]
+    public void NestedScroll_InnerAtBottom_WheelDown_PropagatesToOuter()
+    {
+        App.State = new StateStore();
+        ScrollElement inner = Tall(10).Basis(100f);   // 内容 300,视口 100:max=200(与 DeepestScrollable_Wins 同构)
+        ScrollElement outer = Scroll(inner, new Spacer(new SizeF(50, 900)));
+        LayoutEngine.Arrange(outer, new RectF(0, 0, 200, 100));
+        IdResolver.Assign(outer);
+        PointF p = new(inner.Frame.X + 10, inner.Frame.Y + 10);
+        try
+        {
+            // 第一格:内层在顶部可消费 → 内层滚、外层不动(既有语义,兼作传播前的就位)
+            Scroll.Dispatch(outer, new InputState(p, false, false, false, null, WheelDelta: 100f));
+            float innerMax = inner.ContentMain - inner.ViewportMain;
+            Assert.Equal(innerMax, App.State!.Get("scroll:" + inner.ResolvedId!, 0f));   // 内层已滚到底
+            Assert.Equal(0f, App.State.Get("scroll:" + outer.ResolvedId!, 0f));
+
+            // 第二格:内层到底,同向(向下)增量 → 修复前被吞(外层恒 0);修复后传播给外层
+            Scroll.Dispatch(outer, new InputState(p, false, false, false, null, WheelDelta: 1f));
+            Assert.Equal(innerMax, App.State.Get("scroll:" + inner.ResolvedId!, 0f));    // 内层钉在底
+            Assert.Equal(40f, App.State.Get("scroll:" + outer.ResolvedId!, 0f));         // 外层接棒 +40
+        }
+        finally { App.State = null; }
+    }
+
+    [Fact]
+    public void NestedScroll_InnerAtTop_WheelUp_PropagatesToOuter()
+    {
+        App.State = new StateStore();
+        ScrollElement inner = Tall(10).Basis(100f);
+        ScrollElement outer = Scroll(inner, new Spacer(new SizeF(50, 900)));
+        LayoutEngine.Arrange(outer, new RectF(0, 0, 200, 100));
+        IdResolver.Assign(outer);
+        PointF p = new(inner.Frame.X + 10, inner.Frame.Y + 10);
+        try
+        {
+            // 就位:外层直接滚下 60(经 ScrollBy 直调,绕开内层命中区),内层保持顶
+            outer.ScrollBy(60f);
+            Assert.Equal(60f, App.State!.Get("scroll:" + outer.ResolvedId!, 0f));
+            Assert.Equal(0f, App.State.Get("scroll:" + inner.ResolvedId!, 0f));
+
+            // 反向(向上)滚在内层上:内层已在顶(no-op)→ 传播,外层回滚 40
+            Scroll.Dispatch(outer, new InputState(p, false, false, false, null, WheelDelta: -1f));
+            Assert.Equal(0f, App.State.Get("scroll:" + inner.ResolvedId!, 0f));
+            Assert.Equal(20f, App.State.Get("scroll:" + outer.ResolvedId!, 0f));
+        }
+        finally { App.State = null; }
+    }
+
+    [Fact]
+    public void NestedScroll_InnerConsumable_OuterUntouched()
+    {
+        App.State = new StateStore();
+        ScrollElement inner = Tall(10).Basis(100f);
+        ScrollElement outer = Scroll(inner, new Spacer(new SizeF(50, 900)));
+        LayoutEngine.Arrange(outer, new RectF(0, 0, 200, 100));
+        IdResolver.Assign(outer);
+        PointF p = new(inner.Frame.X + 10, inner.Frame.Y + 10);
+        try
+        {
+            // 内层可消费时增量不得外溢(传播只在边界 no-op 时发生)
+            Scroll.Dispatch(outer, new InputState(p, false, false, false, null, WheelDelta: 1f));
+            Assert.Equal(40f, App.State!.Get("scroll:" + inner.ResolvedId!, 0f));
+            Assert.Equal(0f, App.State.Get("scroll:" + outer.ResolvedId!, 0f));
+        }
+        finally { App.State = null; }
+    }
+
+    [Fact]
+    public void ScrollBy_ReturnsWhetherOffsetActuallyChanged()
+    {
+        App.State = new StateStore();
+        ScrollElement s = Tall(10);                       // max = 300-100 = 200
+        LayoutEngine.Arrange(s, new RectF(0, 0, 100, 100));
+        IdResolver.Assign(s);
+        try
+        {
+            Assert.False(s.ScrollBy(-40f));               // 顶界向上:no-op → false
+            Assert.True(s.ScrollBy(40f));                 // 自由域:0→40 实际变化 → true
+            Assert.True(s.ScrollBy(4000f));               // 40→200(钳到边界但确实变化)→ true
+            Assert.False(s.ScrollBy(40f));                // 底界再向下:no-op → false
+            Assert.Equal(200f, App.State!.Get("scroll:" + s.ResolvedId!, 0f));
+        }
+        finally { App.State = null; }
+    }
+
     // ---- 审计修复波 I-1:VirtualList 行进焦点注册表(Arrange 期重建的行从未被 Register)----
 
     /// <summary>假句柄段 0xD50500(独立于 TooltipTests 0xD50300 / DialogTests 0xD502xx / SelectTests 0xD504C0)。</summary>

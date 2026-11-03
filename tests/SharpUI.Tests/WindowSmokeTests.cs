@@ -159,4 +159,48 @@ public class WindowSmokeTests
             App.Atlas = null;
         }
     }
+
+    /// <summary>审计修复波 2C(I-2 跨窗 id 作用域):两窗同构树(无 Key 的 Scroll)经 App.Run 实跑后,
+    /// ResolvedId 带各自窗前缀(SDL WindowId)互不相同 → "scroll:"+id 状态键独立,窗 A 滚动不影响窗 B。
+    /// 修复前两窗 Scroll 的 ResolvedId 逐字节相同("/ScrollElement0"),StateStore 全局单份 → 单向串扰。</summary>
+    [Theory]
+    [InlineData("d3d11")]
+    [Trait("Category", "Gpu")]
+    public void App_TwoWindowsSameTree_WindowScopedIds_IndependentScrollState(string backend)
+    {
+        string? old = Environment.GetEnvironmentVariable("SHARPUI_BACKEND");
+        try
+        {
+            Environment.SetEnvironmentVariable("SHARPUI_BACKEND", backend);
+            Func<Element> render = static () =>
+            {
+                ScrollElement s = Ui.Scroll();
+                for (int i = 0; i < 30; i++)
+                    s.Add(new Spacer(new SizeF(100, 20)));   // 600 高内容 ≫ 150 视口:可滚
+                return s;
+            };
+            App app = App.Create("sharpui-i2-a", 200, 150, render);
+            app.OpenWindow("sharpui-i2-b", 200, 150, render);
+            Assert.Equal(0, app.Run(maxFrames: 3));
+
+            ScrollElement a = (ScrollElement)app.Windows[0].LastTree!;
+            ScrollElement b = (ScrollElement)app.Windows[1].LastTree!;
+            // 两窗同构(同回退 id 形 "/ScrollElement0" 的语义位置),但 ResolvedId 已按窗区分:
+            // 形如 "<windowId>:" 前缀 + 回退 id —— SDL WindowId 数字串
+            Assert.Matches(@"^\d+:$", a.ResolvedId);
+            Assert.Matches(@"^\d+:$", b.ResolvedId);
+            Assert.NotEqual(a.ResolvedId, b.ResolvedId);
+            // 行为面:滚 A 只写 A 的 "scroll:"+id 键,B 的偏移不动
+            Assert.True(a.ContentMain > a.ViewportMain);
+            a.ScrollBy(40f);
+            Assert.Equal(40f, a.StateOffset());
+            Assert.Equal(0f, b.StateOffset());
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("SHARPUI_BACKEND", old);
+            App.State = null;
+            App.Atlas = null;
+        }
+    }
 }

@@ -1,3 +1,4 @@
+using System.Reflection;
 using SharpUI;
 using SharpUI.Backends;
 
@@ -207,5 +208,68 @@ public class MetalContextTests
         if (!MacGate) return;
         using IRenderContext ctx = MetalContext.CreateHeadless(64, 64);
         Assert.Equal(1024u, ctx.AtlasSize);
+    }
+
+    // ---- 审计修复波 2C 结构级断言(MT-1 环化 / MT-3 autorelease 池;Windows 宿主可跑:纯反射,
+    //      不触 libobjc/Metal.framework —— 真实行为待 CI macOS 实机,与类头声明层纪律一致) ----
+
+    static FieldInfo Field(string name) => typeof(MetalContext).GetField(name,
+        BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
+        ?? throw new InvalidOperationException($"MetalContext.{name} 缺失");
+
+    /// <summary>MT-1(Critical):Shared 顶点/索引/常量缓冲必须 N=3 环化 —— 修复前单份缓冲在
+    /// BeginFrame(wait=false) 提交上一帧后立即被新帧 CPU 覆写,与在途 GPU 执行零同步(帧撕裂)。
+    /// 结构锁:三槽 IntPtr[] 环字段 + _ringIndex 推进索引 + RingSize==3,且单份缓冲字段不复存在。</summary>
+    [Fact]
+    public void Structure_SharedBuffers_AreThreeSlotRings()
+    {
+        FieldInfo size = typeof(MetalContext).GetField("RingSize",
+            BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public)
+            ?? throw new InvalidOperationException("MetalContext.RingSize 缺失");
+        Assert.Equal(3, (int)size.GetValue(null)!);
+
+        foreach (string name in new[] { "_vertexRing", "_indexRing", "_constantRing" })
+        {
+            FieldInfo f = Field(name);
+            Assert.Equal(typeof(IntPtr[]), f.FieldType);         // 三槽固定,Dispose 逐槽 release
+            Assert.True(f.IsInitOnly, name);                     // readonly:槽集不重建
+        }
+        FieldInfo ringIndex = Field("_ringIndex");
+        Assert.Equal(typeof(int), ringIndex.FieldType);
+        Assert.False(ringIndex.IsInitOnly);                      // 每帧推进(BeginFrame)
+
+        // 单份缓冲字段已移除(防退化回非环实现)
+        Assert.Null(typeof(MetalContext).GetField("_vertexBuffer",
+            BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public));
+        Assert.Null(typeof(MetalContext).GetField("_indexBuffer",
+            BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public));
+        Assert.Null(typeof(MetalContext).GetField("_constantBuffer",
+            BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public));
+    }
+
+    /// <summary>MT-1 图集面:replaceRegion 的 CPU 直写对在途采样有竞态,不可环化的单张图集取延迟方案 ——
+    /// 当帧 UpdateAtlasRegion 入队,FlushFrame 提交前逐个落地。结构锁:待上传队列字段 + 落地方法在场。</summary>
+    [Fact]
+    public void Structure_AtlasUpdates_DeferredViaPendingQueue()
+    {
+        FieldInfo f = Field("_pendingAtlasUpdates");
+        Assert.True(f.FieldType.IsGenericType
+            && f.FieldType.GetGenericTypeDefinition() == typeof(List<>), "待上传队列须为 List<>");
+        Assert.NotNull(typeof(MetalContext).GetMethod("ApplyPendingAtlasUpdates",
+            BindingFlags.Instance | BindingFlags.NonPublic, Type.DefaultBinder, Type.EmptyTypes, null));
+    }
+
+    /// <summary>MT-3:每帧 ≥4 个 +0 autorelease 对象(commandBuffer/encoder/附件 getter)在无泵循环中
+    /// 线性累积 —— 帧级 NSAutoreleasePool 包裹(SDL metal 后端同款策略)。结构锁:池字段 + 创建/排空
+    /// 方法对在场(创建于 BeginFrame、排空于 FlushFrame 尾,详见源码注释)。</summary>
+    [Fact]
+    public void Structure_AutoreleasePool_WrapsFrame()
+    {
+        Assert.Equal(typeof(IntPtr), Field("_autoreleasePool").FieldType);
+        foreach (string name in new[] { "CreateAutoreleasePool", "DrainAutoreleasePool" })
+            Assert.NotNull(typeof(MetalContext).GetMethod(name,
+                BindingFlags.Instance | BindingFlags.NonPublic, Type.DefaultBinder, Type.EmptyTypes, null));
+        Assert.NotNull(typeof(MetalNative).GetField("SelDrain",
+            BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic));   // - (void)drain
     }
 }

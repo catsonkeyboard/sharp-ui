@@ -25,6 +25,7 @@ public sealed class TextAtlas : IDisposable
     const int ShapedCacheCapacity = 512;
     readonly Dictionary<int, (float Ascent, float Descent)> _lineMetrics = new();   // (size<<1)|bold
     readonly ShelfPacker _packer;
+    bool _needsReset;   // 审计修复波 2A-3(I-7):图集满标记 —— 当帧跳过新字形,帧首 BeginFrame 统一失效
 
     public RectF WhiteUv { get; private set; }
 
@@ -174,19 +175,42 @@ public sealed class TextAtlas : IDisposable
         return glyph;
     }
 
+    /// <summary>帧首维护(审计修复波 2A-3/I-7):上一帧图集耗尽(_needsReset 置位)时在此统一失效 ——
+    /// 此刻上一帧网格已提交,覆写不再波及任何在途 quad(App.Run 每窗帧首调用;无耗尽时零开销直返)。
+    /// Reset 只清 packer/字形缓存(元数据),**不触纹理**:白点槽位经 TryAlloc(1,1) 重占 —— ShelfPacker
+    /// 游标归零后首分配与构造期 SeedWhitePixel 同位恒 (0,0),白点纹理字节自构造期写入后从未被字形占用,
+    /// 无需覆写,WhiteUv 数值恒定(消除 I-7.1 记录的"重播恰同位"巧合依赖)。_shapedCache/_lineMetrics
+    /// 只存字形 ID/逻辑坐标/墨迹度量、不持 UV,不清是正确的(I-7.1 复核结论保持)。</summary>
+    internal void BeginFrame()
+    {
+        if (!_needsReset) return;
+        _needsReset = false;
+        _packer.Reset();
+        _glyphs.Clear();
+        _packer.TryAlloc(1, 1);   // 重占白点槽:保证 Reset 后字形分配不落在 (0,0)(WhiteUv 持有者免错位)
+    }
+
     Glyph Rasterize(int slot, uint glyphId, int size, bool bold)
     {
         RasterGlyph g = _rasterizer.RasterizeGlyphId(slot, glyphId, size, bold);
         if (g.Width == 0 || g.Height == 0)
             return Glyph.Empty;   // 空字形(空格类):不占图集、不出 quad(推进量已在 shaping 快照)
+        int atlasSide = (int)_ctx.AtlasSize;
+        if (g.Width + 1 > atlasSide || g.Height + 1 > atlasSide)
+            return Glyph.Empty;   // I-7.3:单字形超图集(特大字号/超高 DPI)—— 空图集也放不下,Reset 救不了;
+                                  // 跳过不抛(修复前二次分配失败抛 IOE 冒穿帧循环),且不标记 _needsReset
+                                  //(避免每帧全量重光栅化的缓存颠簸,其余字形不受牵连)
         (int X, int Y)? slotPx = _packer.TryAlloc(g.Width + 1, g.Height + 1);   // +1 padding:缩放采样防邻字形渗色(v2 同)
         if (slotPx is null)
         {
-            _packer.Reset();
-            _glyphs.Clear();
-            SeedWhitePixel();
-            slotPx = _packer.TryAlloc(g.Width + 1, g.Height + 1)
-                ?? throw new InvalidOperationException($"字形 gi={glyphId}@{size} 放不进图集");
+            // 审计修复波 2A-3(I-7):图集满 → 不再当帧原地 Reset+重分配+覆写纹理(修复前:Reset 后该字形
+            // 立即覆写本帧已 AddQuad 字形仍在引用的 UV 区域,当帧提交整屏文本花屏一轮)。现仅标记
+            // _needsReset:本字形按空字形跳过(.notdef 语义:不出 quad,推进量由 shaping 快照保留);
+            // packer 保持满态 → 同帧后续新字形 TryAlloc 恒失败 → 零纹理写入,当帧安全;帧首 BeginFrame
+            // 统一失效后下帧全量重光栅化自愈。字形缓存保留 —— 同帧后续命中缓存的字形仍以既有 UV
+            // 正确渲染,仅全新字形缺席一帧。
+            _needsReset = true;
+            return Glyph.Empty;
         }
         _ctx.UpdateAtlasRegion(g.Rgba, (uint)slotPx.Value.X, (uint)slotPx.Value.Y, (uint)g.Width, (uint)g.Height);
         return new Glyph(

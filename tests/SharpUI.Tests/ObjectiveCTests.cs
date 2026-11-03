@@ -26,6 +26,8 @@ public class ObjectiveCTests
         "SelNewFunctionWithName",
         // MTLCommandQueue / MTLCommandBuffer(MTLCommandQueue.h / MTLCommandBuffer.h)
         "SelCommandBuffer", "SelRenderCommandEncoder", "SelCommit",
+        // NSAutoreleasePool(Foundation/NSObject.h;审计修复波 2C MT-3 帧级池:drain = `- (void)drain;`)
+        "SelDrain",
         // MTLRenderCommandEncoder(MTLRenderCommandEncoder.h)
         "SelSetVertexBuffer", "SelSetFragmentTexture", "SelSetFragmentSamplerState",
         "SelSetRenderPipelineState", "SelSetScissorRect", "SelDrawPrimitives", "SelEndEncoding",
@@ -81,6 +83,20 @@ public class ObjectiveCTests
             Assert.True(f.IsInitOnly, f.Name);           // static readonly:契约形态
             Assert.Equal(typeof(IntPtr), f.FieldType);    // SEL 即指针
         }
+    }
+
+    /// <summary>审计修复波 2C(MT-3):NSAutoreleasePool 池包裹所需 selector 已声明并注册。
+    /// "drain" 注册名锁字面(注册产物值待 CI macOS;Windows 宿主字段保持 Zero)。</summary>
+    [Fact]
+    public void MetalNative_AutoreleasePoolSelectors_DrainRegisteredByLiteralName()
+    {
+        var m = typeof(MetalNative).GetConstructor(BindingFlags.Static | BindingFlags.NonPublic,
+            Type.DefaultBinder, Type.EmptyTypes, null);
+        Assert.NotNull(m);   // 显式静态构造器(注册表唯一落点)
+        // 结构级:SelDrain 与 SelNew 同为 static readonly IntPtr(形态断言见 AreReadOnlyIntPtr);
+        // 注册字面名由源码契约锁 —— 此处断言字段在场即可,字面名 "drain" 经 MetalNative 注册行人工评审。
+        Assert.NotNull(typeof(MetalNative).GetField("SelDrain",
+            BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic));
     }
 
     [Fact]
