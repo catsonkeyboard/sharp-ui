@@ -325,7 +325,7 @@ public class SdlWave3BTests
     public void AppWindow_WindowManagementApi_NoThrow_Readback()
     {
         // B3/B4:窗口管理 API 对 AppWindow 完整开放(透传 SdlWindow,应用侧唯一入口)。
-        if (!OperatingSystem.IsWindows() && !GlSupport.Available) return;
+        if (!GlSupport.Available) return;   // CI 无 GPU 环境按约定早退,见 GlSupport
         string? old = Environment.GetEnvironmentVariable("SHARPUI_BACKEND");
         try
         {
@@ -380,7 +380,7 @@ public class SdlWave3BTests
     public void App_VSync_GlBackend_SetVSyncPath_NoThrow()
     {
         // B21:GL 窗口路径(SDL_GL_SetSwapInterval 运行时开关)。
-        if (!OperatingSystem.IsWindows() && !GlSupport.Available) return;
+        if (!GlSupport.Available) return;   // CI 无 GPU 环境(GL 1.1 软渲染)按约定早退,见 GlSupport
         string? old = Environment.GetEnvironmentVariable("SHARPUI_BACKEND");
         try
         {
@@ -415,7 +415,7 @@ public class SdlWave3BTests
     public void AppWindow_FileDropped_WiredThroughAppSurface()
     {
         // B5 接线确认:AppWindow.FileDropped(3A 已透传)—— 应用面(公共 API)订阅 + 泵路由到该窗全链。
-        if (!OperatingSystem.IsWindows() && !GlSupport.Available) return;
+        if (!GlSupport.Available) return;   // CI 无 GPU 环境按约定早退,见 GlSupport
         string? old = Environment.GetEnvironmentVariable("SHARPUI_BACKEND");
         try
         {
