@@ -119,6 +119,32 @@ public class TextFieldTests
         App.State = null;
     }
 
+    [Fact]
+    public void UndoStack_SurvivesSweepWhileMeasuredFieldLives()
+    {
+        // 评审波 3B Important#2:撤销栈与文本键同寿命 —— MeasureSelf 每帧触碰 "tf:undo:" 帧戳,
+        // 失焦超 GraceFrames 后 Sweep 不清(修复前 undo 键仅 Feed 内触碰,帧戳冻结即被清扫:
+        // 文本在、历史亡,失焦约 5 秒后撤销静默失效)。
+        // 本测试取无图集强场景(触碰位于图集早退之前的实证):文本键随 Sweep 失,undo 链经度量期
+        // 触碰存活 —— 撤销从历史恢复文本;生产(有图集)文本键经 State 读同帧存活,更宽松。
+        (TextFieldElement tf, _) = Field();
+        tf.Feed(null, "h".ToCharArray());                           // 撤销粒度 = 整次 Apply(逐字符 Feed 构造两步链)
+        tf.Feed(null, "i".ToCharArray());
+        Assert.Equal("hi", tf.CurrentText);
+        try
+        {
+            for (int frame = 0; frame < StateStore.GraceFrames + 1; frame++)
+            {
+                App.State!.Tick();                                  // 帧推进
+                LayoutEngine.Measure(tf, new SizeF(200, 40));       // 每帧度量该字段(App.Run Arrange 同款)
+                App.State.Sweep();
+            }
+            tf.Feed(new[] { new KeyEventData(Key.Z, true, false, Ctrl: true) }, null);
+            Assert.Equal("h", tf.CurrentText);                      // 历史存活:undo 链未被清扫(修复前此处回不到 "h")
+        }
+        finally { App.State = null; }
+    }
+
     // ---- 波 3B(B8 部分):鼠标定位 + 拖选 ----
 
     [Fact]

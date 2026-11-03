@@ -37,7 +37,6 @@ internal static class Program
                 new MenuSub("More",
                     new MenuItem("+100", () => { state.Count += 100; state.MenuPicked = "+100"; }),
                     new MenuItem("Zero", () => { state.Count = 0; state.MenuPicked = "Zero"; }))));
-            app.MainWindow.FileDropped += path => state.DroppedFile = path;   // 波 3B/B5:拖放接线演示(主窗应用面)
             return Column(
                 Ui.Text("Counter").Size(28).Bold().Color(0xE8E8EC),
                 Ui.Text(state.Count.ToString()).Size(48).Color(0x7AA2F7),
@@ -76,6 +75,9 @@ internal static class Program
                 })
             ).Center().Gap(12f).Padding(24f);
         });
+        // 波 3B/B5:拖放接线演示(主窗应用面)。须在 Create 后订阅一次 —— render lambda 每帧执行,
+        // 事件 += 在其中每帧追加新委托(无界泄漏,评审 Important#1)。
+        app.MainWindow.FileDropped += path => state.DroppedFile = path;
         return app.Run();
     }
 }

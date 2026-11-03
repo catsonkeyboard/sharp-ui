@@ -88,6 +88,22 @@ public class SdlWave3BTests
     }
 
     [Fact]
+    public void CancelPress_KillsPendingRightClick()
+    {
+        // 评审波 3B Minor#4:窗口失焦取消按压对称清右键按下账 —— 不清则迟到的松开在同元素落账
+        // (幻影右键点击,与 M2b-i 左键取消语义不对称)。
+        ButtonElement b = ButtonWithId("rcl", () => { });
+        Element root = Tree(b);
+        var s = new InputSession();
+        Interaction.Update(s, root, new RawInput(new PointF(50, 20), Array.Empty<bool>(),
+            ButtonEvents: new[] { new MouseButtonEventData(MouseButton.Right, true, 1) }));
+        Interaction.CancelPress(s);   // 窗口失焦(App 按窗调用)
+        InputState up = Interaction.Update(s, root, new RawInput(new PointF(50, 20), Array.Empty<bool>(),
+            ButtonEvents: new[] { new MouseButtonEventData(MouseButton.Right, false, 1) }));
+        Assert.Null(up.RightClickedIds);
+    }
+
+    [Fact]
     public void Interaction_MiddleAndXButtons_BookkeptNotConsumed()
     {
         // B2 最小形态:中键/X1 记账(全按钮通道透传至 RawInput.ButtonEvents)不消费 —— 无账本入项、

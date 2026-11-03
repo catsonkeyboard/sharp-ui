@@ -200,6 +200,14 @@ public sealed class TextFieldElement : PanelElement, ITextFeedable
 
     protected internal override SizeF MeasureSelf(SizeF available)
     {
+        // 波 3B 评审 Important#2:度量期触碰撤销栈帧戳("tf:undo:"+id)—— 该键此前仅 Feed(聚焦)内
+        // 触碰,失焦 300 帧后 Sweep 清除,而文本键经 State 读每帧存活(文本在、历史亡的不对称)。
+        // 触碰置于图集早退**之前**(度量可达即触碰;无图集场景文本键仍随 Sweep 失,但历史可从 undo
+        // 链恢复)。非 null 且非空 id 门:未指派(测试 Arrange 先于 Assign)时 StateKey/UndoStackKey
+        // 的惰性缓存同回退 "",两键同槽会把 TextUndoStack 存进文本键 —— 实测 InvalidCastException
+        // 击穿 7 测试;未指派字段本无稳定 id(无历史可保),生产 Assign 后恒非空恒触碰。
+        if (ResolvedId is { Length: > 0 })
+            App.State?.Get<TextUndoStack>(UndoStackKey);
         if (App.Atlas is null) return new SizeF(80f, 28f);
         string t = State.Text.Length > 0 ? State.Text : _placeholder;
         SizeF m = App.Atlas.Measure(t, 14f);
